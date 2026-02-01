@@ -1,0 +1,73 @@
+# ============================================
+# MyBot Docker Compose - Development
+# ============================================
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# ============================================
+
+services:
+  # ======================
+  # Web Admin Panel (Development)
+  # ======================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      # Mount source code for hot reloading
+      - .:/app
+      - /app/node_modules
+      - mybot-data:/app/data
+    environment:
+      - NODE_ENV=development
+      - NEXT_TELEMETRY_DISABLED=1
+    ports:
+      - "3000:3000"
+      # Debug port for Node.js inspector
+      - "9229:9229"
+    command: ["npm", "run", "dev"]
+    # Override healthcheck for dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ======================
+  # Telegram Bot (Development)
+  # ======================
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - mybot-data:/app/data
+    environment:
+      - NODE_ENV=development
+    ports:
+      # Debug port
+      - "9230:9229"
+    command: ["npm", "run", "bot:dev"]
+    # Don't wait for web in dev
+    depends_on:
+      - web
+
+  # ======================
+  # Discord Bot (Development)
+  # ======================
+  discord-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - mybot-data:/app/data
+    environment:
+      - NODE_ENV=development
+    ports:
+      - "9231:9229"
+    command: ["npx", "tsx", "watch", "src/bot/discord.ts"]

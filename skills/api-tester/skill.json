@@ -1,0 +1,130 @@
+{
+  "name": "API Tester",
+  "description": "Test, debug, and document API endpoints with request building and response analysis",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["api", "endpoint", "request", "curl", "http", "rest", "graphql", "postman"],
+  "system_prompt": "You are an API testing expert. Help users test endpoints, debug request/response issues, and document APIs. Provide clear examples and handle authentication properly.",
+  "tools": [
+    {
+      "name": "test_endpoint",
+      "description": "Test an API endpoint and analyze the response",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The endpoint URL to test"
+          },
+          "method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+            "default": "GET"
+          },
+          "headers": {
+            "type": "object",
+            "description": "Request headers"
+          },
+          "body": {
+            "type": "string",
+            "description": "Request body (JSON string)"
+          },
+          "timeout_ms": {
+            "type": "number",
+            "default": 30000
+          }
+        },
+        "required": ["url"]
+      },
+      "execute": "index.ts:testEndpoint"
+    },
+    {
+      "name": "generate_curl",
+      "description": "Generate a curl command for an API request",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The endpoint URL"
+          },
+          "method": {
+            "type": "string",
+            "default": "GET"
+          },
+          "headers": {
+            "type": "object",
+            "description": "Request headers"
+          },
+          "body": {
+            "type": "string",
+            "description": "Request body"
+          }
+        },
+        "required": ["url"]
+      },
+      "execute": "index.ts:generateCurl"
+    },
+    {
+      "name": "parse_api_response",
+      "description": "Parse and analyze an API response",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "response_body": {
+            "type": "string",
+            "description": "The response body to analyze"
+          },
+          "expected_schema": {
+            "type": "object",
+            "description": "Expected JSON schema (optional)"
+          }
+        },
+        "required": ["response_body"]
+      },
+      "execute": "index.ts:parseApiResponse"
+    },
+    {
+      "name": "generate_api_docs",
+      "description": "Generate API documentation from examples",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "description": "Endpoint path"
+          },
+          "method": {
+            "type": "string"
+          },
+          "request_example": {
+            "type": "string",
+            "description": "Example request body"
+          },
+          "response_example": {
+            "type": "string",
+            "description": "Example response body"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": ["endpoint", "method"]
+      },
+      "execute": "index.ts:generateApiDocs"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "default_timeout_ms": {
+        "type": "number",
+        "default": 30000
+      },
+      "follow_redirects": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}

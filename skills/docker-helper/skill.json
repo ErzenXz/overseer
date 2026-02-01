@@ -1,0 +1,103 @@
+{
+  "name": "Docker Helper",
+  "description": "Help with Docker operations, Dockerfile creation, compose files, and container management",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["docker", "container", "compose", "dockerfile", "image", "kubernetes", "k8s"],
+  "system_prompt": "You are a Docker and containerization expert. Help users create Dockerfiles, manage containers, write docker-compose files, and follow container best practices.",
+  "tools": [
+    {
+      "name": "generate_dockerfile",
+      "description": "Generate a Dockerfile for a project",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_type": {
+            "type": "string",
+            "description": "Type of project (node, python, go, java, static)"
+          },
+          "project_path": {
+            "type": "string",
+            "description": "Path to the project to analyze"
+          },
+          "optimization_level": {
+            "type": "string",
+            "enum": ["basic", "standard", "optimized"],
+            "default": "standard"
+          }
+        },
+        "required": ["project_type"]
+      },
+      "execute": "index.ts:generateDockerfile"
+    },
+    {
+      "name": "analyze_dockerfile",
+      "description": "Analyze a Dockerfile for issues and improvements",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dockerfile_content": {
+            "type": "string",
+            "description": "Content of the Dockerfile"
+          }
+        },
+        "required": ["dockerfile_content"]
+      },
+      "execute": "index.ts:analyzeDockerfile"
+    },
+    {
+      "name": "generate_compose",
+      "description": "Generate a docker-compose.yml file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "port": { "type": "number" }
+              }
+            },
+            "description": "Services to include"
+          },
+          "include_database": {
+            "type": "string",
+            "description": "Database to include (postgres, mysql, mongodb, redis)"
+          }
+        },
+        "required": ["services"]
+      },
+      "execute": "index.ts:generateCompose"
+    },
+    {
+      "name": "suggest_commands",
+      "description": "Suggest Docker commands for common operations",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "What you want to do (build, run, debug, cleanup, etc.)"
+          },
+          "context": {
+            "type": "string",
+            "description": "Additional context about your setup"
+          }
+        },
+        "required": ["operation"]
+      },
+      "execute": "index.ts:suggestCommands"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "default_registry": {
+        "type": "string"
+      }
+    }
+  }
+}

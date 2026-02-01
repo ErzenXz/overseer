@@ -1,0 +1,89 @@
+{
+  "name": "Performance Optimizer",
+  "description": "Analyze and optimize application performance, identify bottlenecks, and suggest improvements",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["performance", "optimize", "slow", "speed", "latency", "bottleneck", "memory", "cpu"],
+  "system_prompt": "You are a performance optimization expert. Analyze code and systems for performance issues, identify bottlenecks, and suggest specific improvements with measurable impact.",
+  "tools": [
+    {
+      "name": "analyze_bundle",
+      "description": "Analyze JavaScript bundle for optimization opportunities",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_path": {
+            "type": "string",
+            "description": "Path to the project root"
+          }
+        },
+        "required": ["project_path"]
+      },
+      "execute": "index.ts:analyzeBundle"
+    },
+    {
+      "name": "check_code_performance",
+      "description": "Check code for performance anti-patterns",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the file to analyze"
+          }
+        },
+        "required": ["file_path"]
+      },
+      "execute": "index.ts:checkCodePerformance"
+    },
+    {
+      "name": "analyze_database_queries",
+      "description": "Analyze database queries for performance issues",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "SQL queries to analyze"
+          }
+        },
+        "required": ["queries"]
+      },
+      "execute": "index.ts:analyzeDatabaseQueries"
+    },
+    {
+      "name": "suggest_caching",
+      "description": "Suggest caching strategies for an endpoint or function",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Description of the endpoint/function to cache"
+          },
+          "current_latency_ms": {
+            "type": "number",
+            "description": "Current response time in milliseconds"
+          },
+          "requests_per_minute": {
+            "type": "number",
+            "description": "Average requests per minute"
+          }
+        },
+        "required": ["description"]
+      },
+      "execute": "index.ts:suggestCaching"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "target_environment": {
+        "type": "string",
+        "enum": ["web", "node", "mobile"],
+        "default": "web"
+      }
+    }
+  }
+}

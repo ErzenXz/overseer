@@ -1,0 +1,82 @@
+{
+  "name": "mybot",
+  "version": "1.0.0",
+  "description": "Self-hosted AI Agent with full VPS access - Telegram, Discord, and Web Admin. Cross-platform: Windows, Linux, macOS.",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "bot": "cross-env NODE_ENV=production tsx src/bot/index.ts",
+    "bot:dev": "tsx watch src/bot/index.ts",
+    "discord": "cross-env NODE_ENV=production tsx src/bot/discord.ts",
+    "discord:dev": "tsx watch src/bot/discord.ts",
+    "bots": "concurrently \"npm run bot\" \"npm run discord\"",
+    "bots:dev": "concurrently \"npm run bot:dev\" \"npm run discord:dev\"",
+    "agent": "cross-env NODE_ENV=production tsx src/agent/runner.ts",
+    "agent:dev": "tsx watch src/agent/runner.ts",
+    "db:init": "tsx src/database/init.ts",
+    "setup": "npm run db:init",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "clean": "shx rm -rf .next node_modules/.cache",
+    "clean:data": "shx rm -rf data/*.db data/*.db-wal data/*.db-shm",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^1.0.0",
+    "@ai-sdk/anthropic": "^3.0.35",
+    "@ai-sdk/azure": "^1.0.0",
+    "@ai-sdk/cohere": "^1.0.0",
+    "@ai-sdk/deepinfra": "^1.0.0",
+    "@ai-sdk/deepseek": "^1.0.0",
+    "@ai-sdk/fireworks": "^1.0.0",
+    "@ai-sdk/google": "^3.0.20",
+    "@ai-sdk/groq": "^1.0.0",
+    "@ai-sdk/mistral": "^1.0.0",
+    "@ai-sdk/openai": "^3.0.25",
+    "@ai-sdk/perplexity": "^1.0.0",
+    "@ai-sdk/togetherai": "^1.0.0",
+    "@ai-sdk/xai": "^1.0.0",
+    "ai": "^6.0.67",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.6.2",
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "date-fns": "^4.1.0",
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.2.3",
+    "jose": "^6.1.3",
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "telegraf": "^4.16.3",
+    "uuid": "^13.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/bcrypt": "^6.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.2.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^11.0.0",
+    "shx": "^0.3.4",
+    "tailwindcss": "^4.1.18",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

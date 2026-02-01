@@ -1,0 +1,184 @@
+# ============================================
+# MyBot Docker Compose - Production
+# ============================================
+# Usage:
+#   docker-compose up -d          # Start all services
+#   docker-compose logs -f        # View logs
+#   docker-compose down           # Stop all services
+#   docker-compose up -d --build  # Rebuild and start
+# ============================================
+
+services:
+  # ======================
+  # Web Admin Panel (Next.js)
+  # ======================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: mybot-web
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/data/mybot.db
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-admin}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-changeme123}
+      # LLM Providers (optional - can be added via UI)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    volumes:
+      - mybot-data:/app/data
+      - mybot-skills:/app/skills
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mybot-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ======================
+  # Telegram Bot
+  # ======================
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bot
+    container_name: mybot-telegram
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/mybot.db
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
+      # LLM Providers
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      # Agent settings
+      - AGENT_MAX_STEPS=${AGENT_MAX_STEPS:-25}
+      - AGENT_TIMEOUT_MS=${AGENT_TIMEOUT_MS:-120000}
+      - ALLOW_SHELL_COMMANDS=${ALLOW_SHELL_COMMANDS:-true}
+    volumes:
+      - mybot-data:/app/data
+      - mybot-skills:/app/skills
+      # Mount host directories for file access (optional, adjust as needed)
+      - ${HOST_HOME:-/home}:/host/home:rw
+      - ${HOST_PROJECTS:-/opt/projects}:/host/projects:rw
+    networks:
+      - mybot-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ======================
+  # Discord Bot (Future)
+  # ======================
+  discord-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bot
+    container_name: mybot-discord
+    restart: unless-stopped
+    profiles:
+      - discord  # Only starts with: docker-compose --profile discord up
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/mybot.db
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # LLM Providers
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    volumes:
+      - mybot-data:/app/data
+      - mybot-skills:/app/skills
+    networks:
+      - mybot-network
+    command: ["npx", "tsx", "src/bot/discord.ts"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ======================
+  # All-in-One (Alternative)
+  # ======================
+  allinone:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: allinone
+    container_name: mybot-allinone
+    restart: unless-stopped
+    profiles:
+      - allinone  # Only starts with: docker-compose --profile allinone up
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/data/mybot.db
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-admin}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-changeme123}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    volumes:
+      - mybot-data:/app/data
+      - mybot-skills:/app/skills
+    networks:
+      - mybot-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ======================
+# Networks
+# ======================
+networks:
+  mybot-network:
+    driver: bridge
+
+# ======================
+# Volumes
+# ======================
+volumes:
+  mybot-data:
+    driver: local
+  mybot-skills:
+    driver: local

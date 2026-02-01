@@ -1,0 +1,82 @@
+{
+  "name": "Deploy Assistant",
+  "description": "Help with deployment processes, environment setup, and release management",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["deploy", "deployment", "release", "publish", "ship", "go live", "push to production"],
+  "system_prompt": "You are a deployment expert. Help users deploy their applications safely, manage environments, and handle releases. Always emphasize safety checks, rollback procedures, and monitoring.",
+  "tools": [
+    {
+      "name": "check_deploy_readiness",
+      "description": "Check if the project is ready for deployment",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_path": {
+            "type": "string",
+            "description": "Path to the project root"
+          },
+          "environment": {
+            "type": "string",
+            "description": "Target environment (development, staging, production)",
+            "default": "production"
+          }
+        },
+        "required": ["project_path"]
+      },
+      "execute": "index.ts:checkDeployReadiness"
+    },
+    {
+      "name": "generate_deploy_checklist",
+      "description": "Generate a deployment checklist",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_type": {
+            "type": "string",
+            "description": "Type of project (nextjs, node, python, docker)"
+          },
+          "environment": {
+            "type": "string",
+            "description": "Target environment"
+          }
+        },
+        "required": ["project_type"]
+      },
+      "execute": "index.ts:generateDeployChecklist"
+    },
+    {
+      "name": "verify_environment",
+      "description": "Verify environment variables and configuration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_path": {
+            "type": "string",
+            "description": "Path to the project"
+          },
+          "env_file": {
+            "type": "string",
+            "description": "Environment file to check",
+            "default": ".env"
+          }
+        },
+        "required": ["project_path"]
+      },
+      "execute": "index.ts:verifyEnvironment"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "default_environment": {
+        "type": "string",
+        "default": "staging"
+      },
+      "require_tests": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}

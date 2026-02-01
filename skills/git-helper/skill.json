@@ -1,0 +1,114 @@
+{
+  "name": "Git Helper",
+  "description": "Advanced git operations, branch management, commit formatting, and workflow assistance",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["git", "commit", "branch", "merge", "rebase", "stash", "cherry-pick", "bisect"],
+  "system_prompt": "You are a Git expert. Help users with version control operations, branch strategies, commit messages, and resolving complex git situations. Always explain the implications of destructive operations.",
+  "tools": [
+    {
+      "name": "suggest_commit_message",
+      "description": "Suggest a commit message based on changes",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "diff": {
+            "type": "string",
+            "description": "Git diff of the changes"
+          },
+          "style": {
+            "type": "string",
+            "enum": ["conventional", "angular", "simple"],
+            "default": "conventional"
+          }
+        },
+        "required": ["diff"]
+      },
+      "execute": "index.ts:suggestCommitMessage"
+    },
+    {
+      "name": "explain_git_command",
+      "description": "Explain what a git command does",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The git command to explain"
+          }
+        },
+        "required": ["command"]
+      },
+      "execute": "index.ts:explainGitCommand"
+    },
+    {
+      "name": "suggest_git_workflow",
+      "description": "Suggest git commands for a workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "What you want to accomplish"
+          },
+          "current_state": {
+            "type": "string",
+            "description": "Current git state (optional)"
+          }
+        },
+        "required": ["goal"]
+      },
+      "execute": "index.ts:suggestGitWorkflow"
+    },
+    {
+      "name": "analyze_git_history",
+      "description": "Analyze git history and provide insights",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "log_output": {
+            "type": "string",
+            "description": "Output of git log command"
+          }
+        },
+        "required": ["log_output"]
+      },
+      "execute": "index.ts:analyzeGitHistory"
+    },
+    {
+      "name": "resolve_conflict_guide",
+      "description": "Guide for resolving merge conflicts",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conflict_files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of files with conflicts"
+          },
+          "conflict_type": {
+            "type": "string",
+            "enum": ["merge", "rebase", "cherry-pick"],
+            "default": "merge"
+          }
+        },
+        "required": ["conflict_files"]
+      },
+      "execute": "index.ts:resolveConflictGuide"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "commit_style": {
+        "type": "string",
+        "enum": ["conventional", "angular", "simple"],
+        "default": "conventional"
+      },
+      "default_branch": {
+        "type": "string",
+        "default": "main"
+      }
+    }
+  }
+}

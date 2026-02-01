@@ -1,0 +1,86 @@
+{
+  "name": "Code Review",
+  "description": "Review code for bugs, security issues, performance problems, and best practices violations",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["review code", "check code", "code review", "analyze code", "review my code", "code quality"],
+  "system_prompt": "You are an expert code reviewer. Analyze code for bugs, security vulnerabilities, performance issues, and adherence to best practices. Provide actionable feedback with specific line references and suggested fixes.",
+  "tools": [
+    {
+      "name": "review_file",
+      "description": "Review a file for code quality issues, bugs, and improvements",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the file to review"
+          },
+          "focus_areas": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Specific areas to focus on (e.g., security, performance, style)"
+          }
+        },
+        "required": ["file_path"]
+      },
+      "execute": "index.ts:reviewFile"
+    },
+    {
+      "name": "review_diff",
+      "description": "Review a git diff for issues and improvements",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "diff": {
+            "type": "string",
+            "description": "The git diff content to review"
+          },
+          "context": {
+            "type": "string",
+            "description": "Additional context about the changes"
+          }
+        },
+        "required": ["diff"]
+      },
+      "execute": "index.ts:reviewDiff"
+    },
+    {
+      "name": "check_patterns",
+      "description": "Check code against common anti-patterns",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code snippet to check"
+          },
+          "language": {
+            "type": "string",
+            "description": "Programming language (e.g., typescript, python)"
+          }
+        },
+        "required": ["code", "language"]
+      },
+      "execute": "index.ts:checkPatterns"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "severity_threshold": {
+        "type": "string",
+        "enum": ["info", "warning", "error"],
+        "default": "info"
+      },
+      "include_suggestions": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  },
+  "default_config": {
+    "severity_threshold": "info",
+    "include_suggestions": true
+  }
+}

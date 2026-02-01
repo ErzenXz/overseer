@@ -1,0 +1,46 @@
+# ============================================
+# MyBot Development Dockerfile
+# ============================================
+
+FROM node:20-alpine
+
+# Install build dependencies
+RUN apk add --no-cache \
+  python3 \
+  make \
+  g++ \
+  git \
+  bash \
+  curl \
+  openssh-client
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* pnpm-lock.yaml* ./
+
+# Install dependencies
+RUN \
+  if [ -f pnpm-lock.yaml ]; then \
+    corepack enable pnpm && pnpm install; \
+  elif [ -f package-lock.json ]; then \
+    npm ci; \
+  else \
+    npm install; \
+  fi
+
+# Copy source (will be overridden by volume mount in dev)
+COPY . .
+
+# Create data directory
+RUN mkdir -p /app/data /app/skills
+
+# Environment
+ENV NODE_ENV=development
+ENV PORT=3000
+
+# Expose ports
+EXPOSE 3000 9229
+
+# Default command
+CMD ["npm", "run", "dev"]

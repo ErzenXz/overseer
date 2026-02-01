@@ -1,0 +1,111 @@
+{
+  "name": "Database Helper",
+  "description": "Help with database queries, schema management, migrations, and optimization",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["database", "sql", "query", "migrate", "schema", "table", "migration", "db"],
+  "system_prompt": "You are a database expert. Help users write efficient queries, design schemas, manage migrations, and optimize database performance. Always consider security (SQL injection prevention), performance (indexes, query optimization), and data integrity.",
+  "tools": [
+    {
+      "name": "analyze_query",
+      "description": "Analyze a SQL query for performance and issues",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The SQL query to analyze"
+          },
+          "dialect": {
+            "type": "string",
+            "description": "SQL dialect (postgresql, mysql, sqlite)",
+            "default": "postgresql"
+          }
+        },
+        "required": ["query"]
+      },
+      "execute": "index.ts:analyzeQuery"
+    },
+    {
+      "name": "generate_migration",
+      "description": "Generate a database migration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "Migration operation (create_table, add_column, create_index, etc.)"
+          },
+          "table_name": {
+            "type": "string",
+            "description": "Target table name"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "nullable": { "type": "boolean" },
+                "default": { "type": "string" }
+              }
+            },
+            "description": "Column definitions"
+          },
+          "dialect": {
+            "type": "string",
+            "default": "postgresql"
+          }
+        },
+        "required": ["operation", "table_name"]
+      },
+      "execute": "index.ts:generateMigration"
+    },
+    {
+      "name": "suggest_indexes",
+      "description": "Suggest indexes for a table based on common query patterns",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_schema": {
+            "type": "string",
+            "description": "Table CREATE statement or schema description"
+          },
+          "query_patterns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Common queries run against this table"
+          }
+        },
+        "required": ["table_schema"]
+      },
+      "execute": "index.ts:suggestIndexes"
+    },
+    {
+      "name": "validate_schema",
+      "description": "Validate a database schema for best practices",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "description": "SQL schema to validate"
+          }
+        },
+        "required": ["schema"]
+      },
+      "execute": "index.ts:validateSchema"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "default_dialect": {
+        "type": "string",
+        "enum": ["postgresql", "mysql", "sqlite"],
+        "default": "postgresql"
+      }
+    }
+  }
+}

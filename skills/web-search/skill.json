@@ -1,0 +1,64 @@
+{
+  "name": "Web Search",
+  "description": "Search the web using DuckDuckGo API to find information, articles, and resources online",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["search", "look up", "find online", "google", "search the web", "web search"],
+  "system_prompt": "You have access to web search capabilities. Use the search tool to find current information from the internet. Always cite your sources and provide relevant links when available.",
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web using DuckDuckGo to find information, news, and resources",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query to look up on the web"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum number of results to return (default: 5)",
+            "default": 5
+          }
+        },
+        "required": ["query"]
+      },
+      "execute": "index.ts:webSearch"
+    },
+    {
+      "name": "fetch_page",
+      "description": "Fetch and extract content from a specific URL",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The URL to fetch content from"
+          }
+        },
+        "required": ["url"]
+      },
+      "execute": "index.ts:fetchPage"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "safe_search": {
+        "type": "boolean",
+        "description": "Enable safe search filtering",
+        "default": true
+      },
+      "region": {
+        "type": "string",
+        "description": "Search region (e.g., us-en, uk-en)",
+        "default": "us-en"
+      }
+    }
+  },
+  "default_config": {
+    "safe_search": true,
+    "region": "us-en"
+  }
+}

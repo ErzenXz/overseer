@@ -1,0 +1,97 @@
+{
+  "name": "Security Audit",
+  "description": "Scan code and configurations for security vulnerabilities and compliance issues",
+  "version": "1.0.0",
+  "author": "MyBot",
+  "triggers": ["security", "audit", "vulnerability", "scan", "secure", "CVE", "OWASP", "penetration"],
+  "system_prompt": "You are a security expert. Identify vulnerabilities, suggest fixes, and help implement security best practices. Reference OWASP guidelines and common CVEs when relevant.",
+  "tools": [
+    {
+      "name": "scan_file",
+      "description": "Scan a file for security vulnerabilities",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the file to scan"
+          },
+          "severity_threshold": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "critical"],
+            "default": "low"
+          }
+        },
+        "required": ["file_path"]
+      },
+      "execute": "index.ts:scanFile"
+    },
+    {
+      "name": "scan_dependencies",
+      "description": "Scan project dependencies for known vulnerabilities",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_path": {
+            "type": "string",
+            "description": "Path to the project root"
+          }
+        },
+        "required": ["project_path"]
+      },
+      "execute": "index.ts:scanDependencies"
+    },
+    {
+      "name": "check_secrets",
+      "description": "Scan for hardcoded secrets and credentials",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to scan (file or directory)"
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": ["path"]
+      },
+      "execute": "index.ts:checkSecrets"
+    },
+    {
+      "name": "audit_config",
+      "description": "Audit security configuration files",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "config_type": {
+            "type": "string",
+            "description": "Type of config (nginx, docker, kubernetes, cors, csp)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Configuration content to audit"
+          }
+        },
+        "required": ["config_type", "content"]
+      },
+      "execute": "index.ts:auditConfig"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "severity_threshold": {
+        "type": "string",
+        "enum": ["low", "medium", "high", "critical"],
+        "default": "low"
+      },
+      "ignore_patterns": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}
