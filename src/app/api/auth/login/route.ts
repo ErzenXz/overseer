@@ -21,10 +21,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       user: result.user,
     });
+
+    response.cookies.set("overseer_session", result.sessionId || "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production" && !!process.env.AUTH_COOKIE_SECURE,
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60,
+      path: "/",
+    });
+
+    return response;
   } catch (error) {
     console.error("Login error:", error);
     return NextResponse.json(

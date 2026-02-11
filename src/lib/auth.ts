@@ -7,6 +7,7 @@ const SESSION_COOKIE_NAME = "overseer_session";
 export interface AuthResult {
   success: boolean;
   user?: Omit<User, "password_hash">;
+  sessionId?: string;
   error?: string;
 }
 
@@ -30,21 +31,11 @@ export async function login(
   // Create session
   const session = sessionsModel.create(user.id);
 
-  // Set cookie
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, session.id, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60, // 7 days
-    path: "/",
-  });
-
   // Update last login
   usersModel.updateLastLogin(user.id);
 
   const { password_hash, ...userWithoutPassword } = user;
-  return { success: true, user: userWithoutPassword };
+  return { success: true, user: userWithoutPassword, sessionId: session.id };
 }
 
 /**

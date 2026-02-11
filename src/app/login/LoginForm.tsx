@@ -30,7 +30,8 @@ export function LoginForm() {
         return;
       }
 
-      router.push("/dashboard");
+      const redirect = new URLSearchParams(window.location.search).get("redirect") || "/dashboard";
+      router.push(redirect);
       router.refresh();
     } catch {
       setError("An error occurred. Please try again.");
