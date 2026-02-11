@@ -15,6 +15,9 @@
     "bots:dev": "concurrently \"npm run bot:dev\" \"npm run discord:dev\"",
     "agent": "cross-env NODE_ENV=production tsx src/agent/runner.ts",
     "agent:dev": "tsx watch src/agent/runner.ts",
+    "cli": "tsx src/cli/index.ts",
+    "cron:list": "tsx src/cli/index.ts cron list",
+    "cron:history": "tsx src/cli/index.ts cron history",
     "db:init": "tsx src/database/init.ts",
     "setup": "npm run db:init",
     "lint": "next lint",
@@ -22,6 +25,9 @@
     "clean": "shx rm -rf .next node_modules/.cache",
     "clean:data": "shx rm -rf data/*.db data/*.db-wal data/*.db-shm",
     "postinstall": "node scripts/postinstall.js"
+  },
+  "bin": {
+    "overseer": "./src/cli/index.ts"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^1.0.0",
@@ -42,6 +48,7 @@
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.6.2",
     "concurrently": "^9.2.1",
+    "cron-parser": "^5.5.0",
     "cross-env": "^7.0.3",
     "date-fns": "^4.1.0",
     "discord.js": "^14.25.1",

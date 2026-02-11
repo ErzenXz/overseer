@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { PROVIDER_INFO, type ProviderName } from "@/agent/provider-info";
+import { PROVIDER_INFO, type ProviderName, type ModelInfo } from "@/agent/provider-info";
+import {
+  CapabilityBadges,
+  CostTierBadge,
+  ContextWindowBar,
+  PricingDisplay,
+  KnowledgeCutoff,
+  formatTokenCount,
+} from "@/components/ModelBadges";
 
 interface AddProviderButtonProps {
   variant?: "default" | "primary";
@@ -26,14 +34,37 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
     priority: 0,
   });
 
+  // Look up the selected model's info from the provider registry
+  const selectedModelInfo: ModelInfo | undefined = useMemo(() => {
+    const provider = PROVIDER_INFO[formData.name];
+    if (!provider) return undefined;
+    return provider.models.find((m) => m.id === formData.model);
+  }, [formData.name, formData.model]);
+
   const handleProviderChange = (name: ProviderName) => {
     const info = PROVIDER_INFO[name];
+    const firstModel = info.models[0];
     setFormData((prev) => ({
       ...prev,
       name,
       display_name: info.displayName,
-      model: info.models[0].id,
+      model: firstModel.id,
       base_url: name === "ollama" ? "http://localhost:11434/v1" : "",
+      // Auto-set sensible defaults based on model capabilities
+      max_tokens: firstModel.maxOutput,
+      temperature: firstModel.allowsTemperature ? 0.7 : 0,
+    }));
+  };
+
+  const handleModelChange = (modelId: string) => {
+    const provider = PROVIDER_INFO[formData.name];
+    const model = provider.models.find((m) => m.id === modelId);
+    setFormData((prev) => ({
+      ...prev,
+      model: modelId,
+      // Auto-set max_tokens and temperature from model capabilities
+      max_tokens: model?.maxOutput ?? prev.max_tokens,
+      temperature: model?.allowsTemperature === false ? 0 : prev.temperature,
     }));
   };
 
@@ -80,7 +111,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg shadow-2xl">
+          <div className="w-full max-w-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-[var(--color-border)]">
               <h2 className="text-xl font-semibold text-white font-[var(--font-mono)]">Add Provider</h2>
               <button
@@ -113,22 +144,61 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                  {PROVIDER_INFO[formData.name].description}
+                </p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Model</label>
                 <select
                   value={formData.model}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, model: e.target.value }))}
+                  onChange={(e) => handleModelChange(e.target.value)}
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   {PROVIDER_INFO[formData.name].models.map((model) => (
                     <option key={model.id} value={model.id}>
-                      {model.name}
+                      {model.name} {model.reasoning ? "(reasoning)" : ""}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {/* --- Model info panel --- */}
+              {selectedModelInfo && (
+                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-overlay)] p-3.5 space-y-3">
+                  {/* Row 1: name + cost tier */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium text-white">{selectedModelInfo.name}</span>
+                      <span className="ml-2 text-[10px] text-[var(--color-text-muted)] font-mono">{selectedModelInfo.id}</span>
+                    </div>
+                    <CostTierBadge tier={selectedModelInfo.costTier} />
+                  </div>
+
+                  {/* Row 2: capability badges */}
+                  <CapabilityBadges model={selectedModelInfo} />
+
+                  {/* Row 3: context window bar */}
+                  <ContextWindowBar
+                    contextWindow={selectedModelInfo.contextWindow}
+                    maxOutput={selectedModelInfo.maxOutput}
+                  />
+
+                  {/* Row 4: pricing + cutoff */}
+                  <div className="flex items-start justify-between gap-4">
+                    <PricingDisplay model={selectedModelInfo} compact />
+                    <KnowledgeCutoff date={selectedModelInfo.knowledgeCutoff} />
+                  </div>
+
+                  {/* Hints for reasoning models */}
+                  {!selectedModelInfo.allowsTemperature && (
+                    <p className="text-[10px] text-amber-400/80 bg-amber-500/5 px-2 py-1 rounded">
+                      Reasoning model — temperature is locked to 0 and max output is set to {formatTokenCount(selectedModelInfo.maxOutput)} tokens.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {PROVIDER_INFO[formData.name].requiresKey && (
                 <div>
@@ -159,7 +229,14 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Max Tokens</label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                    Max Tokens
+                    {selectedModelInfo && (
+                      <span className="ml-1 text-[10px] text-[var(--color-text-muted)] font-normal">
+                        (max {formatTokenCount(selectedModelInfo.maxOutput)})
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="number"
                     value={formData.max_tokens}
@@ -168,15 +245,21 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Temperature</label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                    Temperature
+                    {selectedModelInfo && !selectedModelInfo.allowsTemperature && (
+                      <span className="ml-1 text-[10px] text-amber-400 font-normal">(locked)</span>
+                    )}
+                  </label>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     max="2"
                     value={formData.temperature}
+                    disabled={selectedModelInfo ? !selectedModelInfo.allowsTemperature : false}
                     onChange={(e) => setFormData((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>

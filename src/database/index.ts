@@ -4,6 +4,7 @@ export { providersModel, type ProviderInput } from "./models/providers";
 export { interfacesModel, type InterfaceConfig, type InterfaceInput } from "./models/interfaces";
 export { conversationsModel, messagesModel, type ConversationInput, type MessageInput } from "./models/conversations";
 export { toolExecutionsModel, settingsModel, logsModel, type ToolExecutionInput } from "./models/system";
+export { cronJobsModel, cronExecutionsModel, type CronJobInput, type CronExecutionInput } from "./models/cron";
 
 // Re-export database and types
 export { db, initializeSchema } from "./db";
@@ -17,4 +18,6 @@ export type {
   ToolExecution,
   Setting,
   Log,
+  CronJob,
+  CronExecution,
 } from "./db";

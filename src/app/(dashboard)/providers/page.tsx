@@ -1,7 +1,7 @@
 import { providersModel } from "@/database";
-import { PROVIDER_INFO } from "@/agent";
 import { ProvidersList } from "./ProvidersList";
 import { AddProviderButton } from "./AddProviderButton";
+import { ProviderCatalog } from "./ProviderCatalog";
 
 export default function ProvidersPage() {
   const providers = providersModel.findAll();
@@ -31,32 +31,12 @@ export default function ProvidersPage() {
         <ProvidersList providers={providers} />
       )}
 
-      {/* Available Providers Info */}
-      <div className="mt-8">
-        <h2 className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-4">Supported Providers</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Object.entries(PROVIDER_INFO).map(([key, info]) => (
-            <div key={key} className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-4">
-              <h3 className="font-medium text-white mb-2">{info.displayName}</h3>
-              <p className="text-xs text-[var(--color-text-muted)] mb-3">
-                {info.requiresKey ? "Requires API key" : "Local installation"}
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {info.models.slice(0, 3).map((model) => (
-                  <span
-                    key={model.id}
-                    className="text-xs px-2 py-0.5 bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] rounded"
-                  >
-                    {model.name}
-                  </span>
-                ))}
-                {info.models.length > 3 && (
-                  <span className="text-xs text-[var(--color-text-muted)]">+{info.models.length - 3} more</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* Model Catalog - all supported providers & models */}
+      <div className="mt-10">
+        <h2 className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-4">
+          Model Catalog
+        </h2>
+        <ProviderCatalog />
       </div>
     </div>
   );

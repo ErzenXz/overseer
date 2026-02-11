@@ -185,16 +185,28 @@ export async function GET() {
 
   try {
     const { providersModel } = await import("@/database");
+    const { getModelInfo } = await import("@/agent/provider-info");
     const providers = providersModel.findActive();
 
     return NextResponse.json({
-      providers: providers.map((p) => ({
-        id: p.id,
-        name: p.name,
-        displayName: p.display_name,
-        model: p.model,
-        isDefault: p.is_default,
-      })),
+      providers: providers.map((p) => {
+        const modelInfo = getModelInfo(p.name as Parameters<typeof getModelInfo>[0], p.model);
+        return {
+          id: p.id,
+          name: p.name,
+          displayName: p.display_name,
+          model: p.model,
+          isDefault: p.is_default,
+          // Model capability fields (undefined if model not found in registry)
+          supportsThinking: modelInfo?.supportsThinking ?? false,
+          supportsTools: modelInfo?.supportsTools ?? false,
+          supportsMultimodal: modelInfo?.supportsMultimodal ?? false,
+          reasoning: modelInfo?.reasoning ?? false,
+          costTier: modelInfo?.costTier ?? "medium",
+          contextWindow: modelInfo?.contextWindow ?? 0,
+          maxOutput: modelInfo?.maxOutput ?? 0,
+        };
+      }),
     });
   } catch (error) {
     return NextResponse.json(

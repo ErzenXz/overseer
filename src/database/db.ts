@@ -19,6 +19,8 @@ export type {
   ToolExecution,
   Setting,
   Log,
+  CronJob,
+  CronExecution,
 } from "../types/database";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -179,6 +181,48 @@ function initializeSchema() {
     db.exec(agentSchema);
     console.log("Agent schema initialized");
   }
+
+  // Load cron job schema
+  const cronSchemaPath = join(__dirname, "schema-cron.sql");
+  if (existsSync(cronSchemaPath)) {
+    const cronSchema = readFileSync(cronSchemaPath, "utf-8");
+    db.exec(cronSchema);
+    console.log("Cron schema initialized");
+  }
+
+  // Migrate cron tables for future column additions
+  migrateTableColumns("cron_jobs", [
+    { name: "name", definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: "description", definition: "TEXT" },
+    { name: "cron_expression", definition: "TEXT NOT NULL DEFAULT '* * * * *'" },
+    { name: "prompt", definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: "enabled", definition: "INTEGER NOT NULL DEFAULT 1" },
+    { name: "created_by", definition: "TEXT DEFAULT 'system'" },
+    { name: "timezone", definition: "TEXT DEFAULT 'UTC'" },
+    { name: "max_retries", definition: "INTEGER DEFAULT 3" },
+    { name: "timeout_ms", definition: "INTEGER DEFAULT 300000" },
+    { name: "last_run_at", definition: "TEXT" },
+    { name: "next_run_at", definition: "TEXT" },
+    { name: "run_count", definition: "INTEGER DEFAULT 0" },
+    { name: "last_status", definition: "TEXT" },
+    { name: "metadata", definition: "TEXT" },
+  ]);
+
+  migrateTableColumns("cron_executions", [
+    { name: "cron_job_id", definition: "INTEGER NOT NULL DEFAULT 0" },
+    { name: "conversation_id", definition: "INTEGER" },
+    { name: "status", definition: "TEXT NOT NULL DEFAULT 'running'" },
+    { name: "started_at", definition: "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+    { name: "completed_at", definition: "TEXT" },
+    { name: "duration_ms", definition: "INTEGER" },
+    { name: "prompt", definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: "output_summary", definition: "TEXT" },
+    { name: "error", definition: "TEXT" },
+    { name: "input_tokens", definition: "INTEGER DEFAULT 0" },
+    { name: "output_tokens", definition: "INTEGER DEFAULT 0" },
+    { name: "tool_calls_count", definition: "INTEGER DEFAULT 0" },
+    { name: "metadata", definition: "TEXT" },
+  ]);
 }
 
 /**

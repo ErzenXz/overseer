@@ -142,3 +142,40 @@ export interface Migration {
   name: string;
   applied_at: string;
 }
+
+export interface CronJob {
+  id: number;
+  name: string;
+  description: string | null;
+  cron_expression: string;
+  prompt: string;
+  enabled: number;
+  created_by: string;
+  timezone: string;
+  max_retries: number;
+  timeout_ms: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  run_count: number;
+  last_status: string | null;
+  metadata: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CronExecution {
+  id: number;
+  cron_job_id: number;
+  conversation_id: number | null;
+  status: "running" | "success" | "failed";
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  prompt: string;
+  output_summary: string | null;
+  error: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  tool_calls_count: number;
+  metadata: string | null;
+}
