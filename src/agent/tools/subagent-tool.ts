@@ -31,7 +31,7 @@ const SUB_AGENT_TYPES: SubAgentType[] = [
   "network",
 ];
 
-export const spawnSubAgent = tool({
+export const spawnSubAgent = tool<any, any>({
   description: `Spawn a specialized sub-agent to handle complex tasks. Sub-agents are specialized in specific domains:
 - code: Code generation, modification, and review
 - file: File system operations (read, write, copy, move, search)
@@ -44,7 +44,7 @@ export const spawnSubAgent = tool({
 - network: Network diagnostics
 
 Use this when a task requires specialized expertise or when you want to delegate work.`,
-  parameters: z.object({
+  inputSchema: z.object({
     type: z
       .enum(["code", "file", "git", "system", "web", "docker", "db", "security", "network"])
       .describe("The type of specialized sub-agent to spawn"),
@@ -60,7 +60,7 @@ Use this when a task requires specialized expertise or when you want to delegate
       .optional()
       .describe("Additional context or information to provide to the sub-agent"),
   }),
-  execute: async ({ type, task, wait_for_result, context }) => {
+  execute: async ({ type, task, wait_for_result, context }: { type: SubAgentType; task: string; wait_for_result: boolean; context?: string }) => {
     const startTime = Date.now();
     const sessionId = uuidv4();
 
@@ -138,12 +138,12 @@ Use this when a task requires specialized expertise or when you want to delegate
   },
 });
 
-export const checkSubAgentStatus = tool({
+export const checkSubAgentStatus = tool<any, any>({
   description: "Check the status of a previously spawned sub-agent",
-  parameters: z.object({
+  inputSchema: z.object({
     sub_agent_id: z.string().describe("The ID of the sub-agent to check"),
   }),
-  execute: async ({ sub_agent_id }) => {
+  execute: async ({ sub_agent_id }: { sub_agent_id: string }) => {
     const subAgent = findBySubAgentId(sub_agent_id);
 
     if (!subAgent) {

@@ -1,0 +1,16 @@
+[Unit]
+Description=Overseer AI Agent - Web Admin Dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/overseer
+ExecStart=/usr/bin/node /opt/overseer/.next/standalone/server.js
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/opt/overseer/.env
+
+[Install]
+WantedBy=multi-user.target

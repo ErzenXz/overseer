@@ -1,7 +1,7 @@
-# MyBot Admin Dashboard
+# Overseer Admin Dashboard
 
 ## Overview
-A comprehensive admin dashboard for MyBot that provides administrators with full control over users, permissions, sessions, audit logs, and system settings.
+A comprehensive admin dashboard for Overseer that provides administrators with full control over users, permissions, sessions, audit logs, and system settings.
 
 ## Created Files
 
@@ -275,7 +275,7 @@ npm run dev
 
 ## Summary
 
-This admin dashboard provides a complete, production-ready interface for managing all aspects of MyBot. The implementation follows Next.js 15 best practices, uses the existing design system, and is fully typed with TypeScript. All pages are mobile-responsive, accessible, and ready for deployment.
+This admin dashboard provides a complete, production-ready interface for managing all aspects of Overseer. The implementation follows Next.js 15 best practices, uses the existing design system, and is fully typed with TypeScript. All pages are mobile-responsive, accessible, and ready for deployment.
 
 **Total Deliverables:**
 - ✅ 5 reusable admin components

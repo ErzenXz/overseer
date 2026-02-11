@@ -2,7 +2,7 @@
   "name": "API Tester",
   "description": "Test, debug, and document API endpoints with request building and response analysis",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["api", "endpoint", "request", "curl", "http", "rest", "graphql", "postman"],
   "system_prompt": "You are an API testing expert. Help users test endpoints, debug request/response issues, and document APIs. Provide clear examples and handle authentication properly.",
   "tools": [

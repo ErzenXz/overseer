@@ -10,6 +10,8 @@ export interface ChatMessage {
   model?: string;
   inputTokens?: number;
   outputTokens?: number;
+  thinking?: string; // Extended thinking content from Claude
+  isThinking?: boolean; // Currently showing thinking UI
 }
 
 export interface ToolCall {
@@ -183,6 +185,17 @@ export function useChat(options: ChatOptions = {}) {
                       prev.map((msg) =>
                         msg.id === assistantMessageId
                           ? { ...msg, content: fullText }
+                          : msg
+                      )
+                    );
+                    break;
+
+                  case "thinking":
+                    // Extended thinking content from Claude
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? { ...msg, thinking: event.content, isThinking: event.active ?? false }
                           : msg
                       )
                     );

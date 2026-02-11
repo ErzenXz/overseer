@@ -6,7 +6,8 @@ import { usersModel } from "@/database";
 export default function UsersPage() {
   const users = usersModel.findAll();
   const adminCount = users.filter(u => u.role === "admin").length;
-  const userCount = users.filter(u => u.role === "user").length;
+  const developerCount = users.filter(u => u.role === "developer").length;
+  const operatorCount = users.filter(u => u.role === "operator").length;
   const viewerCount = users.filter(u => u.role === "viewer").length;
 
   // Mock quota data - in production, this would come from database
@@ -68,14 +69,24 @@ export default function UsersPage() {
           color="red"
         />
         <StatsCard
-          title="Users"
-          value={userCount}
+          title="Developers"
+          value={developerCount}
           icon={
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           }
           color="green"
+        />
+        <StatsCard
+          title="Operators"
+          value={operatorCount}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.97a1 1 0 00.95.69h4.173c.969 0 1.371 1.24.588 1.81l-3.377 2.455a1 1 0 00-.364 1.118l1.287 3.97c.3.92-.755 1.688-1.54 1.118l-3.377-2.456a1 1 0 00-1.176 0l-3.377 2.456c-.784.57-1.838-.197-1.539-1.118l1.287-3.97a1 1 0 00-.364-1.118L2.98 9.397c-.783-.57-.38-1.81.588-1.81h4.173a1 1 0 00.95-.69l1.286-3.97z" />
+            </svg>
+          }
+          color="orange"
         />
         <StatsCard
           title="Viewers"

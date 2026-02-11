@@ -98,7 +98,7 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
         onSend={handleSend}
         isLoading={isLoading}
         onStop={stopGeneration}
-        placeholder="Message MyBot..."
+        placeholder="Message Overseer..."
       />
     </div>
   );

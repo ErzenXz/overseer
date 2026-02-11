@@ -1,6 +1,6 @@
 # 📘 User Guide
 
-Complete guide for using MyBot - from first steps to advanced features.
+Complete guide for using Overseer - from first steps to advanced features.
 
 ## Table of Contents
 
@@ -70,7 +70,7 @@ Complete guide for using MyBot - from first steps to advanced features.
    - Message [@userinfobot](https://t.me/userinfobot)
    - Save your user ID
 
-3. **Configure MyBot**:
+3. **Configure Overseer**:
    - Add token to Settings → Interfaces
    - Add your user ID to allowed users
    - Save and restart bot service
@@ -230,7 +230,7 @@ Bot: 🚀 Deploying application...
    - Copy generated URL
    - Open URL to invite bot
 
-3. **Configure MyBot**:
+3. **Configure Overseer**:
    - Add token to Settings → Interfaces
    - Add server ID to allowed guilds
    - Save and restart bot service
@@ -607,11 +607,11 @@ Which approach would you prefer?
 
 ## Installing Skills
 
-Skills add specialized capabilities to MyBot.
+Skills add specialized capabilities to Overseer.
 
 ### Built-in Skills
 
-MyBot comes with 9+ built-in skills:
+Overseer comes with 9+ built-in skills:
 
 | Skill | Description |
 |-------|-------------|
@@ -634,7 +634,7 @@ MyBot comes with 9+ built-in skills:
 3. Or click **Install from GitHub**
 4. Enter GitHub URL:
    ```
-   https://github.com/user/mybot-skill-name
+   https://github.com/user/overseer-skill-name
    ```
 5. Click **Install**
 6. Configure skill settings
@@ -648,9 +648,9 @@ MyBot comes with 9+ built-in skills:
    git clone https://github.com/user/skill-name
    ```
 
-2. Restart MyBot:
+2. Restart Overseer:
    ```bash
-   systemctl restart mybot-web
+   systemctl restart overseer-web
    ```
 
 3. Skill appears in Settings → Skills
@@ -759,7 +759,7 @@ Bot: 📂 Using filesystem MCP server...
 
 ### Adding Users (Coming Soon)
 
-Currently MyBot supports single-user admin access.
+Currently Overseer supports single-user admin access.
 
 Multi-user support planned for v2.0:
 - User roles (admin, user, read-only)
@@ -869,7 +869,7 @@ Bot: ✅ nginx is active and running
 1. **Use Descriptive Names**: Name conversations clearly
 2. **Regular Backups**: Backup database regularly
 3. **Monitor Logs**: Check logs for errors
-4. **Update Regularly**: Keep MyBot updated
+4. **Update Regularly**: Keep Overseer updated
 
 ---
 
@@ -878,11 +878,11 @@ Bot: ✅ nginx is active and running
 ### Bot Not Responding
 
 **Check**:
-1. Bot service is running: `systemctl status mybot-telegram`
+1. Bot service is running: `systemctl status overseer-telegram`
 2. Your user ID is in allowed users
 3. Bot token is correct
 4. LLM provider is configured
-5. Check logs: `journalctl -u mybot-telegram -f`
+5. Check logs: `journalctl -u overseer-telegram -f`
 
 ### Slow Responses
 
@@ -908,9 +908,9 @@ Bot: ✅ nginx is active and running
 
 **Fix**:
 ```bash
-systemctl stop mybot-web mybot-telegram
-rm data/mybot.db-wal data/mybot.db-shm
-systemctl start mybot-web mybot-telegram
+systemctl stop overseer-web overseer-telegram
+rm data/overseer.db-wal data/overseer.db-shm
+systemctl start overseer-web overseer-telegram
 ```
 
 ### Tools Not Working
@@ -930,8 +930,8 @@ systemctl start mybot-web mybot-telegram
 - 👨‍💻 [Developer Guide](DEVELOPMENT.md)
 - 🔒 [Security Guide](SECURITY.md)
 - ❓ [FAQ](FAQ.md)
-- 💬 [Discord Community](https://discord.gg/mybot)
-- 🐛 [Report Issues](https://github.com/yourusername/mybot/issues)
+- 💬 [Discord Community](https://discord.gg/overseer)
+- 🐛 [Report Issues](https://github.com/ErzenXz/overseer/issues)
 
 ---
 

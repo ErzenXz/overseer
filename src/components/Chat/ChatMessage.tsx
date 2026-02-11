@@ -210,12 +210,36 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   );
 }
 
+// Thinking block component for extended thinking display
+function ThinkingBlock({ content, isThinking }: { content: string; isThinking?: boolean }) {
+  return (
+    <div className="my-3 p-4 bg-amber-950/30 border border-amber-700/30 rounded-lg">
+      <div className="flex items-center gap-2 mb-2 text-amber-400 text-sm font-medium">
+        <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+        <span>Extended Thinking</span>
+        {isThinking && (
+          <span className="ml-auto text-xs text-amber-400/70">Analyzing...</span>
+        )}
+      </div>
+      <div className="text-sm text-amber-200/80 whitespace-pre-wrap font-mono">
+        {content}
+      </div>
+    </div>
+  );
+}
+
 export function ChatMessage({ message, isLast }: ChatMessageProps) {
   const isUser = message.role === "user";
   const parsedContent = useMemo(
     () => (isUser ? null : parseMarkdown(message.content)),
     [message.content, isUser]
   );
+
+  // Check if message has thinking content
+  const hasThinking = message.thinking && message.thinking.length > 0;
+  const isThinking = message.isThinking && !hasThinking;
 
   return (
     <div
@@ -252,6 +276,18 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
               : "bg-zinc-800 text-zinc-100"
           }`}
         >
+          {/* Thinking indicator for active thinking */}
+          {isThinking && (
+            <div className="mb-3">
+              <ThinkingBlock content="Thinking..." isThinking={true} />
+            </div>
+          )}
+
+          {/* Completed thinking content */}
+          {hasThinking && (
+            <ThinkingBlock content={message.thinking!} isThinking={false} />
+          )}
+
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
@@ -295,6 +331,12 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
             <>
               <span>·</span>
               <span>{message.outputTokens} tokens</span>
+            </>
+          )}
+          {(hasThinking || isThinking) && (
+            <>
+              <span>·</span>
+              <span className="text-amber-500">🧠 Extended Thinking</span>
             </>
           )}
         </div>

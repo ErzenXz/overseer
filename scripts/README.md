@@ -1,19 +1,19 @@
-# 🚀 MyBot Deployment Scripts
+# 🚀 Overseer Deployment Scripts
 
-Production-grade deployment system for MyBot with one-line installation.
+Production-grade deployment system for Overseer with one-line installation.
 
 ## 📋 Quick Start
 
 ### One-Line Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/MyBot/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/Overseer/main/scripts/install.sh | bash
 ```
 
 Or with custom options:
 
 ```bash
-wget https://raw.githubusercontent.com/yourusername/MyBot/main/scripts/install.sh
+wget https://raw.githubusercontent.com/ErzenXz/Overseer/main/scripts/install.sh
 chmod +x install.sh
 ./install.sh --help
 ```
@@ -31,7 +31,7 @@ Features:
 - ✅ Auto-detects OS (Ubuntu/Debian, CentOS/RHEL, macOS)
 - ✅ Installs Node.js 20+ if not present
 - ✅ Installs system dependencies (git, sqlite, build tools)
-- ✅ Clones MyBot repository
+- ✅ Clones Overseer repository
 - ✅ Runs interactive setup wizard
 - ✅ Initializes database
 - ✅ Creates systemd services
@@ -45,7 +45,7 @@ Usage:
 ./install.sh
 
 # Custom installation directory
-./install.sh --dir /opt/mybot
+./install.sh --dir /opt/overseer
 
 # Skip nginx setup
 ./install.sh --no-nginx
@@ -115,14 +115,14 @@ Configuration (in `.env`):
 # Optional remote backup
 REMOTE_BACKUP_HOST=backup-server.com
 REMOTE_BACKUP_USER=backup
-REMOTE_BACKUP_PATH=/backups/mybot
+REMOTE_BACKUP_PATH=/backups/overseer
 ```
 
 Automated backups with cron:
 ```bash
 # Add to crontab (daily at 2 AM)
 crontab -e
-0 2 * * * /opt/mybot/scripts/backup.sh >> /opt/mybot/logs/backup.log 2>&1
+0 2 * * * /opt/overseer/scripts/backup.sh >> /opt/overseer/logs/backup.log 2>&1
 ```
 
 ---
@@ -161,7 +161,7 @@ Automated monitoring with cron:
 ```bash
 # Add to crontab (every 5 minutes)
 crontab -e
-*/5 * * * * /opt/mybot/scripts/health-check.sh --alert >> /opt/mybot/logs/health-check-cron.log 2>&1
+*/5 * * * * /opt/overseer/scripts/health-check.sh --alert >> /opt/overseer/logs/health-check-cron.log 2>&1
 ```
 
 Alert configuration (in `.env`):
@@ -186,7 +186,7 @@ Health check thresholds:
 #### `scripts/install-docker.sh`
 **Docker-specific installation**
 
-Installs Docker, Docker Compose, and sets up MyBot containers.
+Installs Docker, Docker Compose, and sets up Overseer containers.
 
 Usage:
 ```bash
@@ -194,9 +194,9 @@ Usage:
 ```
 
 #### `scripts/update.sh`
-**Update MyBot to latest version**
+**Update Overseer to latest version**
 
-Safely updates MyBot with automatic backup and rollback.
+Safely updates Overseer with automatic backup and rollback.
 
 Usage:
 ```bash
@@ -206,7 +206,7 @@ Usage:
 #### `scripts/uninstall.sh`
 **Complete uninstallation**
 
-Removes MyBot, services, and optionally data.
+Removes Overseer, services, and optionally data.
 
 Usage:
 ```bash
@@ -240,9 +240,9 @@ docker-compose down
 
 The `docker-compose.yml` includes:
 
-- **mybot-web**: Next.js web server (port 3000)
-- **mybot-telegram**: Telegram bot
-- **mybot-discord**: Discord bot
+- **overseer-web**: Next.js web server (port 3000)
+- **overseer-telegram**: Telegram bot
+- **overseer-discord**: Discord bot
 - **nginx**: Reverse proxy with SSL support
 - **Volumes**: Persistent storage for database, logs, skills
 
@@ -250,16 +250,16 @@ The `docker-compose.yml` includes:
 
 ```bash
 # Start specific service
-docker-compose up -d mybot-web
+docker-compose up -d overseer-web
 
 # Restart service
-docker-compose restart mybot-telegram
+docker-compose restart overseer-telegram
 
 # View service logs
-docker-compose logs -f mybot-discord
+docker-compose logs -f overseer-discord
 
 # Execute command in container
-docker-compose exec mybot-web npm run db:init
+docker-compose exec overseer-web npm run db:init
 ```
 
 ---
@@ -269,29 +269,29 @@ docker-compose exec mybot-web npm run db:init
 ### Systemd (Production - Recommended)
 
 Service files are located in `systemd/` directory:
-- `mybot.service` - Web server
-- `mybot-telegram.service` - Telegram bot
-- `mybot-discord.service` - Discord bot
+- `overseer.service` - Web server
+- `overseer-telegram.service` - Telegram bot
+- `overseer-discord.service` - Discord bot
 
 **Management:**
 
 ```bash
 # Start services
-sudo systemctl start mybot.service
-sudo systemctl start mybot-telegram.service
-sudo systemctl start mybot-discord.service
+sudo systemctl start overseer.service
+sudo systemctl start overseer-telegram.service
+sudo systemctl start overseer-discord.service
 
 # Enable auto-start on boot
-sudo systemctl enable mybot.service
+sudo systemctl enable overseer.service
 
 # View status
-sudo systemctl status mybot.service
+sudo systemctl status overseer.service
 
 # View logs
-sudo journalctl -u mybot.service -f
+sudo journalctl -u overseer.service -f
 
 # Restart
-sudo systemctl restart mybot.service
+sudo systemctl restart overseer.service
 ```
 
 ### PM2 (Alternative)
@@ -305,7 +305,7 @@ Configuration file: `ecosystem.config.js`
 pm2 start ecosystem.config.js --env production
 
 # Start specific service
-pm2 start ecosystem.config.js --only mybot-web
+pm2 start ecosystem.config.js --only overseer-web
 
 # Monitor
 pm2 monit
@@ -347,7 +347,7 @@ Key sections:
 
 ### Nginx Configuration
 
-**`nginx/mybot.conf`** - Reverse proxy configuration
+**`nginx/overseer.conf`** - Reverse proxy configuration
 
 Features:
 - HTTP to HTTPS redirect
@@ -361,8 +361,8 @@ Features:
 
 Installation:
 ```bash
-sudo cp nginx/mybot.conf /etc/nginx/sites-available/mybot
-sudo ln -s /etc/nginx/sites-available/mybot /etc/nginx/sites-enabled/
+sudo cp nginx/overseer.conf /etc/nginx/sites-available/overseer
+sudo ln -s /etc/nginx/sites-available/overseer /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -413,8 +413,8 @@ sudo certbot renew --dry-run
 
 ```bash
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout /etc/ssl/private/mybot-selfsigned.key \
-  -out /etc/ssl/certs/mybot-selfsigned.crt
+  -keyout /etc/ssl/private/overseer-selfsigned.key \
+  -out /etc/ssl/certs/overseer-selfsigned.crt
 ```
 
 ### Security Best Practices
@@ -435,23 +435,23 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 ### Log Files
 
 - **Application logs**: `./logs/*.log`
-- **Systemd logs**: `sudo journalctl -u mybot.service`
-- **Nginx logs**: `/var/log/nginx/mybot_*.log`
+- **Systemd logs**: `sudo journalctl -u overseer.service`
+- **Nginx logs**: `/var/log/nginx/overseer_*.log`
 - **PM2 logs**: `~/.pm2/logs/`
 
 ### Log Rotation
 
-Create `/etc/logrotate.d/mybot`:
+Create `/etc/logrotate.d/overseer`:
 
 ```
-/opt/mybot/logs/*.log {
+/opt/overseer/logs/*.log {
     daily
     rotate 14
     compress
     delaycompress
     notifempty
     missingok
-    create 0644 mybot mybot
+    create 0644 overseer overseer
 }
 ```
 
@@ -470,7 +470,7 @@ htop
 
 # Disk usage
 df -h
-du -sh /opt/mybot/*
+du -sh /opt/overseer/*
 
 # Process monitoring
 ps aux | grep node
@@ -489,10 +489,10 @@ netstat -tulpn | grep node
 
 ```bash
 # Check status
-sudo systemctl status mybot.service
+sudo systemctl status overseer.service
 
 # View logs
-sudo journalctl -u mybot.service -n 50
+sudo journalctl -u overseer.service -n 50
 
 # Check port usage
 sudo lsof -i :3000
@@ -502,13 +502,13 @@ sudo lsof -i :3000
 
 ```bash
 # Stop all services
-sudo systemctl stop mybot.service mybot-telegram.service mybot-discord.service
+sudo systemctl stop overseer.service overseer-telegram.service overseer-discord.service
 
 # Remove WAL files
-rm -f data/mybot.db-wal data/mybot.db-shm
+rm -f data/overseer.db-wal data/overseer.db-shm
 
 # Restart
-sudo systemctl start mybot.service
+sudo systemctl start overseer.service
 ```
 
 #### High Memory Usage
@@ -518,7 +518,7 @@ sudo systemctl start mybot.service
 free -h
 
 # Restart services
-sudo systemctl restart mybot.service
+sudo systemctl restart overseer.service
 
 # Check for memory leaks
 pm2 monit
@@ -528,10 +528,10 @@ pm2 monit
 
 ```bash
 # Check service
-sudo systemctl status mybot-telegram.service
+sudo systemctl status overseer-telegram.service
 
 # View logs
-sudo journalctl -u mybot-telegram.service -f
+sudo journalctl -u overseer-telegram.service -f
 
 # Test token
 curl https://api.telegram.org/bot<TOKEN>/getMe
@@ -567,10 +567,10 @@ sudo ufw status
 
 ## 🔄 Update & Upgrade
 
-### Update MyBot
+### Update Overseer
 
 ```bash
-cd /opt/mybot
+cd /opt/overseer
 
 # Pull latest changes
 git pull
@@ -582,25 +582,25 @@ npm install
 npm run build
 
 # Restart services
-sudo systemctl restart mybot.service mybot-telegram.service mybot-discord.service
+sudo systemctl restart overseer.service overseer-telegram.service overseer-discord.service
 ```
 
 ### Automated Updates
 
-Create `/opt/mybot/scripts/auto-update.sh`:
+Create `/opt/overseer/scripts/auto-update.sh`:
 
 ```bash
 #!/bin/bash
-cd /opt/mybot
+cd /opt/overseer
 git pull
 npm install
 npm run build
-sudo systemctl restart mybot.service mybot-telegram.service mybot-discord.service
+sudo systemctl restart overseer.service overseer-telegram.service overseer-discord.service
 ```
 
 Add to crontab:
 ```bash
-0 3 * * 0 /opt/mybot/scripts/auto-update.sh >> /opt/mybot/logs/update.log 2>&1
+0 3 * * 0 /opt/overseer/scripts/auto-update.sh >> /opt/overseer/logs/update.log 2>&1
 ```
 
 ---
@@ -610,20 +610,20 @@ Add to crontab:
 ### 1. Use PM2 for Development, Systemd for Production
 
 - **Development**: `pm2 start ecosystem.config.js`
-- **Production**: `systemctl start mybot.service`
+- **Production**: `systemctl start overseer.service`
 
 ### 2. Enable Automated Backups
 
 ```bash
 # Daily backups at 2 AM
-0 2 * * * /opt/mybot/scripts/backup.sh
+0 2 * * * /opt/overseer/scripts/backup.sh
 ```
 
 ### 3. Monitor System Health
 
 ```bash
 # Every 5 minutes with alerts
-*/5 * * * * /opt/mybot/scripts/health-check.sh --alert
+*/5 * * * * /opt/overseer/scripts/health-check.sh --alert
 ```
 
 ### 4. Keep Logs Under Control
@@ -712,16 +712,16 @@ MIT License - See [LICENSE](../LICENSE) file for details
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/MyBot/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/MyBot/discussions)
+- **Issues**: [GitHub Issues](https://github.com/ErzenXz/Overseer/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/ErzenXz/Overseer/discussions)
 - **Documentation**: [Full Docs](../docs/)
 
 ---
 
 **Deployment made easy! 🚀**
 
-Start deploying MyBot in minutes with one-line installation:
+Start deploying Overseer in minutes with one-line installation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/MyBot/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/Overseer/main/scripts/install.sh | bash
 ```

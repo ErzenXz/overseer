@@ -289,16 +289,16 @@ export function validatePlan(plan: ExecutionPlan): {
 /**
  * Tool for creating execution plans
  */
-export const createPlan = tool({
+export const createPlan = tool<any, any>({
   description: `Create an execution plan for a complex task. This breaks down the task into sequential and parallel steps with proper dependencies.`,
-  parameters: z.object({
+  inputSchema: z.object({
     goal: z.string().describe("The main goal or task to accomplish"),
     context: z
       .string()
       .optional()
       .describe("Additional context about the task"),
   }),
-  execute: async ({ goal, context }) => {
+  execute: async ({ goal, context }: { goal: string; context?: string }) => {
     try {
       const plan = createExecutionPlan(goal, context);
       const validation = validatePlan(plan);

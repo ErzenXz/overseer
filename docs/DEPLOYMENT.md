@@ -1,6 +1,6 @@
 # 🚀 Deployment Guide
 
-Complete guide for deploying MyBot to production environments.
+Complete guide for deploying Overseer to production environments.
 
 ## Table of Contents
 
@@ -45,12 +45,12 @@ Complete guide for deploying MyBot to production environments.
 ### One-Line Production Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/mybot/main/scripts/install.sh | bash -s -- --production
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | bash -s -- --production
 ```
 
 This script will:
 1. ✅ Install Node.js 20+ if needed
-2. ✅ Clone MyBot repository
+2. ✅ Clone Overseer repository
 3. ✅ Install dependencies
 4. ✅ Configure environment variables
 5. ✅ Set up systemd services
@@ -67,7 +67,7 @@ This script will:
 
 ```bash
 # Using doctl CLI
-doctl compute droplet create mybot \
+doctl compute droplet create overseer \
   --image ubuntu-22-04-x64 \
   --size s-2vcpu-4gb \
   --region nyc3 \
@@ -90,14 +90,14 @@ ssh root@YOUR_DROPLET_IP
 apt update && apt upgrade -y
 
 # Create non-root user
-adduser mybot
-usermod -aG sudo mybot
+adduser overseer
+usermod -aG sudo overseer
 
-# Switch to mybot user
-su - mybot
+# Switch to overseer user
+su - overseer
 ```
 
-#### 3. Install MyBot
+#### 3. Install Overseer
 
 ```bash
 # Install Node.js 20
@@ -105,8 +105,8 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Clone repository
-git clone https://github.com/yourusername/mybot.git
-cd mybot
+git clone https://github.com/ErzenXz/overseer.git
+cd overseer
 
 # Install dependencies
 npm install
@@ -126,20 +126,20 @@ npm run build
 
 ```bash
 # Copy service files
-sudo cp systemd/mybot-web.service /etc/systemd/system/
-sudo cp systemd/mybot-telegram.service /etc/systemd/system/
-sudo cp systemd/mybot-discord.service /etc/systemd/system/
+sudo cp systemd/overseer-web.service /etc/systemd/system/
+sudo cp systemd/overseer-telegram.service /etc/systemd/system/
+sudo cp systemd/overseer-discord.service /etc/systemd/system/
 
 # Edit service files to match your paths
-sudo nano /etc/systemd/system/mybot-web.service
+sudo nano /etc/systemd/system/overseer-web.service
 
 # Enable and start services
 sudo systemctl daemon-reload
-sudo systemctl enable mybot-web mybot-telegram mybot-discord
-sudo systemctl start mybot-web mybot-telegram mybot-discord
+sudo systemctl enable overseer-web overseer-telegram overseer-discord
+sudo systemctl start overseer-web overseer-telegram overseer-discord
 
 # Check status
-sudo systemctl status mybot-web
+sudo systemctl status overseer-web
 ```
 
 #### 5. Configure Firewall
@@ -170,7 +170,7 @@ aws ec2 run-instances \
   --instance-type t3.medium \
   --key-name YOUR_KEY_PAIR \
   --security-group-ids YOUR_SECURITY_GROUP \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyBot}]'
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Overseer}]'
 ```
 
 #### 2. Configure Security Group
@@ -213,13 +213,13 @@ Via Hetzner Cloud Console:
 - **Type**: CX21 (2 vCPU, 4GB RAM) - €5.83/month
 - **SSH Key**: Add your public key
 
-#### 2. Install MyBot
+#### 2. Install Overseer
 
 ```bash
 # Connect
 ssh root@YOUR_SERVER_IP
 
-# Install Node.js and MyBot (same as DigitalOcean steps)
+# Install Node.js and Overseer (same as DigitalOcean steps)
 ```
 
 **Cost-effective option**: Hetzner offers great performance at lower cost than AWS/DO.
@@ -251,8 +251,8 @@ Same installation steps as DigitalOcean.
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/mybot.git
-cd mybot
+git clone https://github.com/ErzenXz/overseer.git
+cd overseer
 
 # 2. Configure environment
 cp .env.example .env
@@ -272,16 +272,16 @@ docker-compose down
 
 ```bash
 # Build image
-docker build -t mybot:latest .
+docker build -t overseer:latest .
 
 # Run container
 docker run -d \
-  --name mybot \
+  --name overseer \
   -p 3000:3000 \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/logs:/app/logs \
   --env-file .env \
-  mybot:latest
+  overseer:latest
 ```
 
 ### Docker Compose Configuration
@@ -332,13 +332,13 @@ services:
 
 ```bash
 # 1. Add Helm repository
-helm repo add mybot https://charts.mybot.io
+helm repo add overseer https://charts.overseer.io
 helm repo update
 
 # 2. Create values file
 cat > values.yaml <<EOF
 image:
-  repository: mybot/mybot
+  repository: overseer/overseer
   tag: latest
 
 env:
@@ -358,13 +358,13 @@ discord:
 ingress:
   enabled: true
   hosts:
-    - host: mybot.example.com
+    - host: overseer.example.com
       paths:
         - path: /
   tls:
-    - secretName: mybot-tls
+    - secretName: overseer-tls
       hosts:
-        - mybot.example.com
+        - overseer.example.com
 
 persistence:
   enabled: true
@@ -372,11 +372,11 @@ persistence:
 EOF
 
 # 3. Install chart
-helm install mybot mybot/mybot -f values.yaml
+helm install overseer overseer/overseer -f values.yaml
 
 # 4. Check status
 kubectl get pods
-kubectl logs -f deployment/mybot-web
+kubectl logs -f deployment/overseer-web
 ```
 
 ### Manual Kubernetes Deployment
@@ -386,20 +386,20 @@ kubectl logs -f deployment/mybot-web
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mybot-web
+  name: overseer-web
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: mybot-web
+      app: overseer-web
   template:
     metadata:
       labels:
-        app: mybot-web
+        app: overseer-web
     spec:
       containers:
-      - name: mybot
-        image: mybot/mybot:latest
+      - name: overseer
+        image: overseer/overseer:latest
         ports:
         - containerPort: 3000
         env:
@@ -411,16 +411,16 @@ spec:
       volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: mybot-pvc
+          claimName: overseer-pvc
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mybot-web
+  name: overseer-web
 spec:
   selector:
-    app: mybot-web
+    app: overseer-web
   ports:
   - port: 80
     targetPort: 3000
@@ -430,7 +430,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: mybot-pvc
+  name: overseer-pvc
 spec:
   accessModes:
     - ReadWriteOnce
@@ -450,73 +450,73 @@ kubectl apply -f deployment.yaml
 
 ### Service Files
 
-**Web Admin** (`/etc/systemd/system/mybot-web.service`):
+**Web Admin** (`/etc/systemd/system/overseer-web.service`):
 
 ```ini
 [Unit]
-Description=MyBot Web Admin
+Description=Overseer Web Admin
 After=network.target
 
 [Service]
 Type=simple
-User=mybot
-WorkingDirectory=/home/mybot/mybot
+User=overseer
+WorkingDirectory=/home/overseer/overseer
 ExecStart=/usr/bin/npm start
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/var/log/mybot/web.log
-StandardError=append:/var/log/mybot/web-error.log
+StandardOutput=append:/var/log/overseer/web.log
+StandardError=append:/var/log/overseer/web-error.log
 
 Environment=NODE_ENV=production
-EnvironmentFile=/home/mybot/mybot/.env
+EnvironmentFile=/home/overseer/overseer/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-**Telegram Bot** (`/etc/systemd/system/mybot-telegram.service`):
+**Telegram Bot** (`/etc/systemd/system/overseer-telegram.service`):
 
 ```ini
 [Unit]
-Description=MyBot Telegram Bot
-After=network.target mybot-web.service
+Description=Overseer Telegram Bot
+After=network.target overseer-web.service
 
 [Service]
 Type=simple
-User=mybot
-WorkingDirectory=/home/mybot/mybot
+User=overseer
+WorkingDirectory=/home/overseer/overseer
 ExecStart=/usr/bin/npm run bot
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/var/log/mybot/telegram.log
-StandardError=append:/var/log/mybot/telegram-error.log
+StandardOutput=append:/var/log/overseer/telegram.log
+StandardError=append:/var/log/overseer/telegram-error.log
 
 Environment=NODE_ENV=production
-EnvironmentFile=/home/mybot/mybot/.env
+EnvironmentFile=/home/overseer/overseer/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-**Discord Bot** (`/etc/systemd/system/mybot-discord.service`):
+**Discord Bot** (`/etc/systemd/system/overseer-discord.service`):
 
 ```ini
 [Unit]
-Description=MyBot Discord Bot
-After=network.target mybot-web.service
+Description=Overseer Discord Bot
+After=network.target overseer-web.service
 
 [Service]
 Type=simple
-User=mybot
-WorkingDirectory=/home/mybot/mybot
+User=overseer
+WorkingDirectory=/home/overseer/overseer
 ExecStart=/usr/bin/npm run discord
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/var/log/mybot/discord.log
-StandardError=append:/var/log/mybot/discord-error.log
+StandardOutput=append:/var/log/overseer/discord.log
+StandardError=append:/var/log/overseer/discord-error.log
 
 Environment=NODE_ENV=production
-EnvironmentFile=/home/mybot/mybot/.env
+EnvironmentFile=/home/overseer/overseer/.env
 
 [Install]
 WantedBy=multi-user.target
@@ -529,25 +529,25 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 
 # Enable services (start on boot)
-sudo systemctl enable mybot-web mybot-telegram mybot-discord
+sudo systemctl enable overseer-web overseer-telegram overseer-discord
 
 # Start services
-sudo systemctl start mybot-web mybot-telegram mybot-discord
+sudo systemctl start overseer-web overseer-telegram overseer-discord
 
 # Check status
-sudo systemctl status mybot-web
-sudo systemctl status mybot-telegram
-sudo systemctl status mybot-discord
+sudo systemctl status overseer-web
+sudo systemctl status overseer-telegram
+sudo systemctl status overseer-discord
 
 # View logs
-sudo journalctl -u mybot-web -f
-sudo journalctl -u mybot-telegram -f
+sudo journalctl -u overseer-web -f
+sudo journalctl -u overseer-telegram -f
 
 # Restart services
-sudo systemctl restart mybot-web
+sudo systemctl restart overseer-web
 
 # Stop services
-sudo systemctl stop mybot-web mybot-telegram mybot-discord
+sudo systemctl stop overseer-web overseer-telegram overseer-discord
 ```
 
 ---
@@ -564,14 +564,14 @@ sudo apt install nginx
 
 #### Configuration
 
-`/etc/nginx/sites-available/mybot`:
+`/etc/nginx/sites-available/overseer`:
 
 ```nginx
 # HTTP to HTTPS redirect
 server {
     listen 80;
     listen [::]:80;
-    server_name mybot.example.com;
+    server_name overseer.example.com;
     
     return 301 https://$server_name$request_uri;
 }
@@ -580,11 +580,11 @@ server {
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name mybot.example.com;
+    server_name overseer.example.com;
 
     # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/mybot.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/mybot.example.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/overseer.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/overseer.example.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -596,8 +596,8 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
 
     # Logging
-    access_log /var/log/nginx/mybot-access.log;
-    error_log /var/log/nginx/mybot-error.log;
+    access_log /var/log/nginx/overseer-access.log;
+    error_log /var/log/nginx/overseer-error.log;
 
     # Proxy to Next.js
     location / {
@@ -643,7 +643,7 @@ server {
 Enable site:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/mybot /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/overseer /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -652,16 +652,16 @@ sudo systemctl reload nginx
 
 ```apache
 <VirtualHost *:80>
-    ServerName mybot.example.com
-    Redirect permanent / https://mybot.example.com/
+    ServerName overseer.example.com
+    Redirect permanent / https://overseer.example.com/
 </VirtualHost>
 
 <VirtualHost *:443>
-    ServerName mybot.example.com
+    ServerName overseer.example.com
     
     SSLEngine on
-    SSLCertificateFile /etc/letsencrypt/live/mybot.example.com/fullchain.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/mybot.example.com/privkey.pem
+    SSLCertificateFile /etc/letsencrypt/live/overseer.example.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/overseer.example.com/privkey.pem
     
     ProxyPreserveHost On
     ProxyPass / http://localhost:3000/
@@ -678,7 +678,7 @@ sudo systemctl reload nginx
 ### Caddy (Easiest - Auto SSL)
 
 ```caddy
-mybot.example.com {
+overseer.example.com {
     reverse_proxy localhost:3000
     
     header {
@@ -700,7 +700,7 @@ mybot.example.com {
 sudo apt install certbot python3-certbot-nginx
 
 # Get certificate
-sudo certbot --nginx -d mybot.example.com
+sudo certbot --nginx -d overseer.example.com
 
 # Auto-renewal (already set up)
 sudo certbot renew --dry-run
@@ -732,15 +732,15 @@ openssl req -new -key private.key -out certificate.csr
 # Install Node.js
 winget install OpenJS.NodeJS.LTS
 
-# Install MyBot
-git clone https://github.com/yourusername/mybot.git
-cd mybot
+# Install Overseer
+git clone https://github.com/ErzenXz/overseer.git
+cd overseer
 npm install
 
 # Run as Windows Service using NSSM
-nssm install MyBotWeb "C:\Program Files\nodejs\node.exe" "C:\mybot\node_modules\.bin\next" "start"
-nssm set MyBotWeb AppDirectory "C:\mybot"
-nssm start MyBotWeb
+nssm install OverseerWeb "C:\Program Files\nodejs\node.exe" "C:\overseer\node_modules\.bin\next" "start"
+nssm set OverseerWeb AppDirectory "C:\overseer"
+nssm start OverseerWeb
 ```
 
 ### Linux (systemd)
@@ -751,21 +751,21 @@ See [Systemd Service](#systemd-service) section above.
 
 ```bash
 # Using launchd
-cat > ~/Library/LaunchAgents/com.mybot.web.plist <<EOF
+cat > ~/Library/LaunchAgents/com.overseer.web.plist <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.mybot.web</string>
+    <string>com.overseer.web</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/node</string>
-        <string>/path/to/mybot/node_modules/.bin/next</string>
+        <string>/path/to/overseer/node_modules/.bin/next</string>
         <string>start</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/path/to/mybot</string>
+    <string>/path/to/overseer</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -774,7 +774,7 @@ cat > ~/Library/LaunchAgents/com.mybot.web.plist <<EOF
 </plist>
 EOF
 
-launchctl load ~/Library/LaunchAgents/com.mybot.web.plist
+launchctl load ~/Library/LaunchAgents/com.overseer.web.plist
 ```
 
 ---
@@ -817,9 +817,9 @@ db.pragma('cache_size = -64000');
 npm install -g pm2
 
 # Start with PM2
-pm2 start npm --name "mybot-web" -- start
-pm2 start npm --name "mybot-telegram" -- run bot
-pm2 start npm --name "mybot-discord" -- run discord
+pm2 start npm --name "overseer-web" -- start
+pm2 start npm --name "overseer-telegram" -- run bot
+pm2 start npm --name "overseer-discord" -- run discord
 
 # Auto-start on boot
 pm2 startup
@@ -829,7 +829,7 @@ pm2 save
 pm2 monit
 
 # Logs
-pm2 logs mybot-web
+pm2 logs overseer-web
 ```
 
 ---
@@ -858,7 +858,7 @@ sudo ufw limit ssh
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
-AllowUsers mybot
+AllowUsers overseer
 
 sudo systemctl restart sshd
 ```
@@ -939,20 +939,20 @@ curl http://localhost:3000/api/health
 
 ```bash
 # Logrotate configuration
-sudo nano /etc/logrotate.d/mybot
+sudo nano /etc/logrotate.d/overseer
 ```
 
 ```
-/var/log/mybot/*.log {
+/var/log/overseer/*.log {
     daily
     rotate 14
     compress
     delaycompress
     notifempty
-    create 0640 mybot mybot
+    create 0640 overseer overseer
     sharedscripts
     postrotate
-        systemctl reload mybot-web > /dev/null
+        systemctl reload overseer-web > /dev/null
     endscript
 }
 ```
@@ -965,33 +965,33 @@ sudo nano /etc/logrotate.d/mybot
 
 ```bash
 # Check service status
-sudo systemctl status mybot-web
+sudo systemctl status overseer-web
 
 # Check logs
-sudo journalctl -u mybot-web -n 50
+sudo journalctl -u overseer-web -n 50
 
 # Check if port is in use
 sudo lsof -i :3000
 
 # Check permissions
-ls -la /home/mybot/mybot/data
-sudo chown -R mybot:mybot /home/mybot/mybot
+ls -la /home/overseer/overseer/data
+sudo chown -R overseer:overseer /home/overseer/overseer
 ```
 
 ### Database Locked
 
 ```bash
 # Check for other processes using database
-lsof data/mybot.db
+lsof data/overseer.db
 
 # Stop all services
-sudo systemctl stop mybot-web mybot-telegram mybot-discord
+sudo systemctl stop overseer-web overseer-telegram overseer-discord
 
 # Remove lock files
-rm -f data/mybot.db-shm data/mybot.db-wal
+rm -f data/overseer.db-shm data/overseer.db-wal
 
 # Restart services
-sudo systemctl start mybot-web mybot-telegram mybot-discord
+sudo systemctl start overseer-web overseer-telegram overseer-discord
 ```
 
 ### High Memory Usage
@@ -1001,7 +1001,7 @@ sudo systemctl start mybot-web mybot-telegram mybot-discord
 free -h
 
 # Restart services
-sudo systemctl restart mybot-web
+sudo systemctl restart overseer-web
 
 # Reduce Node.js memory
 NODE_OPTIONS="--max-old-space-size=2048" npm start
@@ -1010,7 +1010,7 @@ NODE_OPTIONS="--max-old-space-size=2048" npm start
 ### Nginx 502 Bad Gateway
 
 ```bash
-# Check if MyBot is running
+# Check if Overseer is running
 curl http://localhost:3000
 
 # Check Nginx error log
@@ -1027,7 +1027,7 @@ sudo systemctl restart nginx
 
 ```bash
 # Check if bot service is running
-sudo systemctl status mybot-telegram
+sudo systemctl status overseer-telegram
 
 # Check Telegram token
 echo $TELEGRAM_BOT_TOKEN
@@ -1047,44 +1047,44 @@ echo $TELEGRAM_ALLOWED_USERS
 
 ```bash
 #!/bin/bash
-# /home/mybot/backup.sh
+# /home/overseer/backup.sh
 
-BACKUP_DIR="/home/mybot/backups"
+BACKUP_DIR="/home/overseer/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # Create backup directory
 mkdir -p $BACKUP_DIR
 
 # Backup database
-cp /home/mybot/mybot/data/mybot.db $BACKUP_DIR/mybot_$DATE.db
+cp /home/overseer/overseer/data/overseer.db $BACKUP_DIR/overseer_$DATE.db
 
 # Backup environment
-cp /home/mybot/mybot/.env $BACKUP_DIR/.env_$DATE
+cp /home/overseer/overseer/.env $BACKUP_DIR/.env_$DATE
 
 # Delete backups older than 30 days
 find $BACKUP_DIR -type f -mtime +30 -delete
 
-echo "Backup completed: mybot_$DATE.db"
+echo "Backup completed: overseer_$DATE.db"
 ```
 
 Set up cron:
 
 ```bash
 crontab -e
-# Add: 0 2 * * * /home/mybot/backup.sh
+# Add: 0 2 * * * /home/overseer/backup.sh
 ```
 
 ### Restore from Backup
 
 ```bash
 # Stop services
-sudo systemctl stop mybot-web mybot-telegram mybot-discord
+sudo systemctl stop overseer-web overseer-telegram overseer-discord
 
 # Restore database
-cp /home/mybot/backups/mybot_20240201_020000.db /home/mybot/mybot/data/mybot.db
+cp /home/overseer/backups/overseer_20240201_020000.db /home/overseer/overseer/data/overseer.db
 
 # Start services
-sudo systemctl start mybot-web mybot-telegram mybot-discord
+sudo systemctl start overseer-web overseer-telegram overseer-discord
 ```
 
 ---
@@ -1113,4 +1113,4 @@ sudo systemctl start mybot-web mybot-telegram mybot-discord
 
 ---
 
-**Need help?** Join our [Discord community](https://discord.gg/mybot) or [open an issue](https://github.com/yourusername/mybot/issues).
+**Need help?** Join our [Discord community](https://discord.gg/overseer) or [open an issue](https://github.com/ErzenXz/overseer/issues).

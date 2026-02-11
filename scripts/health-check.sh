@@ -1,8 +1,8 @@
 #!/bin/bash
 ################################################################################
-# MyBot Health Check & Monitoring Script
+# Overseer Health Check & Monitoring Script
 # 
-# This script monitors the health of MyBot services and alerts on issues:
+# This script monitors the health of Overseer services and alerts on issues:
 # - Web server API health
 # - Telegram bot status
 # - Discord bot status
@@ -16,7 +16,7 @@
 #   ./health-check.sh [--verbose] [--alert]
 #
 # Can be run via cron for continuous monitoring:
-#   */5 * * * * /opt/mybot/scripts/health-check.sh --alert
+#   */5 * * * * /opt/overseer/scripts/health-check.sh --alert
 ################################################################################
 
 set -euo pipefail
@@ -51,7 +51,7 @@ fi
 
 PORT="${PORT:-3000}"
 BASE_URL="${BASE_URL:-http://localhost:${PORT}}"
-DATABASE_PATH="${DATABASE_PATH:-./data/mybot.db}"
+DATABASE_PATH="${DATABASE_PATH:-./data/overseer.db}"
 
 # Thresholds
 DISK_SPACE_WARN=80
@@ -327,9 +327,9 @@ check_systemd_services() {
     fi
     
     local services=(
-        "mybot.service"
-        "mybot-telegram.service"
-        "mybot-discord.service"
+        "overseer.service"
+        "overseer-telegram.service"
+        "overseer-discord.service"
     )
     
     for service in "${services[@]}"; do
@@ -354,8 +354,8 @@ send_alert() {
     
     # Email alert (if configured)
     if [ -n "${ALERT_EMAIL:-}" ] && command -v mail &> /dev/null; then
-        echo "MyBot health check failed on $(hostname) at $(date)" | \
-            mail -s "MyBot Health Check Alert" "$ALERT_EMAIL"
+        echo "Overseer health check failed on $(hostname) at $(date)" | \
+            mail -s "Overseer Health Check Alert" "$ALERT_EMAIL"
         log INFO "Alert sent to $ALERT_EMAIL"
     fi
     
@@ -363,7 +363,7 @@ send_alert() {
     if [ -n "${ALERT_WEBHOOK:-}" ]; then
         curl -X POST "$ALERT_WEBHOOK" \
             -H "Content-Type: application/json" \
-            -d "{\"text\":\"MyBot health check failed on $(hostname)\",\"timestamp\":\"$(date -Iseconds)\"}" \
+            -d "{\"text\":\"Overseer health check failed on $(hostname)\",\"timestamp\":\"$(date -Iseconds)\"}" \
             &>/dev/null || true
         log INFO "Alert sent to webhook"
     fi
@@ -372,7 +372,7 @@ send_alert() {
 generate_report() {
     echo ""
     echo "╔════════════════════════════════════════╗"
-    echo "║   MyBot Health Check Report            ║"
+    echo "║   Overseer Health Check Report            ║"
     echo "╚════════════════════════════════════════╝"
     echo ""
     echo "Time: $(date)"
@@ -397,7 +397,7 @@ main() {
     if [ "$VERBOSE" = true ]; then
         echo ""
         echo "╔════════════════════════════════════════╗"
-        echo "║   MyBot Health Check                   ║"
+        echo "║   Overseer Health Check                   ║"
         echo "╚════════════════════════════════════════╝"
         echo ""
     fi

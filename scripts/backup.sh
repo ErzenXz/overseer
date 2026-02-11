@@ -1,6 +1,6 @@
 #!/bin/bash
 ################################################################################
-# MyBot Backup Script
+# Overseer Backup Script
 # 
 # This script creates automated backups of:
 # - SQLite database (with WAL checkpoint)
@@ -51,7 +51,7 @@ if [ -f "${PROJECT_ROOT}/.env" ]; then
     set +a
 fi
 
-DATABASE_PATH="${DATABASE_PATH:-./data/mybot.db}"
+DATABASE_PATH="${DATABASE_PATH:-./data/overseer.db}"
 DATA_DIR="$(dirname "$DATABASE_PATH")"
 
 # ======================
@@ -98,15 +98,15 @@ backup_database() {
     
     # Create backup using SQLite backup API
     log_info "Creating database backup..."
-    sqlite3 "${DB_PATH}" ".backup '${BACKUP_DIR}/mybot.db'"
+    sqlite3 "${DB_PATH}" ".backup '${BACKUP_DIR}/overseer.db'"
     
     # Also backup WAL and SHM files if they exist
     if [ -f "${DB_PATH}-wal" ]; then
-        cp "${DB_PATH}-wal" "${BACKUP_DIR}/mybot.db-wal"
+        cp "${DB_PATH}-wal" "${BACKUP_DIR}/overseer.db-wal"
     fi
     
     if [ -f "${DB_PATH}-shm" ]; then
-        cp "${DB_PATH}-shm" "${BACKUP_DIR}/mybot.db-shm"
+        cp "${DB_PATH}-shm" "${BACKUP_DIR}/overseer.db-shm"
     fi
     
     log_success "Database backed up successfully"
@@ -182,12 +182,12 @@ create_manifest() {
     log_info "Creating backup manifest..."
     
     cat > "${BACKUP_DIR}/MANIFEST.txt" <<EOF
-MyBot Backup Manifest
+Overseer Backup Manifest
 =====================
 Created: $(date)
 Hostname: $(hostname)
 User: $(whoami)
-MyBot Version: $(cat "${PROJECT_ROOT}/package.json" | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[", ]//g')
+Overseer Version: $(cat "${PROJECT_ROOT}/package.json" | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[", ]//g')
 
 Backup Contents:
 EOF
@@ -207,8 +207,8 @@ verify_backup() {
     log_info "Verifying backup integrity..."
     
     # Verify database can be opened
-    if [ -f "${BACKUP_DIR}/mybot.db" ]; then
-        sqlite3 "${BACKUP_DIR}/mybot.db" "PRAGMA integrity_check;" > /dev/null 2>&1
+    if [ -f "${BACKUP_DIR}/overseer.db" ]; then
+        sqlite3 "${BACKUP_DIR}/overseer.db" "PRAGMA integrity_check;" > /dev/null 2>&1
         
         if [ $? -eq 0 ]; then
             log_success "Database integrity verified"
@@ -280,7 +280,7 @@ remote_backup() {
     
     log_info "Uploading backup to remote server..."
     
-    REMOTE_PATH="${REMOTE_BACKUP_PATH:-/backups/mybot}"
+    REMOTE_PATH="${REMOTE_BACKUP_PATH:-/backups/overseer}"
     BACKUP_FILE="${TIMESTAMP}.tar.gz"
     
     if [ -f "${BACKUP_ROOT}/${BACKUP_FILE}" ]; then
@@ -303,7 +303,7 @@ remote_backup() {
 main() {
     echo ""
     echo "╔════════════════════════════════════════╗"
-    echo "║       MyBot Backup Script              ║"
+    echo "║       Overseer Backup Script              ║"
     echo "╚════════════════════════════════════════╝"
     echo ""
     
@@ -381,7 +381,7 @@ restore_backup() {
     fi
     
     log_info "Extracting backup..."
-    RESTORE_DIR="/tmp/mybot_restore_$$"
+    RESTORE_DIR="/tmp/overseer_restore_$$"
     mkdir -p "$RESTORE_DIR"
     tar -xzf "$BACKUP_FILE" -C "$RESTORE_DIR"
     
@@ -393,12 +393,12 @@ restore_backup() {
         exit 1
     fi
     
-    log_info "Stopping MyBot services..."
-    systemctl stop mybot.service mybot-telegram.service mybot-discord.service 2>/dev/null || true
+    log_info "Stopping Overseer services..."
+    systemctl stop overseer.service overseer-telegram.service overseer-discord.service 2>/dev/null || true
     
     log_info "Restoring database..."
-    if [ -f "$EXTRACTED_DIR/mybot.db" ]; then
-        cp "$EXTRACTED_DIR/mybot.db" "${PROJECT_ROOT}/${DATABASE_PATH}"
+    if [ -f "$EXTRACTED_DIR/overseer.db" ]; then
+        cp "$EXTRACTED_DIR/overseer.db" "${PROJECT_ROOT}/${DATABASE_PATH}"
     fi
     
     log_info "Restoring environment..."
@@ -415,7 +415,7 @@ restore_backup() {
     rm -rf "$RESTORE_DIR"
     
     log_success "Restore completed successfully!"
-    log_info "Please restart MyBot services manually"
+    log_info "Please restart Overseer services manually"
 }
 
 # ======================

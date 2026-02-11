@@ -1,5 +1,5 @@
 /**
- * Models.dev Integration for MyBot
+ * Models.dev Integration for Overseer
  * Fetches dynamic model information from models.dev API
  */
 

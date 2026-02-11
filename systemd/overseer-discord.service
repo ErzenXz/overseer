@@ -1,0 +1,16 @@
+[Unit]
+Description=Overseer AI Agent - Discord Bot
+After=network.target overseer.service
+PartOf=overseer.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/overseer
+ExecStart=/usr/bin/npx tsx /opt/overseer/src/bot/discord.ts
+Restart=on-failure
+RestartSec=15
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/overseer/.env
+
+[Install]
+WantedBy=multi-user.target

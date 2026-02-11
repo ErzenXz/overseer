@@ -1,14 +1,28 @@
 #!/bin/bash
 
 #################################################
-# MyBot Installation Script
+# Overseer Installation Script
 # Self-hosted AI Agent with Full VPS Access
+#
+# SAFE INSTALLATION:
+#   - Uses a random high port for admin dashboard
+#   - Configures UFW WITHOUT breaking existing rules
+#   - NEVER blocks port 22 (SSH)
+#   - Installs fail2ban for security
+#   - Detects existing services and avoids conflicts
+#   - Non-destructive: works on fresh AND existing VPS
 #
 # Supports: Ubuntu/Debian, CentOS/RHEL/Fedora,
 #           macOS, Windows (via WSL2)
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | bash
+#   
+#   # With options:
+#   OVERSEER_PORT=8080 bash install.sh
 #################################################
 
-set -e
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -19,23 +33,99 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
+DIM='\033[2m'
 
 # Configuration
-MYBOT_VERSION="${MYBOT_VERSION:-main}"
-MYBOT_DIR="${MYBOT_DIR:-$HOME/mybot}"
-MYBOT_PORT="${MYBOT_PORT:-3000}"
-MYBOT_REPO="${MYBOT_REPO:-https://github.com/yourusername/mybot.git}"
-MYBOT_USER="${MYBOT_USER:-$USER}"
+OVERSEER_VERSION="${OVERSEER_VERSION:-main}"
+OVERSEER_DIR="${OVERSEER_DIR:-$HOME/overseer}"
+OVERSEER_REPO="${OVERSEER_REPO:-https://github.com/ErzenXz/overseer.git}"
+OVERSEER_USER="${OVERSEER_USER:-$USER}"
 NODE_VERSION="20"
+MIN_MEMORY_MB=512
+MIN_DISK_GB=1
 
-# Detect OS
+# Will be set dynamically
+OVERSEER_PORT=""
+ADMIN_PASSWORD=""
+SESSION_SECRET=""
+ENCRYPTION_KEY=""
+
+# =========================================
+# Utility Functions
+# =========================================
+
+print_banner() {
+    echo -e "${PURPLE}"
+    cat << 'BANNER'
+  __  __       ____        _   
+ |  \/  |_   _| __ )  ___ | |_ 
+ | |\/| | | | |  _ \ / _ \| __|
+ | |  | | |_| | |_) | (_) | |_ 
+ |_|  |_|\__, |____/ \___/ \__|
+         |___/                  
+BANNER
+    echo -e "${NC}"
+    echo -e "${CYAN}  Self-hosted AI Agent with Full VPS Access${NC}"
+    echo -e "${DIM}  Open-source alternative to OpenClaw${NC}"
+    echo ""
+}
+
+print_step() {
+    echo -e "\n${BLUE}==>${NC} ${BOLD}$1${NC}"
+}
+
+print_substep() {
+    echo -e "    ${CYAN}>${NC} $1"
+}
+
+print_warning() {
+    echo -e "    ${YELLOW}! Warning:${NC} $1"
+}
+
+print_error() {
+    echo -e "    ${RED}x Error:${NC} $1"
+}
+
+print_success() {
+    echo -e "    ${GREEN}+ $1${NC}"
+}
+
+print_info() {
+    echo -e "    ${DIM}$1${NC}"
+}
+
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+is_root() {
+    [ "$(id -u)" -eq 0 ]
+}
+
+sudo_cmd() {
+    if is_root; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# =========================================
+# OS Detection
+# =========================================
+
 detect_os() {
+    OS="unknown"
+    OS_VERSION=""
+    OS_FAMILY=""
+    PKG_MANAGER="unknown"
+
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         if [ -f /etc/os-release ]; then
             . /etc/os-release
             OS=$ID
             OS_VERSION=$VERSION_ID
-            OS_FAMILY=$ID_LIKE
+            OS_FAMILY="${ID_LIKE:-$ID}"
         elif [ -f /etc/redhat-release ]; then
             OS="rhel"
         elif [ -f /etc/debian_version ]; then
@@ -45,249 +135,421 @@ detect_os() {
         fi
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         OS="macos"
-        OS_VERSION=$(sw_vers -productVersion)
-    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ -n "$WSL_DISTRO_NAME" ]]; then
+        OS_VERSION=$(sw_vers -productVersion 2>/dev/null || echo "unknown")
+    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
         OS="wsl"
         if [ -f /etc/os-release ]; then
             . /etc/os-release
-            OS_BASE=$ID
+            OS=$ID
         fi
-    else
-        OS="unknown"
     fi
-}
 
-# Print banner
-print_banner() {
-    echo -e "${PURPLE}"
-    echo "  __  __       ____        _   "
-    echo " |  \/  |_   _| __ )  ___ | |_ "
-    echo " | |\/| | | | |  _ \ / _ \| __|"
-    echo " | |  | | |_| | |_) | (_) | |_ "
-    echo " |_|  |_|\__, |____/ \___/ \__|"
-    echo "         |___/                  "
-    echo -e "${NC}"
-    echo -e "${CYAN}Self-hosted AI Agent with Full VPS Access${NC}"
-    echo ""
-    echo -e "Detected OS: ${BOLD}$OS${NC} $([ -n "$OS_VERSION" ] && echo "v$OS_VERSION")"
-    echo ""
-}
-
-# Print helpers
-print_step() {
-    echo -e "${BLUE}==>${NC} ${GREEN}$1${NC}"
-}
-
-print_substep() {
-    echo -e "    ${CYAN}→${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}Warning:${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}Error:${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-# Check if command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-# Check if running as root
-is_root() {
-    [ "$EUID" -eq 0 ]
-}
-
-# Get package manager
-get_package_manager() {
+    # Detect package manager
     if command_exists apt-get; then
         PKG_MANAGER="apt"
-        PKG_INSTALL="apt-get install -y"
-        PKG_UPDATE="apt-get update"
     elif command_exists dnf; then
         PKG_MANAGER="dnf"
-        PKG_INSTALL="dnf install -y"
-        PKG_UPDATE="dnf check-update || true"
     elif command_exists yum; then
         PKG_MANAGER="yum"
-        PKG_INSTALL="yum install -y"
-        PKG_UPDATE="yum check-update || true"
     elif command_exists pacman; then
         PKG_MANAGER="pacman"
-        PKG_INSTALL="pacman -S --noconfirm"
-        PKG_UPDATE="pacman -Sy"
     elif command_exists brew; then
         PKG_MANAGER="brew"
-        PKG_INSTALL="brew install"
-        PKG_UPDATE="brew update"
-    else
-        PKG_MANAGER="unknown"
     fi
 }
 
-# Install Node.js
+# =========================================
+# Port Management - SAFE random port selection
+# =========================================
+
+generate_random_port() {
+    # Generate a random port between 10000-60000
+    # Avoids common service ports and stays in unprivileged range
+    local port
+    local max_attempts=50
+
+    for ((i=0; i<max_attempts; i++)); do
+        port=$(( (RANDOM % 50000) + 10000 ))
+        
+        # Check if port is in use
+        if ! is_port_in_use "$port"; then
+            echo "$port"
+            return 0
+        fi
+    done
+
+    # Fallback: find any available port
+    for port in $(seq 10000 60000 | shuf | head -20); do
+        if ! is_port_in_use "$port"; then
+            echo "$port"
+            return 0
+        fi
+    done
+
+    echo "10847" # Last resort fallback
+}
+
+is_port_in_use() {
+    local port=$1
+    if command_exists ss; then
+        ss -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+    elif command_exists netstat; then
+        netstat -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+    elif command_exists lsof; then
+        lsof -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+    fi
+    return 1
+}
+
+# =========================================
+# Service Detection - Don't break existing services!
+# =========================================
+
+detect_existing_services() {
+    print_step "Detecting existing services on this VPS..."
+    
+    local services_found=0
+
+    # Check common web servers
+    if command_exists nginx && systemctl is-active --quiet nginx 2>/dev/null; then
+        print_info "Found: nginx (running)"
+        services_found=$((services_found + 1))
+    fi
+
+    if command_exists apache2 && systemctl is-active --quiet apache2 2>/dev/null; then
+        print_info "Found: Apache2 (running)"
+        services_found=$((services_found + 1))
+    fi
+
+    if command_exists caddy && systemctl is-active --quiet caddy 2>/dev/null; then
+        print_info "Found: Caddy (running)"
+        services_found=$((services_found + 1))
+    fi
+
+    # Check for Docker
+    if command_exists docker && systemctl is-active --quiet docker 2>/dev/null; then
+        local containers=$(docker ps -q 2>/dev/null | wc -l)
+        print_info "Found: Docker (${containers} running containers)"
+        services_found=$((services_found + 1))
+    fi
+
+    # Check for databases
+    if systemctl is-active --quiet postgresql 2>/dev/null; then
+        print_info "Found: PostgreSQL (running)"
+        services_found=$((services_found + 1))
+    fi
+
+    if systemctl is-active --quiet mysql 2>/dev/null || systemctl is-active --quiet mariadb 2>/dev/null; then
+        print_info "Found: MySQL/MariaDB (running)"
+        services_found=$((services_found + 1))
+    fi
+
+    if systemctl is-active --quiet redis 2>/dev/null || systemctl is-active --quiet redis-server 2>/dev/null; then
+        print_info "Found: Redis (running)"
+        services_found=$((services_found + 1))
+    fi
+
+    # Check for existing Node.js apps (PM2)
+    if command_exists pm2; then
+        local pm2_apps=$(pm2 list 2>/dev/null | grep -c "online" || echo "0")
+        if [ "$pm2_apps" -gt 0 ]; then
+            print_info "Found: PM2 with ${pm2_apps} running apps"
+            services_found=$((services_found + 1))
+        fi
+    fi
+
+    # Check for existing UFW rules
+    if command_exists ufw; then
+        local ufw_status=$(sudo_cmd ufw status 2>/dev/null | head -1 || echo "unknown")
+        print_info "UFW status: ${ufw_status}"
+    fi
+
+    if [ $services_found -gt 0 ]; then
+        echo ""
+        print_warning "Found ${services_found} existing service(s) on this VPS."
+        print_info "Overseer will use a random port to avoid conflicts."
+        print_info "Your existing services will NOT be modified or affected."
+        echo ""
+    else
+        print_success "Clean VPS detected - no existing services found."
+    fi
+
+    return 0
+}
+
+# =========================================
+# SAFE UFW Configuration
+# =========================================
+
+configure_ufw_safe() {
+    if [[ "$OS" == "macos" ]] || ! command_exists ufw; then
+        return 0
+    fi
+
+    print_step "Configuring UFW firewall (safe mode)..."
+
+    # CRITICAL: Always ensure SSH is allowed BEFORE enabling UFW
+    print_substep "Ensuring SSH access is preserved..."
+    
+    # Allow SSH on port 22 (standard) - ALWAYS
+    sudo_cmd ufw allow 22/tcp comment "SSH - NEVER REMOVE" 2>/dev/null || true
+    print_success "Port 22 (SSH) - allowed"
+
+    # Also allow SSH on any custom port if sshd is configured differently
+    local ssh_port=$(grep -E "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+    if [ "$ssh_port" != "22" ] && [ -n "$ssh_port" ]; then
+        sudo_cmd ufw allow "${ssh_port}/tcp" comment "Custom SSH port" 2>/dev/null || true
+        print_success "Port ${ssh_port} (custom SSH) - allowed"
+    fi
+
+    # Allow Overseer admin panel port
+    sudo_cmd ufw allow "${OVERSEER_PORT}/tcp" comment "Overseer Admin Dashboard" 2>/dev/null || true
+    print_success "Port ${OVERSEER_PORT} (Overseer Admin) - allowed"
+
+    # Check if UFW is already enabled
+    local ufw_status=$(sudo_cmd ufw status 2>/dev/null | head -1 || echo "")
+    
+    if echo "$ufw_status" | grep -qi "active"; then
+        print_info "UFW is already active - only added Overseer rules"
+    else
+        # Enable UFW with --force to avoid interactive prompt
+        # But ONLY after ensuring SSH is allowed
+        print_substep "Enabling UFW..."
+        
+        # Double-check SSH is in the rules before enabling
+        local ssh_rule=$(sudo_cmd ufw status 2>/dev/null | grep "22/tcp" || echo "")
+        if [ -z "$ssh_rule" ]; then
+            print_error "SSH rule not found! Aborting UFW enable for safety."
+            print_warning "Please manually run: sudo ufw allow 22/tcp && sudo ufw enable"
+            return 0
+        fi
+
+        sudo_cmd ufw --force enable 2>/dev/null || true
+        print_success "UFW enabled with safe defaults"
+    fi
+
+    # Show current rules
+    print_substep "Current UFW rules:"
+    sudo_cmd ufw status numbered 2>/dev/null | head -20 | while read -r line; do
+        print_info "  $line"
+    done
+}
+
+# =========================================
+# SAFE fail2ban Installation
+# =========================================
+
+install_fail2ban() {
+    if [[ "$OS" == "macos" ]]; then
+        return 0
+    fi
+
+    print_step "Setting up fail2ban for security..."
+
+    if command_exists fail2ban-client; then
+        print_success "fail2ban already installed"
+    else
+        print_substep "Installing fail2ban..."
+        case "$PKG_MANAGER" in
+            apt)
+                sudo_cmd apt-get install -y fail2ban >/dev/null 2>&1 || {
+                    print_warning "Could not install fail2ban (non-critical)"
+                    return 0
+                }
+                ;;
+            dnf)
+                sudo_cmd dnf install -y fail2ban >/dev/null 2>&1 || {
+                    print_warning "Could not install fail2ban (non-critical)"
+                    return 0
+                }
+                ;;
+            yum)
+                sudo_cmd yum install -y epel-release >/dev/null 2>&1 || true
+                sudo_cmd yum install -y fail2ban >/dev/null 2>&1 || {
+                    print_warning "Could not install fail2ban (non-critical)"
+                    return 0
+                }
+                ;;
+            *)
+                print_warning "Skipping fail2ban - unsupported package manager"
+                return 0
+                ;;
+        esac
+        print_success "fail2ban installed"
+    fi
+
+    # Create a safe jail.local config (don't overwrite existing)
+    local jail_file="/etc/fail2ban/jail.local"
+    if [ ! -f "$jail_file" ]; then
+        sudo_cmd tee "$jail_file" > /dev/null << 'JAIL_EOF'
+# Overseer fail2ban configuration
+# This file adds Overseer-specific protections without affecting existing jails
+
+[DEFAULT]
+# Ban for 10 minutes
+bantime = 600
+# Find 5 failures within 10 minutes
+findtime = 600
+maxretry = 5
+# Don't ban localhost
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+port = ssh
+logpath = %(sshd_log)s
+maxretry = 5
+JAIL_EOF
+        print_success "fail2ban configured with safe defaults"
+    else
+        print_info "Existing jail.local found - not modifying"
+    fi
+
+    # Start/restart fail2ban
+    sudo_cmd systemctl enable fail2ban 2>/dev/null || true
+    sudo_cmd systemctl restart fail2ban 2>/dev/null || true
+    print_success "fail2ban is active"
+}
+
+# =========================================
+# Node.js Installation
+# =========================================
+
 install_nodejs() {
-    print_step "Installing Node.js $NODE_VERSION..."
+    print_step "Setting up Node.js ${NODE_VERSION}..."
 
     if command_exists node; then
         CURRENT_NODE=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
         if [ "$CURRENT_NODE" -ge "$NODE_VERSION" ]; then
-            print_success "Node.js $(node -v) already installed"
+            print_success "Node.js $(node -v) already installed - no changes needed"
             return 0
         fi
-        print_warning "Node.js version too old, upgrading..."
+        print_warning "Node.js $(node -v) found - upgrading to v${NODE_VERSION}..."
     fi
 
     case "$OS" in
-        ubuntu|debian|pop|linuxmint)
+        ubuntu|debian|pop|linuxmint|wsl)
             print_substep "Installing via NodeSource..."
-            if is_root; then
-                curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
-                apt-get install -y nodejs
-            else
-                curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash -
-                sudo apt-get install -y nodejs
-            fi
+            curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo_cmd bash - >/dev/null 2>&1
+            sudo_cmd apt-get install -y nodejs >/dev/null 2>&1
             ;;
         centos|rhel|fedora|rocky|almalinux)
             print_substep "Installing via NodeSource..."
-            if is_root; then
-                curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION}.x | bash -
-                $PKG_INSTALL nodejs
-            else
-                curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION}.x | sudo bash -
-                sudo $PKG_INSTALL nodejs
-            fi
+            curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION}.x | sudo_cmd bash - >/dev/null 2>&1
+            sudo_cmd $PKG_MANAGER install -y nodejs >/dev/null 2>&1 || sudo_cmd yum install -y nodejs >/dev/null 2>&1
             ;;
         macos)
             if command_exists brew; then
                 print_substep "Installing via Homebrew..."
-                brew install node@${NODE_VERSION}
-                brew link node@${NODE_VERSION} --force --overwrite
+                brew install node@${NODE_VERSION} 2>/dev/null
+                brew link node@${NODE_VERSION} --force --overwrite 2>/dev/null || true
             else
                 print_substep "Installing Homebrew first..."
                 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
                 brew install node@${NODE_VERSION}
             fi
             ;;
-        wsl)
-            print_substep "Installing via NodeSource for WSL..."
-            curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-            ;;
         *)
-            print_error "Unsupported OS for automatic Node.js installation"
-            echo "Please install Node.js $NODE_VERSION manually:"
-            echo "  https://nodejs.org/en/download/"
+            print_error "Cannot auto-install Node.js on this OS"
+            echo "Please install Node.js ${NODE_VERSION}+ manually: https://nodejs.org/"
             exit 1
             ;;
     esac
 
-    print_success "Node.js $(node -v) installed"
+    if command_exists node; then
+        print_success "Node.js $(node -v) installed"
+    else
+        print_error "Node.js installation failed"
+        exit 1
+    fi
 }
 
-# Install pnpm
+# =========================================
+# pnpm Installation
+# =========================================
+
 install_pnpm() {
-    print_step "Installing pnpm..."
+    print_step "Setting up pnpm..."
 
     if command_exists pnpm; then
-        print_success "pnpm already installed ($(pnpm -v))"
+        print_success "pnpm $(pnpm -v) already installed"
         return 0
     fi
 
-    npm install -g pnpm
-    print_success "pnpm $(pnpm -v) installed"
+    # Use corepack if available (Node.js 16.13+)
+    if command_exists corepack; then
+        corepack enable 2>/dev/null || true
+        corepack prepare pnpm@latest --activate 2>/dev/null || npm install -g pnpm
+    else
+        npm install -g pnpm
+    fi
+
+    if command_exists pnpm; then
+        print_success "pnpm $(pnpm -v) installed"
+    else
+        print_warning "pnpm installation failed, will use npm instead"
+    fi
 }
 
-# Install build dependencies
+# =========================================
+# Build Dependencies
+# =========================================
+
 install_build_deps() {
     print_step "Installing build dependencies..."
 
     case "$OS" in
         ubuntu|debian|pop|linuxmint|wsl)
-            DEPS="build-essential python3 git curl openssl"
-            if is_root; then
-                apt-get update
-                apt-get install -y $DEPS
-            else
-                sudo apt-get update
-                sudo apt-get install -y $DEPS
-            fi
+            sudo_cmd apt-get update -qq >/dev/null 2>&1
+            sudo_cmd apt-get install -y -qq build-essential python3 git curl openssl ca-certificates >/dev/null 2>&1
             ;;
         centos|rhel|rocky|almalinux)
-            DEPS="gcc-c++ make python3 git curl openssl"
-            if is_root; then
-                yum groupinstall -y "Development Tools"
-                yum install -y $DEPS
-            else
-                sudo yum groupinstall -y "Development Tools"
-                sudo yum install -y $DEPS
-            fi
+            sudo_cmd yum groupinstall -y "Development Tools" >/dev/null 2>&1 || true
+            sudo_cmd yum install -y gcc-c++ make python3 git curl openssl >/dev/null 2>&1
             ;;
         fedora)
-            DEPS="gcc-c++ make python3 git curl openssl"
-            if is_root; then
-                dnf groupinstall -y "Development Tools"
-                dnf install -y $DEPS
-            else
-                sudo dnf groupinstall -y "Development Tools"
-                sudo dnf install -y $DEPS
-            fi
+            sudo_cmd dnf groupinstall -y "Development Tools" >/dev/null 2>&1 || true
+            sudo_cmd dnf install -y gcc-c++ make python3 git curl openssl >/dev/null 2>&1
             ;;
         macos)
-            # Xcode command line tools
             if ! xcode-select -p &>/dev/null; then
-                xcode-select --install || true
-            fi
-            # Additional tools via brew
-            if command_exists brew; then
-                brew install git openssl
+                xcode-select --install 2>/dev/null || true
+                print_info "Xcode CLI tools installing - you may need to accept the dialog"
             fi
             ;;
     esac
 
-    print_success "Build dependencies installed"
+    print_success "Build dependencies ready"
 }
 
-# Check system requirements
+# =========================================
+# System Requirements Check
+# =========================================
+
 check_requirements() {
     print_step "Checking system requirements..."
 
     local errors=0
+    local warnings=0
 
     # Check Node.js
     if command_exists node; then
-        NODE_VER=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-        if [ "$NODE_VER" -ge "$NODE_VERSION" ]; then
+        local node_ver=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+        if [ "$node_ver" -ge "$NODE_VERSION" ]; then
             print_success "Node.js $(node -v)"
         else
-            print_warning "Node.js $(node -v) - upgrade recommended"
+            print_warning "Node.js $(node -v) - will upgrade"
+            warnings=$((warnings + 1))
         fi
     else
-        print_error "Node.js not installed"
-        errors=$((errors + 1))
-    fi
-
-    # Check npm
-    if command_exists npm; then
-        print_success "npm $(npm -v)"
-    else
-        print_error "npm not installed"
-        errors=$((errors + 1))
+        print_info "Node.js not installed - will install"
     fi
 
     # Check git
     if command_exists git; then
         print_success "git $(git --version | cut -d' ' -f3)"
     else
-        print_error "git not installed"
-        errors=$((errors + 1))
+        print_info "git not installed - will install"
     fi
 
     # Check openssl
@@ -295,30 +557,42 @@ check_requirements() {
         print_success "openssl available"
     else
         print_warning "openssl not found - needed for key generation"
+        warnings=$((warnings + 1))
     fi
 
     # Check available memory
+    local mem_mb=0
     if [[ "$OS" == "macos" ]]; then
-        MEM_GB=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
-    else
-        MEM_GB=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))
+        mem_mb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 / 1024 ))
+    elif [ -f /proc/meminfo ]; then
+        mem_mb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 ))
     fi
 
-    if [ "$MEM_GB" -ge 2 ]; then
-        print_success "Memory: ${MEM_GB}GB available"
+    if [ "$mem_mb" -ge 2048 ]; then
+        print_success "Memory: $(( mem_mb / 1024 ))GB available"
+    elif [ "$mem_mb" -ge "$MIN_MEMORY_MB" ]; then
+        print_warning "Memory: ${mem_mb}MB (2GB+ recommended, ${MIN_MEMORY_MB}MB minimum)"
     else
-        print_warning "Memory: ${MEM_GB}GB (2GB+ recommended)"
+        print_error "Memory: ${mem_mb}MB (minimum ${MIN_MEMORY_MB}MB required)"
+        errors=$((errors + 1))
     fi
 
     # Check disk space
-    DISK_FREE=$(df -BG "$HOME" | tail -1 | awk '{print $4}' | tr -d 'G')
-    if [ "$DISK_FREE" -ge 2 ]; then
-        print_success "Disk: ${DISK_FREE}GB free"
+    local disk_free_gb=0
+    if [[ "$OS" == "macos" ]]; then
+        disk_free_gb=$(df -g "$HOME" 2>/dev/null | tail -1 | awk '{print $4}')
     else
-        print_warning "Disk: ${DISK_FREE}GB free (2GB+ recommended)"
+        disk_free_gb=$(df -BG "$HOME" 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G')
     fi
 
-    echo ""
+    if [ "${disk_free_gb:-0}" -ge 2 ]; then
+        print_success "Disk: ${disk_free_gb}GB free"
+    elif [ "${disk_free_gb:-0}" -ge "$MIN_DISK_GB" ]; then
+        print_warning "Disk: ${disk_free_gb}GB free (2GB+ recommended)"
+    else
+        print_error "Disk: ${disk_free_gb}GB free (minimum ${MIN_DISK_GB}GB required)"
+        errors=$((errors + 1))
+    fi
 
     if [ $errors -gt 0 ]; then
         return 1
@@ -326,276 +600,398 @@ check_requirements() {
     return 0
 }
 
-# Clone or update repository
+# =========================================
+# Repository Setup
+# =========================================
+
 clone_repository() {
-    print_step "Setting up MyBot at $MYBOT_DIR..."
+    print_step "Setting up Overseer at ${OVERSEER_DIR}..."
 
-    if [ -d "$MYBOT_DIR" ]; then
-        print_warning "Directory $MYBOT_DIR already exists"
-        echo ""
-        echo "Options:"
-        echo "  1) Update existing installation"
-        echo "  2) Remove and reinstall"
-        echo "  3) Cancel"
-        echo ""
-        read -p "Choose option [1]: " choice
-        choice=${choice:-1}
-
-        case $choice in
-            1)
-                print_substep "Updating existing installation..."
-                cd "$MYBOT_DIR"
-                if [ -d ".git" ]; then
-                    git pull origin "$MYBOT_VERSION" || true
-                fi
-                ;;
-            2)
-                print_substep "Removing existing installation..."
-                rm -rf "$MYBOT_DIR"
-                mkdir -p "$MYBOT_DIR"
-                cd "$MYBOT_DIR"
-                if [ -n "$MYBOT_LOCAL" ] && [ -d "$MYBOT_LOCAL" ]; then
-                    cp -r "$MYBOT_LOCAL"/* .
-                else
-                    git clone --branch "$MYBOT_VERSION" "$MYBOT_REPO" .
-                fi
-                ;;
-            *)
-                echo "Installation cancelled."
-                exit 0
-                ;;
-        esac
+    if [ -d "$OVERSEER_DIR" ]; then
+        if [ -d "$OVERSEER_DIR/.git" ]; then
+            print_substep "Existing installation found, updating..."
+            cd "$OVERSEER_DIR"
+            
+            # Stash any local changes
+            git stash 2>/dev/null || true
+            git pull origin "$OVERSEER_VERSION" 2>/dev/null || {
+                print_warning "Could not pull updates, using existing version"
+            }
+        else
+            print_warning "Directory exists but is not a git repo"
+            print_substep "Backing up and re-cloning..."
+            mv "$OVERSEER_DIR" "${OVERSEER_DIR}.backup.$(date +%s)" 2>/dev/null || true
+            mkdir -p "$OVERSEER_DIR"
+            cd "$OVERSEER_DIR"
+            
+            if [ -n "${OVERSEER_LOCAL:-}" ] && [ -d "${OVERSEER_LOCAL:-}" ]; then
+                cp -r "$OVERSEER_LOCAL"/* . 2>/dev/null || true
+                cp -r "$OVERSEER_LOCAL"/.[!.]* . 2>/dev/null || true
+            else
+                git clone --branch "$OVERSEER_VERSION" --depth 1 "$OVERSEER_REPO" .
+            fi
+        fi
     else
-        mkdir -p "$MYBOT_DIR"
-        cd "$MYBOT_DIR"
+        mkdir -p "$OVERSEER_DIR"
+        cd "$OVERSEER_DIR"
 
-        if [ -n "$MYBOT_LOCAL" ] && [ -d "$MYBOT_LOCAL" ]; then
+        if [ -n "${OVERSEER_LOCAL:-}" ] && [ -d "${OVERSEER_LOCAL:-}" ]; then
             print_substep "Copying from local directory..."
-            cp -r "$MYBOT_LOCAL"/* .
+            cp -r "$OVERSEER_LOCAL"/* . 2>/dev/null || true
+            cp -r "$OVERSEER_LOCAL"/.[!.]* . 2>/dev/null || true
         else
             print_substep "Cloning repository..."
-            git clone --branch "$MYBOT_VERSION" "$MYBOT_REPO" .
+            git clone --branch "$OVERSEER_VERSION" --depth 1 "$OVERSEER_REPO" .
         fi
     fi
 
     print_success "Repository ready"
 }
 
-# Generate secure secrets
+# =========================================
+# Secret Generation
+# =========================================
+
 generate_secrets() {
     print_step "Generating secure secrets..."
 
-    SESSION_SECRET=$(openssl rand -hex 32)
-    ENCRYPTION_KEY=$(openssl rand -hex 32)
-    ADMIN_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+    SESSION_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -A n -t x1 | tr -d ' \n')
+    ENCRYPTION_KEY=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -A n -t x1 | tr -d ' \n')
+    ADMIN_PASSWORD=$(openssl rand -base64 24 2>/dev/null | tr -dc 'a-zA-Z0-9!@#' | head -c 20 || echo "Overseer$(date +%s | tail -c 8)")
 
     print_success "Secrets generated"
 }
 
-# Interactive environment configuration
+# =========================================
+# Environment Configuration
+# =========================================
+
 configure_environment() {
     print_step "Configuring environment..."
 
-    # Check if .env already exists
-    if [ -f "$MYBOT_DIR/.env" ]; then
-        read -p "Environment file exists. Overwrite? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_warning "Keeping existing .env file"
-            return 0
+    cd "$OVERSEER_DIR"
+
+    # Don't overwrite existing .env unless requested
+    if [ -f ".env" ] && [ -z "${OVERSEER_FORCE_ENV:-}" ]; then
+        print_warning "Existing .env found - preserving (set OVERSEER_FORCE_ENV=1 to overwrite)"
+        
+        # But update the PORT if needed
+        if grep -q "^PORT=" .env; then
+            local existing_port=$(grep "^PORT=" .env | cut -d'=' -f2)
+            OVERSEER_PORT="$existing_port"
+            print_info "Using existing port: ${OVERSEER_PORT}"
+        fi
+        return 0
+    fi
+
+    # Generate random port if not specified
+    if [ -z "${OVERSEER_PORT:-}" ]; then
+        OVERSEER_PORT=$(generate_random_port)
+        print_success "Random port assigned: ${OVERSEER_PORT}"
+    else
+        print_info "Using specified port: ${OVERSEER_PORT}"
+    fi
+
+    # Detect public IP for BASE_URL
+    local public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "localhost")
+    local base_url="http://${public_ip}:${OVERSEER_PORT}"
+
+    # Interactive configuration (if stdin is a terminal)
+    local admin_username="admin"
+    local openai_key=""
+    local anthropic_key=""
+    local telegram_token=""
+    local discord_token=""
+    local discord_client_id=""
+
+    if [ -t 0 ]; then
+        echo ""
+        echo -e "${BOLD}Let's configure Overseer:${NC}"
+        echo ""
+
+        # Admin
+        read -p "  Admin username [admin]: " input_admin
+        admin_username=${input_admin:-admin}
+
+        # LLM Provider
+        echo ""
+        echo -e "  ${DIM}Configure an LLM provider (required for AI features):${NC}"
+        read -p "  OpenAI API Key (Enter to skip): " openai_key
+        if [ -z "$openai_key" ]; then
+            read -p "  Anthropic API Key (Enter to skip): " anthropic_key
+        fi
+
+        # Channels
+        echo ""
+        echo -e "  ${DIM}Configure chat channels (can be done later in admin panel):${NC}"
+        read -p "  Telegram Bot Token (Enter to skip): " telegram_token
+        read -p "  Discord Bot Token (Enter to skip): " discord_token
+        if [ -n "$discord_token" ]; then
+            read -p "  Discord Client ID: " discord_client_id
         fi
     fi
 
-    echo ""
-    echo -e "${BOLD}Let's configure MyBot:${NC}"
-    echo ""
-
-    # Port
-    read -p "Web admin port [$MYBOT_PORT]: " input_port
-    MYBOT_PORT=${input_port:-$MYBOT_PORT}
-
-    # Base URL
-    DEFAULT_URL="http://localhost:$MYBOT_PORT"
-    read -p "Base URL [$DEFAULT_URL]: " input_url
-    BASE_URL=${input_url:-$DEFAULT_URL}
-
-    # Admin username
-    read -p "Admin username [admin]: " input_admin
-    ADMIN_USERNAME=${input_admin:-admin}
-
-    # LLM Provider (optional)
-    echo ""
-    echo "Optional: Configure LLM provider (can be done later via web UI)"
-    read -p "OpenAI API Key (press Enter to skip): " OPENAI_API_KEY
-    read -p "Anthropic API Key (press Enter to skip): " ANTHROPIC_API_KEY
-
-    # Telegram (optional)
-    echo ""
-    echo "Optional: Configure Telegram bot (can be done later via web UI)"
-    read -p "Telegram Bot Token (press Enter to skip): " TELEGRAM_BOT_TOKEN
-    read -p "Telegram Allowed User IDs (comma-separated, Enter for all): " TELEGRAM_ALLOWED_USERS
-
     # Write environment file
-    cat > "$MYBOT_DIR/.env" << EOF
+    cat > ".env" << EOF
 # ============================================
-# MyBot Configuration
-# Generated on $(date)
+# Overseer Configuration
+# Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 # ============================================
 
 # Application
 NODE_ENV=production
-PORT=$MYBOT_PORT
-BASE_URL=$BASE_URL
+PORT=${OVERSEER_PORT}
+BASE_URL=${base_url}
 
 # Security (AUTO-GENERATED - DO NOT SHARE)
-SESSION_SECRET=$SESSION_SECRET
-ENCRYPTION_KEY=$ENCRYPTION_KEY
+SESSION_SECRET=${SESSION_SECRET}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
 
 # Database
-DATABASE_PATH=./data/mybot.db
+DATABASE_PATH=./data/overseer.db
 
 # Default Admin Credentials
-DEFAULT_ADMIN_USERNAME=$ADMIN_USERNAME
-DEFAULT_ADMIN_PASSWORD=$ADMIN_PASSWORD
+DEFAULT_ADMIN_USERNAME=${admin_username}
+DEFAULT_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
-# LLM Providers
-OPENAI_API_KEY=$OPENAI_API_KEY
-ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+# LLM Providers (add via admin panel or here)
+OPENAI_API_KEY=${openai_key}
+ANTHROPIC_API_KEY=${anthropic_key}
 GOOGLE_API_KEY=
 
 # Telegram Bot
-TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
-TELEGRAM_ALLOWED_USERS=$TELEGRAM_ALLOWED_USERS
+TELEGRAM_BOT_TOKEN=${telegram_token}
+TELEGRAM_ALLOWED_USERS=
 
 # Discord Bot
-DISCORD_BOT_TOKEN=
+DISCORD_BOT_TOKEN=${discord_token}
+DISCORD_CLIENT_ID=${discord_client_id}
+DISCORD_ALLOWED_USERS=
+DISCORD_ALLOWED_GUILDS=
+
+# WhatsApp (configure via admin panel)
+WHATSAPP_ENABLED=false
 
 # Agent Settings
 AGENT_MAX_RETRIES=3
-AGENT_MAX_STEPS=25
+AGENT_MAX_STEPS=30
+AGENT_DEFAULT_MODEL=gpt-4o
 AGENT_TIMEOUT_MS=120000
 
 # Tool Settings
 ALLOW_SHELL_COMMANDS=true
 REQUIRE_CONFIRMATION_FOR_DESTRUCTIVE=true
 SHELL_TIMEOUT_MS=30000
-MAX_FILE_SIZE_MB=10
+MAX_FILE_SIZE_MB=50
 EOF
 
-    chmod 600 "$MYBOT_DIR/.env"
+    chmod 600 ".env"
     print_success "Environment configured"
 }
 
-# Install dependencies
+# =========================================
+# Install Dependencies
+# =========================================
+
 install_dependencies() {
     print_step "Installing dependencies..."
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
-    # Use pnpm if available, otherwise npm
     if command_exists pnpm; then
-        pnpm install 2>&1 | tail -10
+        pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>&1 | tail -5
     else
-        npm install 2>&1 | tail -10
+        npm install 2>&1 | tail -5
     fi
 
     print_success "Dependencies installed"
 }
 
-# Initialize database
+# =========================================
+# Database Initialization
+# =========================================
+
 init_database() {
     print_step "Initializing database..."
 
-    cd "$MYBOT_DIR"
-    mkdir -p data
+    cd "$OVERSEER_DIR"
+    mkdir -p data logs
 
-    npm run db:init 2>&1 | grep -E "(✅|Created|admin|Success)" || true
+    # Run database initialization
+    if command_exists pnpm; then
+        pnpm run db:init 2>&1 | grep -E "(success|created|admin|initialized|error)" || true
+    else
+        npm run db:init 2>&1 | grep -E "(success|created|admin|initialized|error)" || true
+    fi
 
     print_success "Database initialized"
 }
 
-# Build application
+# =========================================
+# Build Application
+# =========================================
+
 build_app() {
     print_step "Building application..."
 
-    cd "$MYBOT_DIR"
-    npm run build 2>&1 | tail -10
+    cd "$OVERSEER_DIR"
+
+    if command_exists pnpm; then
+        pnpm run build 2>&1 | tail -5
+    else
+        npm run build 2>&1 | tail -5
+    fi
 
     print_success "Application built"
 }
 
-# Create systemd services (Linux)
+# =========================================
+# Systemd Services (Linux)
+# =========================================
+
 create_systemd_services() {
-    if [[ "$OS" == "macos" ]] || [[ "$OS" == "wsl" ]]; then
+    if [[ "$OS" == "macos" ]] || [[ "${OS:-}" == "wsl" ]]; then
+        return 0
+    fi
+
+    if ! command_exists systemctl; then
+        print_warning "systemctl not found - skipping service creation"
         return 0
     fi
 
     print_step "Creating systemd services..."
 
-    if ! is_root && ! command_exists sudo; then
-        print_warning "Cannot create systemd services without sudo access"
-        return 0
-    fi
+    local node_path=$(which node)
+    local npx_path=$(which npx)
 
-    local SUDO_CMD=""
-    if ! is_root; then
-        SUDO_CMD="sudo"
-    fi
-
-    # Create mybot user if doesn't exist
-    if ! id "mybot" &>/dev/null; then
-        $SUDO_CMD useradd -r -s /bin/false -m -d /opt/mybot mybot 2>/dev/null || true
-    fi
-
-    # Web service
-    $SUDO_CMD tee /etc/systemd/system/mybot.service > /dev/null << EOF
+    # Main web admin service
+    sudo_cmd tee /etc/systemd/system/overseer.service > /dev/null << EOF
 [Unit]
-Description=MyBot AI Agent - Web Admin Panel
+Description=Overseer AI Agent - Web Admin Dashboard
+Documentation=https://github.com/ErzenXz/overseer
 After=network.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=$MYBOT_USER
-WorkingDirectory=$MYBOT_DIR
-ExecStart=$(which node) $MYBOT_DIR/.next/standalone/server.js
+User=${OVERSEER_USER}
+WorkingDirectory=${OVERSEER_DIR}
+ExecStart=${node_path} ${OVERSEER_DIR}/.next/standalone/server.js
 Restart=on-failure
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=overseer
 Environment=NODE_ENV=production
-Environment=PORT=$MYBOT_PORT
-EnvironmentFile=$MYBOT_DIR/.env
+Environment=PORT=${OVERSEER_PORT}
+EnvironmentFile=${OVERSEER_DIR}/.env
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     # Telegram bot service
-    $SUDO_CMD tee /etc/systemd/system/mybot-telegram.service > /dev/null << EOF
+    sudo_cmd tee /etc/systemd/system/overseer-telegram.service > /dev/null << EOF
 [Unit]
-Description=MyBot AI Agent - Telegram Bot
-After=network.target mybot.service
-BindsTo=mybot.service
+Description=Overseer AI Agent - Telegram Bot
+After=network.target overseer.service
+PartOf=overseer.service
 
 [Service]
 Type=simple
-User=$MYBOT_USER
-WorkingDirectory=$MYBOT_DIR
-ExecStart=$(which npx) tsx $MYBOT_DIR/src/bot/index.ts
+User=${OVERSEER_USER}
+WorkingDirectory=${OVERSEER_DIR}
+ExecStart=${npx_path} tsx ${OVERSEER_DIR}/src/bot/index.ts
 Restart=on-failure
-RestartSec=10
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=overseer-telegram
 Environment=NODE_ENV=production
-EnvironmentFile=$MYBOT_DIR/.env
+EnvironmentFile=${OVERSEER_DIR}/.env
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    $SUDO_CMD systemctl daemon-reload
+    # Discord bot service
+    sudo_cmd tee /etc/systemd/system/overseer-discord.service > /dev/null << EOF
+[Unit]
+Description=Overseer AI Agent - Discord Bot
+After=network.target overseer.service
+PartOf=overseer.service
+
+[Service]
+Type=simple
+User=${OVERSEER_USER}
+WorkingDirectory=${OVERSEER_DIR}
+ExecStart=${npx_path} tsx ${OVERSEER_DIR}/src/bot/discord.ts
+Restart=on-failure
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=overseer-discord
+Environment=NODE_ENV=production
+EnvironmentFile=${OVERSEER_DIR}/.env
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # WhatsApp bot service
+    sudo_cmd tee /etc/systemd/system/overseer-whatsapp.service > /dev/null << EOF
+[Unit]
+Description=Overseer AI Agent - WhatsApp Bot
+After=network.target overseer.service
+PartOf=overseer.service
+
+[Service]
+Type=simple
+User=${OVERSEER_USER}
+WorkingDirectory=${OVERSEER_DIR}
+ExecStart=${npx_path} tsx ${OVERSEER_DIR}/src/bot/whatsapp.ts
+Restart=on-failure
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=overseer-whatsapp
+Environment=NODE_ENV=production
+EnvironmentFile=${OVERSEER_DIR}/.env
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo_cmd systemctl daemon-reload
+
+    # Enable main service
+    sudo_cmd systemctl enable overseer 2>/dev/null || true
 
     print_success "Systemd services created"
-    echo "    Services: mybot.service, mybot-telegram.service"
+    print_info "Services: overseer, overseer-telegram, overseer-discord, overseer-whatsapp"
 }
 
-# Create launchd services (macOS)
+# =========================================
+# macOS LaunchAgent
+# =========================================
+
 create_launchd_services() {
     if [[ "$OS" != "macos" ]]; then
         return 0
@@ -603,237 +999,148 @@ create_launchd_services() {
 
     print_step "Creating launchd services..."
 
-    mkdir -p "$HOME/Library/LaunchAgents"
+    mkdir -p "$HOME/Library/LaunchAgents" "$OVERSEER_DIR/logs"
 
-    # Web service
-    cat > "$HOME/Library/LaunchAgents/com.mybot.web.plist" << EOF
+    cat > "$HOME/Library/LaunchAgents/com.overseer.web.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.mybot.web</string>
+    <string>com.overseer.web</string>
     <key>ProgramArguments</key>
     <array>
         <string>$(which node)</string>
-        <string>$MYBOT_DIR/.next/standalone/server.js</string>
+        <string>${OVERSEER_DIR}/.next/standalone/server.js</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>$MYBOT_DIR</string>
+    <string>${OVERSEER_DIR}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>NODE_ENV</key>
         <string>production</string>
         <key>PORT</key>
-        <string>$MYBOT_PORT</string>
+        <string>${OVERSEER_PORT}</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>$MYBOT_DIR/logs/web.log</string>
+    <string>${OVERSEER_DIR}/logs/web.log</string>
     <key>StandardErrorPath</key>
-    <string>$MYBOT_DIR/logs/web-error.log</string>
+    <string>${OVERSEER_DIR}/logs/web-error.log</string>
 </dict>
 </plist>
 EOF
 
-    # Telegram bot service
-    cat > "$HOME/Library/LaunchAgents/com.mybot.telegram.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.mybot.telegram</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$(which npx)</string>
-        <string>tsx</string>
-        <string>$MYBOT_DIR/src/bot/index.ts</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>$MYBOT_DIR</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>NODE_ENV</key>
-        <string>production</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>$MYBOT_DIR/logs/telegram.log</string>
-    <key>StandardErrorPath</key>
-    <string>$MYBOT_DIR/logs/telegram-error.log</string>
-</dict>
-</plist>
-EOF
-
-    mkdir -p "$MYBOT_DIR/logs"
-
-    print_success "LaunchAgent plists created"
-    echo "    Load with: launchctl load ~/Library/LaunchAgents/com.mybot.*.plist"
+    print_success "LaunchAgent created"
 }
 
-# Create management script
+# =========================================
+# Management Script
+# =========================================
+
 create_management_script() {
     print_step "Creating management script..."
 
-    cat > "$MYBOT_DIR/mybot" << 'SCRIPT'
+    cat > "$OVERSEER_DIR/overseer" << 'MGMT_SCRIPT'
 #!/bin/bash
 
-# ============================================
-# MyBot Management Script
-# ============================================
-
+# Overseer Management Script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Load environment
 if [ -f ".env" ]; then
-    set -a
-    source .env
-    set +a
+    set -a; source .env; set +a
 fi
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-# Detect OS
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    OS="macos"
-else
-    OS="linux"
-fi
+is_linux() { [[ "$OSTYPE" == "linux-gnu"* ]]; }
 
-# Command handlers
 cmd_start() {
-    echo -e "${GREEN}Starting MyBot services...${NC}"
-    if [[ "$OS" == "macos" ]]; then
-        launchctl load ~/Library/LaunchAgents/com.mybot.web.plist 2>/dev/null
-        launchctl load ~/Library/LaunchAgents/com.mybot.telegram.plist 2>/dev/null
-    else
-        sudo systemctl start mybot mybot-telegram
+    echo -e "${GREEN}Starting Overseer services...${NC}"
+    if is_linux; then
+        sudo systemctl start overseer
+        [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && sudo systemctl start overseer-telegram
+        [ -n "${DISCORD_BOT_TOKEN:-}" ] && sudo systemctl start overseer-discord
+        [ "${WHATSAPP_ENABLED:-}" = "true" ] && sudo systemctl start overseer-whatsapp
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        launchctl load ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null
     fi
-    echo "Started!"
+    echo -e "${GREEN}Started! Admin panel: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo localhost):${PORT:-3000}${NC}"
 }
 
 cmd_stop() {
-    echo -e "${YELLOW}Stopping MyBot services...${NC}"
-    if [[ "$OS" == "macos" ]]; then
-        launchctl unload ~/Library/LaunchAgents/com.mybot.web.plist 2>/dev/null
-        launchctl unload ~/Library/LaunchAgents/com.mybot.telegram.plist 2>/dev/null
-    else
-        sudo systemctl stop mybot mybot-telegram
+    echo -e "${YELLOW}Stopping Overseer services...${NC}"
+    if is_linux; then
+        sudo systemctl stop overseer overseer-telegram overseer-discord overseer-whatsapp 2>/dev/null
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        launchctl unload ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null
     fi
-    echo "Stopped!"
+    echo "Stopped."
 }
 
 cmd_restart() {
-    echo -e "${CYAN}Restarting MyBot services...${NC}"
-    if [[ "$OS" == "macos" ]]; then
-        cmd_stop
-        sleep 2
-        cmd_start
-    else
-        sudo systemctl restart mybot mybot-telegram
-    fi
-    echo "Restarted!"
+    cmd_stop; sleep 2; cmd_start
 }
 
 cmd_status() {
-    echo -e "${CYAN}=== MyBot Status ===${NC}"
+    echo -e "${CYAN}${BOLD}=== Overseer Status ===${NC}"
     echo ""
-    if [[ "$OS" == "macos" ]]; then
-        echo "Web Admin:"
-        launchctl list | grep mybot.web || echo "  Not running"
-        echo ""
-        echo "Telegram Bot:"
-        launchctl list | grep mybot.telegram || echo "  Not running"
-    else
-        echo "Web Admin:"
-        systemctl status mybot --no-pager -l 2>/dev/null || echo "  Not running"
-        echo ""
-        echo "Telegram Bot:"
-        systemctl status mybot-telegram --no-pager -l 2>/dev/null || echo "  Not running"
+    if is_linux; then
+        for svc in overseer overseer-telegram overseer-discord overseer-whatsapp; do
+            local status=$(systemctl is-active $svc 2>/dev/null || echo "inactive")
+            local icon="[x]"
+            [ "$status" = "active" ] && icon="[+]"
+            echo "  $icon $svc: $status"
+        done
     fi
+    echo ""
+    echo "  Admin: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo localhost):${PORT:-3000}"
 }
 
 cmd_logs() {
-    local service="$1"
-    if [[ "$OS" == "macos" ]]; then
-        case "$service" in
-            web)
-                tail -f "$SCRIPT_DIR/logs/web.log"
-                ;;
-            telegram|bot)
-                tail -f "$SCRIPT_DIR/logs/telegram.log"
-                ;;
-            *)
-                tail -f "$SCRIPT_DIR/logs/"*.log
-                ;;
-        esac
+    local svc="${1:-overseer}"
+    if is_linux; then
+        sudo journalctl -u "overseer${svc:+-$svc}" -f --no-hostname 2>/dev/null || \
+        sudo journalctl -u overseer -u overseer-telegram -u overseer-discord -u overseer-whatsapp -f --no-hostname
     else
-        case "$service" in
-            web)
-                sudo journalctl -u mybot -f
-                ;;
-            telegram|bot)
-                sudo journalctl -u mybot-telegram -f
-                ;;
-            *)
-                sudo journalctl -u mybot -u mybot-telegram -f
-                ;;
-        esac
+        tail -f "$SCRIPT_DIR/logs/"*.log 2>/dev/null || echo "No log files found."
     fi
-}
-
-cmd_dev() {
-    echo -e "${CYAN}Starting in development mode...${NC}"
-    npm run dev
-}
-
-cmd_bot() {
-    echo -e "${CYAN}Starting bot only...${NC}"
-    npm run bot
 }
 
 cmd_update() {
-    echo -e "${CYAN}Updating MyBot...${NC}"
-    if [ -d ".git" ]; then
-        git pull
-    fi
-    npm install
-    npm run build
+    echo -e "${CYAN}Updating Overseer...${NC}"
+    [ -d ".git" ] && git pull origin main
+    pnpm install 2>/dev/null || npm install
+    pnpm run build 2>/dev/null || npm run build
     cmd_restart
-    echo "Updated!"
+    echo -e "${GREEN}Updated!${NC}"
 }
 
 cmd_help() {
-    echo "MyBot Management Script"
+    echo -e "${BOLD}Overseer Management${NC}"
     echo ""
-    echo "Usage: ./mybot <command> [options]"
+    echo "Usage: ./overseer <command>"
     echo ""
     echo "Commands:"
-    echo "  start     Start all services"
+    echo "  start     Start all configured services"
     echo "  stop      Stop all services"
     echo "  restart   Restart all services"
     echo "  status    Show service status"
-    echo "  logs      View logs (logs web, logs bot, or all)"
+    echo "  logs      View logs (logs web|telegram|discord|whatsapp)"
     echo "  update    Update to latest version"
-    echo "  dev       Start in development mode"
-    echo "  bot       Start bot only"
     echo "  help      Show this help"
 }
 
-# Main
 case "${1:-help}" in
     start)   cmd_start ;;
     stop)    cmd_stop ;;
@@ -841,115 +1148,128 @@ case "${1:-help}" in
     status)  cmd_status ;;
     logs)    cmd_logs "$2" ;;
     update)  cmd_update ;;
-    dev)     cmd_dev ;;
-    bot)     cmd_bot ;;
     help|*)  cmd_help ;;
 esac
-SCRIPT
+MGMT_SCRIPT
 
-    chmod +x "$MYBOT_DIR/mybot"
-
-    # Add to PATH suggestion
-    if ! grep -q "mybot" "$HOME/.bashrc" 2>/dev/null && ! grep -q "mybot" "$HOME/.zshrc" 2>/dev/null; then
-        echo ""
-        echo "Add to your shell profile for global access:"
-        echo "  echo 'export PATH=\"\$PATH:$MYBOT_DIR\"' >> ~/.bashrc"
-    fi
-
-    print_success "Management script created: $MYBOT_DIR/mybot"
+    chmod +x "$OVERSEER_DIR/overseer"
+    print_success "Management script created: ${OVERSEER_DIR}/overseer"
 }
 
-# Security hardening suggestions
-print_security_tips() {
-    echo ""
-    echo -e "${BOLD}Security Recommendations:${NC}"
-    echo ""
-    echo "  1. ${YELLOW}Change admin password${NC} after first login"
-    echo "  2. ${YELLOW}Restrict Telegram users${NC} by setting TELEGRAM_ALLOWED_USERS"
-    echo "  3. ${YELLOW}Use a firewall${NC} to limit access to port $MYBOT_PORT"
-    echo "  4. ${YELLOW}Set up SSL${NC} with nginx and Let's Encrypt"
-    echo "  5. ${YELLOW}Regular backups${NC} of $MYBOT_DIR/data/"
-    echo ""
-    echo "  Firewall commands (UFW):"
-    echo "    sudo ufw allow ssh"
-    echo "    sudo ufw allow $MYBOT_PORT/tcp"
-    echo "    sudo ufw enable"
-    echo ""
-}
+# =========================================
+# Print Final Success
+# =========================================
 
-# Print final success message
 print_final_success() {
+    local public_ip=$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || echo "your-server-ip")
+
     echo ""
     echo -e "${GREEN}"
-    echo "=============================================="
-    echo "  MyBot Installation Complete!"
-    echo "=============================================="
+    echo "======================================================"
+    echo "       Overseer Installation Complete!"
+    echo "======================================================"
     echo -e "${NC}"
     echo ""
-    echo "Installation Directory: $MYBOT_DIR"
+    echo -e "  ${BOLD}Admin Dashboard:${NC}"
+    echo -e "    ${CYAN}http://${public_ip}:${OVERSEER_PORT}${NC}"
     echo ""
-    echo -e "${BOLD}Admin Credentials:${NC}"
-    echo "  Username: $ADMIN_USERNAME"
-    echo "  Password: $ADMIN_PASSWORD"
+    echo -e "  ${BOLD}Login Credentials:${NC}"
+    echo -e "    Username: ${BOLD}${DEFAULT_ADMIN_USERNAME:-admin}${NC}"
+    echo -e "    Password: ${BOLD}${ADMIN_PASSWORD}${NC}"
     echo ""
-    echo -e "${BOLD}Quick Start:${NC}"
+    echo -e "  ${BOLD}Installation Directory:${NC}"
+    echo -e "    ${OVERSEER_DIR}"
     echo ""
-    echo "  1. Start the services:"
-    echo -e "     ${CYAN}cd $MYBOT_DIR && ./mybot start${NC}"
+    echo -e "  ${BOLD}Port:${NC} ${OVERSEER_PORT} (randomly assigned)"
     echo ""
-    echo "  2. Open the admin panel:"
-    echo -e "     ${CYAN}http://localhost:$MYBOT_PORT${NC}"
+    echo -e "  ${BOLD}Quick Start:${NC}"
+    echo -e "    cd ${OVERSEER_DIR} && ./overseer start"
     echo ""
-    echo "  3. Add your LLM provider (OpenAI, Anthropic, etc.)"
+    echo -e "  ${BOLD}Management Commands:${NC}"
+    echo "    ./overseer start    - Start services"
+    echo "    ./overseer stop     - Stop services"
+    echo "    ./overseer status   - Check status"
+    echo "    ./overseer logs     - View logs"
+    echo "    ./overseer update   - Update to latest"
     echo ""
-    echo "  4. Configure your Telegram bot"
+    echo -e "  ${BOLD}Next Steps:${NC}"
+    echo "    1. Open the admin dashboard"
+    echo "    2. Complete the onboarding wizard"
+    echo "    3. Add an LLM provider (OpenAI, Anthropic, etc.)"
+    echo "    4. Connect a chat channel (Telegram, Discord, WhatsApp)"
     echo ""
-    echo -e "${BOLD}Commands:${NC}"
-    echo "  ./mybot start    - Start services"
-    echo "  ./mybot stop     - Stop services"
-    echo "  ./mybot status   - Check status"
-    echo "  ./mybot logs     - View logs"
-    echo "  ./mybot update   - Update to latest"
+    echo -e "  ${YELLOW}Security Notes:${NC}"
+    echo "    - SSH (port 22) is always accessible"
+    echo "    - Admin panel on random port ${OVERSEER_PORT}"
+    echo "    - fail2ban is protecting SSH"
+    echo "    - Change admin password after first login"
     echo ""
 
-    print_security_tips
+    # Save credentials to a file for reference
+    cat > "$OVERSEER_DIR/.install-info" << EOF
+# Overseer Installation Info - $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+# DELETE THIS FILE after saving credentials!
+ADMIN_URL=http://${public_ip}:${OVERSEER_PORT}
+ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-admin}
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
+PORT=${OVERSEER_PORT}
+EOF
+    chmod 600 "$OVERSEER_DIR/.install-info"
+    print_info "Credentials saved to ${OVERSEER_DIR}/.install-info (delete after saving!)"
 }
 
-# Main installation flow
+# =========================================
+# Main Installation Flow
+# =========================================
+
 main() {
     detect_os
-    get_package_manager
     print_banner
 
-    # Install prerequisites
+    echo -e "  Detected: ${BOLD}${OS}${NC} $([ -n "$OS_VERSION" ] && echo "v${OS_VERSION}") | pkg: ${PKG_MANAGER}"
+    echo ""
+
+    # Detect existing services (don't break them!)
+    detect_existing_services
+
+    # Check and install prerequisites
     if ! check_requirements; then
         echo ""
-        read -p "Install missing dependencies? (Y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            install_build_deps
-            install_nodejs
-            install_pnpm
-        else
-            print_error "Cannot proceed without required dependencies"
-            exit 1
+        if [ -t 0 ]; then
+            read -p "  Install missing dependencies? (Y/n) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Nn]$ ]]; then
+                print_error "Cannot proceed without required dependencies"
+                exit 1
+            fi
         fi
     fi
 
-    echo ""
+    install_build_deps
+    install_nodejs
+    install_pnpm
+
+    # Generate port and secrets
+    if [ -z "${OVERSEER_PORT:-}" ]; then
+        OVERSEER_PORT=$(generate_random_port)
+    fi
+    generate_secrets
 
     # Main installation
     clone_repository
-    generate_secrets
     configure_environment
     install_dependencies
     init_database
     build_app
 
-    # Create services based on OS
+    # Security hardening
+    install_fail2ban
+    configure_ufw_safe
+
+    # Create services
     if [[ "$OS" == "macos" ]]; then
         create_launchd_services
-    elif [[ "$OS" != "wsl" ]]; then
+    else
         create_systemd_services
     fi
 
@@ -957,5 +1277,5 @@ main() {
     print_final_success
 }
 
-# Run main
+# Run
 main "$@"

@@ -8,7 +8,7 @@ import { createLogger } from "../../lib/logger";
 import { circuitBreakerManager } from "../../lib/circuit-breaker";
 import { poolManager } from "../../lib/resource-pool";
 import { v4 as uuidv4 } from "uuid";
-import { generateText, type LanguageModel, type Tool } from "ai";
+import { generateText, stepCountIs, type LanguageModel, type Tool } from "ai";
 
 const logger = createLogger("sub-agents");
 
@@ -99,7 +99,7 @@ const SUB_AGENT_CONFIGS: Record<SubAgentType, {
 - Explain your changes clearly
 - Handle errors gracefully
 Always output complete, working code files.`,
-    tools: ["readFile", "writeFile", "searchInFiles"],
+    tools: ["readFile", "writeFile", "listDirectory", "executeShellCommand"],
     priority: 7,
   },
   file: {
@@ -111,7 +111,7 @@ Always output complete, working code files.`,
 - Manage directories
 - Handle large files efficiently
 Always verify operations before destructive actions.`,
-    tools: ["readFile", "writeFile", "listDirectory", "fileInfo", "searchFiles", "searchInFiles"],
+    tools: ["readFile", "writeFile", "listDirectory", "executeShellCommand"],
     priority: 5,
   },
   git: {
@@ -123,7 +123,7 @@ Always verify operations before destructive actions.`,
 - Resolve conflicts
 - Review changes
 Always explain the git operations you're performing.`,
-    tools: ["gitStatus", "gitLog", "gitDiff", "gitBranch", "gitAdd", "gitCommit", "gitPull", "gitPush"],
+    tools: ["executeShellCommand"],
     priority: 6,
   },
   system: {
@@ -135,7 +135,7 @@ Always explain the git operations you're performing.`,
 - Handle package installations
 - Configure system settings
 Always check system state before making changes.`,
-    tools: ["systemInfo", "processInfo", "executeShellCommand"],
+    tools: ["executeShellCommand"],
     priority: 8,
   },
   web: {
@@ -147,7 +147,7 @@ Always check system state before making changes.`,
 - Test APIs
 - Handle webhooks
 Always respect rate limits and handle errors gracefully.`,
-    tools: ["curl", "executeShellCommand"],
+    tools: ["executeShellCommand"],
     priority: 5,
   },
   docker: {
@@ -183,7 +183,7 @@ Always backup before destructive operations.`,
 - Check for vulnerabilities
 - Review permissions
 Always prioritize security best practices.`,
-    tools: ["executeShellCommand", "fileInfo"],
+    tools: ["executeShellCommand", "readFile", "listDirectory"],
     priority: 9,
   },
   network: {
@@ -195,7 +195,7 @@ Always prioritize security best practices.`,
 - Check DNS resolution
 - Monitor network interfaces
 Always provide clear diagnostic information.`,
-    tools: ["ping", "curl", "networkInfo"],
+    tools: ["executeShellCommand"],
     priority: 5,
   },
   planner: {
@@ -213,7 +213,7 @@ Output your plans in a structured format:
 2. Required agent type
 3. Dependencies (which steps must complete first)
 4. Estimated complexity (low/medium/high)`,
-    tools: ["readFile", "listDirectory"],
+    tools: ["readFile", "listDirectory", "executeShellCommand"],
     priority: 10,
   },
   evaluator: {
@@ -237,7 +237,7 @@ Output format:
 - Strengths: What was done well
 - Issues: Problems found
 - Recommendations: Suggested improvements`,
-    tools: ["readFile", "searchInFiles"],
+    tools: ["readFile", "listDirectory", "executeShellCommand"],
     priority: 6,
   },
   coordinator: {
@@ -625,32 +625,32 @@ export async function executeTask(
         system: config.system_prompt,
         prompt: subAgent.assigned_task || "",
         tools: subAgentTools,
-        maxSteps: 20,
+        stopWhen: stepCountIs(20),
       });
-      
+
       const executionTime = Date.now() - startTime;
-      
+
       updateStatus(subAgentId, "completed", {
         task_result: result.text,
         step_count: result.steps?.length || 0,
-        tokens_used: (result.usage?.promptTokens || 0) + (result.usage?.completionTokens || 0),
+        tokens_used: (result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0),
       });
-      
+
       logger.info("Sub-agent completed task", {
         subAgentId,
         type: subAgent.agent_type,
         steps: result.steps?.length || 0,
         executionTime,
       });
-      
+
       // Update health metrics
       updateHealthMetrics(agentType, true, executionTime);
-      
+
       return {
         success: true,
         result: result.text,
         steps: result.steps?.length || 0,
-        tokens_used: (result.usage?.promptTokens || 0) + (result.usage?.completionTokens || 0),
+        tokens_used: (result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0),
         execution_time_ms: executionTime,
         agent_id: subAgentId,
       };

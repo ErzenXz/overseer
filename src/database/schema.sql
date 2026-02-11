@@ -1,4 +1,4 @@
--- MyBot Database Schema
+-- Overseer Database Schema
 -- SQLite Database for storing all application data
 
 -- =====================================================

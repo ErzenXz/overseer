@@ -1,6 +1,6 @@
 # 📡 API Documentation
 
-Complete REST API reference for MyBot.
+Complete REST API reference for Overseer.
 
 ## Table of Contents
 
@@ -27,7 +27,7 @@ Complete REST API reference for MyBot.
 
 ## Authentication
 
-MyBot uses **cookie-based session authentication** for the web admin and **API keys** for programmatic access.
+Overseer uses **cookie-based session authentication** for the web admin and **API keys** for programmatic access.
 
 ### Session Authentication (Web)
 
@@ -55,7 +55,7 @@ Content-Type: application/json
 
 **Cookie:**
 ```
-Set-Cookie: mybot-session=...; Path=/; HttpOnly; Secure; SameSite=Strict
+Set-Cookie: overseer-session=...; Path=/; HttpOnly; Secure; SameSite=Strict
 ```
 
 ### API Key Authentication (Coming Soon)
@@ -514,7 +514,7 @@ Get system settings.
 ```json
 {
   "settings": {
-    "app_name": "MyBot",
+    "app_name": "Overseer",
     "version": "1.0.0",
     "default_provider_id": 1,
     "log_level": "info",
@@ -700,7 +700,7 @@ Install skill from GitHub.
 ```json
 {
   "source": "github",
-  "url": "https://github.com/user/mybot-skill-example"
+  "url": "https://github.com/user/overseer-skill-example"
 }
 ```
 
@@ -708,7 +708,7 @@ Install skill from GitHub.
 ```json
 {
   "id": 5,
-  "skill_id": "user_mybot-skill-example",
+  "skill_id": "user_overseer-skill-example",
   "name": "Example Skill",
   "is_active": false
 }
@@ -936,7 +936,7 @@ async function sendMessage(message: string) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Cookie': 'mybot-session=...'
+      'Cookie': 'overseer-session=...'
     },
     body: JSON.stringify({
       message,
@@ -980,7 +980,7 @@ async function chat(message: string) {
 ```python
 import requests
 
-class MyBotClient:
+class OverseerClient:
     def __init__(self, base_url='http://localhost:3000/api'):
         self.base_url = base_url
         self.session = requests.Session()
@@ -1008,7 +1008,7 @@ class MyBotClient:
         return response.json()
 
 # Usage
-client = MyBotClient()
+client = OverseerClient()
 client.login('admin', 'password')
 result = client.chat('What is the server status?')
 print(result['response'])
@@ -1058,20 +1058,20 @@ import (
     "net/http/cookiejar"
 )
 
-type MyBotClient struct {
+type OverseerClient struct {
     baseURL string
     client  *http.Client
 }
 
-func NewClient(baseURL string) *MyBotClient {
+func NewClient(baseURL string) *OverseerClient {
     jar, _ := cookiejar.New(nil)
-    return &MyBotClient{
+    return &OverseerClient{
         baseURL: baseURL,
         client:  &http.Client{Jar: jar},
     }
 }
 
-func (c *MyBotClient) Login(username, password string) error {
+func (c *OverseerClient) Login(username, password string) error {
     payload := map[string]string{
         "username": username,
         "password": password,
@@ -1092,7 +1092,7 @@ func (c *MyBotClient) Login(username, password string) error {
     return nil
 }
 
-func (c *MyBotClient) Chat(message string) (map[string]interface{}, error) {
+func (c *OverseerClient) Chat(message string) (map[string]interface{}, error) {
     payload := map[string]string{
         "message": message,
         "interface": "api",
@@ -1150,4 +1150,4 @@ All endpoints are prefixed with `/api` (v1 is default). Future versions will use
 
 ---
 
-**Need help?** See the [User Guide](USER_GUIDE.md) or [open an issue](https://github.com/yourusername/mybot/issues).
+**Need help?** See the [User Guide](USER_GUIDE.md) or [open an issue](https://github.com/ErzenXz/overseer/issues).

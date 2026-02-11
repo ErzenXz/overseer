@@ -2,7 +2,7 @@
 
 ## Overview
 
-The MyBot subagent system has been enhanced with advanced orchestration patterns, circuit breakers, health monitoring, and resource pooling. This implementation provides production-ready resilience, observability, and intelligent task delegation capabilities.
+The Overseer subagent system has been enhanced with advanced orchestration patterns, circuit breakers, health monitoring, and resource pooling. This implementation provides production-ready resilience, observability, and intelligent task delegation capabilities.
 
 ## Architecture Components
 
@@ -647,4 +647,4 @@ For issues or questions:
 
 ## License
 
-Same as MyBot project license.
+Same as Overseer project license.

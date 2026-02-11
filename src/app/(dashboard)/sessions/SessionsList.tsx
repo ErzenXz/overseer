@@ -27,18 +27,18 @@ const statusBadgeColors: Record<string, string> = {
 export function SessionsList({ sessions }: SessionsListProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<string>("all");
-  const [killingId, setKillingId] = useState<string | null>(null);
+  const [killingId, setKillingId] = useState<number | null>(null);
 
-  const filteredSessions = filter === "all" 
-    ? sessions 
-    : sessions.filter(s => s.status === filter);
+  const filteredSessions = filter === "all"
+    ? sessions
+    : sessions.filter((session) => (session.is_active ? "active" : "ended") === filter);
 
-  const handleKillSession = async (sessionId: string) => {
+  const handleKillSession = async (sessionId: number) => {
     if (!confirm("Are you sure you want to kill this session?")) return;
 
     setKillingId(sessionId);
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/kill`, { method: "POST" });
+    const res = await fetch(`/api/sessions/${sessionId}/kill`, { method: "POST" });
       if (res.ok) {
         router.refresh();
       }
@@ -47,7 +47,7 @@ export function SessionsList({ sessions }: SessionsListProps) {
     }
   };
 
-  const formatDuration = (startedAt: string) => {
+  const formatDuration = (startedAt: number) => {
     const started = new Date(startedAt);
     const now = new Date();
     const diff = Math.floor((now.getTime() - started.getTime()) / 1000);
@@ -61,7 +61,7 @@ export function SessionsList({ sessions }: SessionsListProps) {
     <div>
       {/* Filter Tabs */}
       <div className="flex gap-2 p-4 border-b border-zinc-800">
-        {["all", "active", "busy", "idle", "error"].map((status) => (
+        {["all", "active", "ended"].map((status) => (
           <button
             key={status}
             onClick={() => setFilter(status)}
@@ -93,19 +93,22 @@ export function SessionsList({ sessions }: SessionsListProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800">
-            {filteredSessions.map((session) => (
+            {filteredSessions.map((session) => {
+              const status = session.is_active ? "active" : "ended";
+              const displayName = session.external_user_id || session.external_chat_id || "-";
+              return (
               <tr key={session.id} className="hover:bg-zinc-800/30 transition-colors">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${statusColors[session.status]}`} />
+                    <div className={`w-2 h-2 rounded-full ${statusColors[status]}`} />
                     <code className="text-xs text-zinc-300 font-mono">
-                      {session.session_id.slice(0, 8)}...
+                      {String(session.id).padStart(6, "0")}
                     </code>
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`text-xs px-2 py-1 rounded ${statusBadgeColors[session.status]}`}>
-                    {session.status}
+                  <span className={`text-xs px-2 py-1 rounded ${statusBadgeColors[status]}`}>
+                    {status}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-sm text-zinc-300">
@@ -113,36 +116,37 @@ export function SessionsList({ sessions }: SessionsListProps) {
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-zinc-300">
-                    {session.username || session.user_id || "-"}
+                    {displayName}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-sm text-zinc-400">
-                  {formatDuration(session.started_at)}
+                  {formatDuration(session.created_at)}
                 </td>
                 <td className="px-6 py-4 text-sm text-zinc-400">
-                  {session.step_count}
+                  {session.message_count}
                 </td>
                 <td className="px-6 py-4 text-sm text-zinc-400">
                   {session.total_tokens.toLocaleString()}
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-zinc-400 truncate max-w-[200px] block">
-                    {session.current_task || "-"}
+                    {"-"}
                   </span>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex gap-2">
                     <button
-                      onClick={() => handleKillSession(session.session_id)}
-                      disabled={killingId === session.session_id || session.status === "ended"}
+                      onClick={() => handleKillSession(session.id)}
+                      disabled={killingId === session.id || status === "ended"}
                       className="px-3 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors disabled:opacity-50"
                     >
-                      {killingId === session.session_id ? "..." : "Kill"}
+                      {killingId === session.id ? "..." : "Kill"}
                     </button>
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

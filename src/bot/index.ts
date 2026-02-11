@@ -71,7 +71,7 @@ async function startBot() {
 
   // /help command
   bot.help(async (ctx) => {
-    await ctx.reply(getHelpMessage("MyBot Telegram"), { parse_mode: "Markdown" });
+    await ctx.reply(getHelpMessage("Overseer Telegram"), { parse_mode: "Markdown" });
   });
 
   // /reset command

@@ -80,7 +80,7 @@ export async function testEndpoint(params: {
 
   // Prepare headers
   const requestHeaders: Record<string, string> = {
-    "User-Agent": "MyBot-API-Tester/1.0",
+    "User-Agent": "Overseer-API-Tester/1.0",
     "Accept": "application/json, text/plain, */*",
     ...headers,
   };

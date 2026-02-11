@@ -46,7 +46,7 @@ export async function webSearch(params: WebSearchParams): Promise<{
 
     const response = await fetch(searchUrl.toString(), {
       headers: {
-        "User-Agent": "MyBot/1.0 (AI Assistant)",
+        "User-Agent": "Overseer/1.0 (AI Assistant)",
       },
     });
 
@@ -139,7 +139,7 @@ async function searchHtmlFallback(query: string, maxResults: number): Promise<Se
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "MyBot/1.0 (AI Assistant)",
+        "User-Agent": "Overseer/1.0 (AI Assistant)",
       },
       body: formData.toString(),
     });
@@ -204,7 +204,7 @@ export async function fetchPage(params: FetchPageParams): Promise<{
 
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "MyBot/1.0 (AI Assistant)",
+        "User-Agent": "Overseer/1.0 (AI Assistant)",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
       redirect: "follow",

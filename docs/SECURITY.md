@@ -1,6 +1,6 @@
 # 🔒 Security Documentation
 
-Comprehensive security guide for MyBot - threat model, best practices, and compliance considerations.
+Comprehensive security guide for Overseer - threat model, best practices, and compliance considerations.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ Comprehensive security guide for MyBot - threat model, best practices, and compl
 
 ## Security Overview
 
-MyBot is designed with **security-first principles** for self-hosted deployment. Key security features:
+Overseer is designed with **security-first principles** for self-hosted deployment. Key security features:
 
 - 🔐 **AES-256-GCM encryption** for sensitive data
 - 👤 **Session-based authentication** with bcrypt password hashing
@@ -194,7 +194,7 @@ const session = {
 };
 
 // Cookie Settings
-setCookie('mybot-session', encryptSession(session), {
+setCookie('overseer-session', encryptSession(session), {
   httpOnly: true,      // Prevents JavaScript access
   secure: true,        // HTTPS only
   sameSite: 'strict',  // CSRF protection
@@ -232,7 +232,7 @@ if (!isAuthorized(ctx.from.id.toString())) {
 ### API Authentication (Planned)
 
 ```typescript
-// API Key Format: mybot_<32-byte-random>_<timestamp>
+// API Key Format: overseer_<32-byte-random>_<timestamp>
 const apiKey = generateApiKey();
 
 // Key Storage: Hashed with SHA-256
@@ -391,7 +391,7 @@ app.use('/api/', rateLimiter);
 
 ```typescript
 // Same-Site cookies
-setCookie('mybot-session', session, {
+setCookie('overseer-session', session, {
   sameSite: 'strict',
 });
 
@@ -628,13 +628,13 @@ logger.error('Provider API error', { provider, error });
 
 ```bash
 # Logrotate configuration
-/var/log/mybot/*.log {
+/var/log/overseer/*.log {
     daily
     rotate 90          # Keep 90 days
     compress
     delaycompress
     notifempty
-    create 0640 mybot mybot
+    create 0640 overseer overseer
     sharedscripts
 }
 ```
@@ -648,7 +648,7 @@ logger.error('Provider API error', { provider, error });
 - [x] **Use HTTPS** for web admin (Let's Encrypt)
 - [x] **Strong passwords** (min 12 chars, mixed case, numbers, symbols)
 - [x] **Firewall enabled** (UFW, only required ports)
-- [x] **Regular updates** (system + MyBot)
+- [x] **Regular updates** (system + Overseer)
 - [x] **Non-root user** (run as dedicated user)
 - [x] **File permissions** (600 for database, 700 for data directory)
 - [ ] **Rate limiting** (planned)
@@ -683,7 +683,7 @@ logger.error('Provider API error', { provider, error });
 **If you suspect a security breach:**
 
 1. **Contain**
-   - [ ] Stop all MyBot services
+   - [ ] Stop all Overseer services
    - [ ] Block suspicious IPs
    - [ ] Revoke compromised credentials
 
@@ -716,7 +716,7 @@ logger.error('Provider API error', { provider, error });
 **Found a security issue?**
 
 1. **DO NOT** open a public GitHub issue
-2. **Email**: security@mybot.io (or your contact)
+2. **Email**: security@overseer.io (or your contact)
 3. **Include**: 
    - Description of vulnerability
    - Steps to reproduce
@@ -737,7 +737,7 @@ logger.error('Provider API error', { provider, error });
 
 ### GDPR Considerations
 
-MyBot processes user data. If you have EU users:
+Overseer processes user data. If you have EU users:
 
 **Data Minimization:**
 - Only collect necessary data (user ID, messages)
@@ -818,4 +818,4 @@ MyBot processes user data. If you have EU users:
 
 ---
 
-**Questions?** Contact security@mybot.io or open a [private security advisory](https://github.com/yourusername/mybot/security/advisories/new).
+**Questions?** Contact security@overseer.io or open a [private security advisory](https://github.com/ErzenXz/overseer/security/advisories/new).

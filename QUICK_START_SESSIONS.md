@@ -2,7 +2,7 @@
 
 ## 🚀 Quick Overview
 
-Your MyBot now has a **production-ready session management system** that:
+Your Overseer now has a **production-ready session management system** that:
 - Tracks conversation context with token counting
 - Automatically summarizes long conversations
 - Caches hot sessions in memory for fast access
@@ -148,7 +148,7 @@ console.log(stats);
 Sessions are automatically logged with the "session-manager" category:
 ```bash
 # Watch session activity
-tail -f logs/mybot.log | grep session-manager
+tail -f logs/overseer.log | grep session-manager
 ```
 
 ## 🧪 Testing
@@ -213,9 +213,9 @@ SessionManager.cleanup();
 ## 🐛 Troubleshooting
 
 ### Sessions Not Persisting
-1. Check database exists: `ls data/mybot.db`
+1. Check database exists: `ls data/overseer.db`
 2. Check permissions: `ls -la data/`
-3. Review logs: `tail -f logs/mybot.log`
+3. Review logs: `tail -f logs/overseer.log`
 
 ### High Memory Usage
 - Reduce `CACHE_MAX_SIZE` in session-manager.ts

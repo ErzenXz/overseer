@@ -2,7 +2,7 @@
   "name": "Security Audit",
   "description": "Scan code and configurations for security vulnerabilities and compliance issues",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["security", "audit", "vulnerability", "scan", "secure", "CVE", "OWASP", "penetration"],
   "system_prompt": "You are a security expert. Identify vulnerabilities, suggest fixes, and help implement security best practices. Reference OWASP guidelines and common CVEs when relevant.",
   "tools": [

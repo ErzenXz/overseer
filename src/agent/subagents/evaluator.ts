@@ -302,9 +302,9 @@ export function generateQualityReport(results: TaskResult[]): string {
 /**
  * Tool for evaluating task results
  */
-export const evaluateTask = tool({
+export const evaluateTask = tool<any, any>({
   description: `Evaluate the quality of a completed task. Provides a score, identifies strengths and issues, and offers recommendations for improvement.`,
-  parameters: z.object({
+  inputSchema: z.object({
     taskDescription: z.string().describe("Description of the task that was completed"),
     result: z.string().describe("The result/output of the task"),
     executionTime: z.number().describe("Time taken to complete in milliseconds"),

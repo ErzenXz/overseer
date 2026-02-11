@@ -1,11 +1,11 @@
 # ============================================
-# MyBot Nginx Configuration Example
+# Overseer Nginx Configuration Example
 # Reverse Proxy with SSL
 # ============================================
 #
 # Installation:
-#   1. Copy this file to /etc/nginx/sites-available/mybot
-#   2. Create symlink: sudo ln -s /etc/nginx/sites-available/mybot /etc/nginx/sites-enabled/
+#   1. Copy this file to /etc/nginx/sites-available/overseer
+#   2. Create symlink: sudo ln -s /etc/nginx/sites-available/overseer /etc/nginx/sites-enabled/
 #   3. Test config: sudo nginx -t
 #   4. Reload: sudo systemctl reload nginx
 #
@@ -16,13 +16,13 @@
 # ============================================
 
 # Upstream servers
-upstream mybot_web {
+upstream overseer_web {
     server 127.0.0.1:3000;
     keepalive 64;
 }
 
 # Rate limiting zone
-limit_req_zone $binary_remote_addr zone=mybot_limit:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=overseer_limit:10m rate=10r/s;
 
 # HTTP -> HTTPS redirect
 server {
@@ -77,8 +77,8 @@ server {
     # ======================
     # Logging
     # ======================
-    access_log /var/log/nginx/mybot-access.log;
-    error_log /var/log/nginx/mybot-error.log;
+    access_log /var/log/nginx/overseer-access.log;
+    error_log /var/log/nginx/overseer-error.log;
 
     # ======================
     # Gzip Compression
@@ -116,13 +116,13 @@ server {
 
     # API routes
     location /api/ {
-        limit_req zone=mybot_limit burst=20 nodelay;
-        proxy_pass http://mybot_web;
+        limit_req zone=overseer_limit burst=20 nodelay;
+        proxy_pass http://overseer_web;
     }
 
     # WebSocket support (for real-time features)
     location /api/ws {
-        proxy_pass http://mybot_web;
+        proxy_pass http://overseer_web;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -133,31 +133,31 @@ server {
     location /api/telegram/webhook {
         # Allow Telegram servers
         # See: https://core.telegram.org/bots/webhooks
-        proxy_pass http://mybot_web;
-        limit_req zone=mybot_limit burst=50 nodelay;
+        proxy_pass http://overseer_web;
+        limit_req zone=overseer_limit burst=50 nodelay;
     }
 
     # Static files
     location /_next/static/ {
-        proxy_pass http://mybot_web;
+        proxy_pass http://overseer_web;
         proxy_cache_valid 200 365d;
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 
     # Next.js image optimization
     location /_next/image {
-        proxy_pass http://mybot_web;
+        proxy_pass http://overseer_web;
         proxy_cache_valid 200 60d;
     }
 
     # Main application
     location / {
-        proxy_pass http://mybot_web;
+        proxy_pass http://overseer_web;
     }
 
     # Health check endpoint (for monitoring)
     location /api/health {
-        proxy_pass http://mybot_web;
+        proxy_pass http://overseer_web;
         access_log off;
     }
 

@@ -220,15 +220,10 @@ export function formatToolCall(toolName: string): string {
     shell: "💻",
     readFile: "📄",
     writeFile: "✏️",
-    listFiles: "📁",
-    searchFiles: "🔍",
-    gitStatus: "📊",
-    gitCommit: "📝",
-    gitPush: "⬆️",
-    gitPull: "⬇️",
-    systemInfo: "🖥️",
-    processInfo: "⚙️",
-    networkInfo: "🌐",
+    listDirectory: "📁",
+    executeShellCommand: "💻",
+    executeShellCommandConfirmed: "⚠️",
+    spawnSubAgent: "🧠",
   };
 
   const icon = toolIcons[toolName] || "🔧";
@@ -259,22 +254,17 @@ export async function getSystemStatus(): Promise<string> {
 /**
  * Format help message
  */
-export function getHelpMessage(botName = "MyBot"): string {
+export function getHelpMessage(botName = "Overseer"): string {
   return (
     `**${botName} Help**\n\n` +
     `I'm an AI assistant with full access to this VPS. I can:\n\n` +
     `📁 **File Operations**\n` +
-    `• Read, write, and manage files\n` +
-    `• Search for files and content\n\n` +
+    `• Read, write, and list files\n\n` +
     `💻 **Shell Commands**\n` +
     `• Execute any bash command\n` +
-    `• Monitor and manage processes\n\n` +
-    `🔧 **Git Operations**\n` +
-    `• Clone, pull, push repositories\n` +
-    `• Manage branches and commits\n\n` +
-    `📊 **System Info**\n` +
-    `• CPU, memory, disk usage\n` +
-    `• Network diagnostics\n\n` +
+    `• Run git, system, or network tools via shell\n\n` +
+    `🧠 **Sub-Agents**\n` +
+    `• Delegate complex tasks to specialists\n\n` +
     `Just ask me anything!`
   );
 }

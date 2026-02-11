@@ -28,7 +28,7 @@ export default async function LoginPage() {
               />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white">MyBot</h1>
+          <h1 className="text-3xl font-bold text-white">Overseer</h1>
           <p className="text-zinc-400 mt-2">AI Agent Control Panel</p>
         </div>
 

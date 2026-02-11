@@ -1,6 +1,6 @@
-# 🤝 Contributing to MyBot
+# 🤝 Contributing to Overseer
 
-Thank you for your interest in contributing to MyBot! This guide will help you get started.
+Thank you for your interest in contributing to Overseer! This guide will help you get started.
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ Instances of abusive behavior may be reported to the project team. All complaint
 
 **Before submitting a bug report:**
 - Check the [FAQ](docs/FAQ.md)
-- Search [existing issues](https://github.com/yourusername/mybot/issues)
+- Search [existing issues](https://github.com/ErzenXz/overseer/issues)
 - Try the latest version
 
 **Submitting a good bug report:**
@@ -73,7 +73,7 @@ If applicable, add screenshots.
 **Environment:**
 - OS: [e.g. Ubuntu 22.04]
 - Node version: [e.g. 20.10.0]
-- MyBot version: [e.g. 1.0.0]
+- Overseer version: [e.g. 1.0.0]
 - LLM Provider: [e.g. OpenAI GPT-4o]
 
 **Logs**
@@ -89,8 +89,8 @@ Any other context about the problem.
 
 **Before suggesting a feature:**
 - Check if it already exists
-- Search [existing feature requests](https://github.com/yourusername/mybot/issues?q=is%3Aissue+label%3Aenhancement)
-- Consider if it fits MyBot's scope
+- Search [existing feature requests](https://github.com/ErzenXz/overseer/issues?q=is%3Aissue+label%3Aenhancement)
+- Consider if it fits Overseer's scope
 
 **Submitting a good feature request:**
 
@@ -140,12 +140,12 @@ Share your custom skills with the community!
 1. Create skill following [Skill Development Guide](docs/DEVELOPMENT.md#creating-skills)
 2. Test thoroughly
 3. Add documentation
-4. Submit to [Skills Marketplace](https://github.com/yourusername/mybot-skills) (coming soon)
-5. Or share in [Discussions](https://github.com/yourusername/mybot/discussions)
+4. Submit to [Skills Marketplace](https://github.com/ErzenXz/overseer-skills) (coming soon)
+5. Or share in [Discussions](https://github.com/ErzenXz/overseer/discussions)
 
 ### 💬 Helping Others
 
-- Answer questions in [Discussions](https://github.com/yourusername/mybot/discussions)
+- Answer questions in [Discussions](https://github.com/ErzenXz/overseer/discussions)
 - Help troubleshoot issues
 - Share your use cases and tips
 - Write blog posts or tutorials
@@ -167,11 +167,11 @@ Share your custom skills with the community!
 # 1. Fork the repository on GitHub
 
 # 2. Clone your fork
-git clone https://github.com/YOUR_USERNAME/mybot.git
-cd mybot
+git clone https://github.com/YOUR_USERNAME/overseer.git
+cd overseer
 
 # 3. Add upstream remote
-git remote add upstream https://github.com/yourusername/mybot.git
+git remote add upstream https://github.com/ErzenXz/overseer.git
 
 # 4. Install dependencies
 npm install
@@ -610,10 +610,10 @@ git push origin feature/my-feature
 
 ### Communication Channels
 
-- **GitHub Discussions**: https://github.com/yourusername/mybot/discussions
-- **Discord**: https://discord.gg/mybot
-- **Twitter**: [@mybot](https://twitter.com/mybot)
-- **Email**: contribute@mybot.io
+- **GitHub Discussions**: https://github.com/ErzenXz/overseer/discussions
+- **Discord**: https://discord.gg/overseer
+- **Twitter**: [@overseer](https://twitter.com/overseer)
+- **Email**: contribute@overseer.io
 
 ### Getting Help
 
@@ -639,7 +639,7 @@ git push origin feature/my-feature
 
 **New to open source?** Welcome! Here's how to get started:
 
-1. **Pick a "good first issue"**: https://github.com/yourusername/mybot/issues?q=label%3A%22good+first+issue%22
+1. **Pick a "good first issue"**: https://github.com/ErzenXz/overseer/issues?q=label%3A%22good+first+issue%22
 
 2. **Comment on the issue**: Let us know you're working on it
 
@@ -664,6 +664,6 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ## Thank You! 🙏
 
-Your contributions make MyBot better for everyone. Whether it's code, documentation, bug reports, or helping others - every contribution matters.
+Your contributions make Overseer better for everyone. Whether it's code, documentation, bug reports, or helping others - every contribution matters.
 
 **Happy contributing!** 🚀

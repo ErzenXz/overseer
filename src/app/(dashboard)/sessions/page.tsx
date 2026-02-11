@@ -1,11 +1,11 @@
 import { StatsCard } from "@/components/StatsCard";
 import { SessionCard } from "@/components/admin/SessionCard";
-import * as agentSessions from "@/database/models/agent-sessions";
+import { agentSessionsModel } from "@/database/models/agent-sessions";
 import type { AgentSession } from "@/database/models/agent-sessions";
 
 export default function SessionsPage() {
-  const activeSessions = agentSessions.findActive();
-  const stats = agentSessions.getStats();
+  const activeSessions = agentSessionsModel.findActive();
+  const stats = agentSessionsModel.getStats();
 
   // Group sessions by interface type
   const sessionsByInterface = activeSessions.reduce((acc: Record<string, AgentSession[]>, session: AgentSession) => {
@@ -62,7 +62,7 @@ export default function SessionsPage() {
         />
         <StatsCard
           title="Today's Sessions"
-          value={stats.today}
+          value={stats.total_sessions}
           icon={
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -125,10 +125,7 @@ export default function SessionsPage() {
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {sessions.map((session: AgentSession) => (
-                  <SessionCard
-                    key={session.session_id}
-                    session={session}
-                  />
+                  <SessionCard key={session.id} session={session} />
                 ))}
               </div>
             </div>

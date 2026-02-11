@@ -1,15 +1,15 @@
 #!/bin/bash
 
 #################################################
-# MyBot Uninstall Script
+# Overseer Uninstall Script
 #################################################
 
 set -e
 
-MYBOT_DIR="${MYBOT_DIR:-$HOME/mybot}"
+OVERSEER_DIR="${OVERSEER_DIR:-$HOME/overseer}"
 
-echo "⚠️  This will completely remove MyBot from your system."
-echo "   Directory: $MYBOT_DIR"
+echo "⚠️  This will completely remove Overseer from your system."
+echo "   Directory: $OVERSEER_DIR"
 echo ""
 read -p "Are you sure you want to continue? (y/N) " -n 1 -r
 echo
@@ -20,33 +20,33 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "🗑️ Uninstalling MyBot..."
+echo "🗑️ Uninstalling Overseer..."
 
 # Stop services
 if command -v systemctl >/dev/null 2>&1; then
     echo "Stopping services..."
-    sudo systemctl stop mybot-web mybot-bot 2>/dev/null || true
-    sudo systemctl disable mybot-web mybot-bot 2>/dev/null || true
+    sudo systemctl stop overseer-web overseer-bot 2>/dev/null || true
+    sudo systemctl disable overseer-web overseer-bot 2>/dev/null || true
     
     echo "Removing service files..."
-    sudo rm -f /etc/systemd/system/mybot-web.service
-    sudo rm -f /etc/systemd/system/mybot-bot.service
+    sudo rm -f /etc/systemd/system/overseer-web.service
+    sudo rm -f /etc/systemd/system/overseer-bot.service
     sudo systemctl daemon-reload
 fi
 
 # Remove installation directory
-if [ -d "$MYBOT_DIR" ]; then
+if [ -d "$OVERSEER_DIR" ]; then
     echo "Removing installation directory..."
-    rm -rf "$MYBOT_DIR"
+    rm -rf "$OVERSEER_DIR"
 fi
 
 # Remove from bashrc
-if grep -q "mybot" "$HOME/.bashrc" 2>/dev/null; then
+if grep -q "overseer" "$HOME/.bashrc" 2>/dev/null; then
     echo "Cleaning up bashrc..."
-    sed -i '/# MyBot/d' "$HOME/.bashrc"
-    sed -i '/mybot/d' "$HOME/.bashrc"
+    sed -i '/# Overseer/d' "$HOME/.bashrc"
+    sed -i '/overseer/d' "$HOME/.bashrc"
 fi
 
 echo ""
-echo "✅ MyBot has been uninstalled."
+echo "✅ Overseer has been uninstalled."
 echo "   Your data has been removed."

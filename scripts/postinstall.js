@@ -11,7 +11,7 @@ const isWindows = process.platform === 'win32';
 const isMacOS = process.platform === 'darwin';
 const isLinux = process.platform === 'linux';
 
-console.log('🔧 MyBot Post-Install Setup');
+console.log('🔧 Overseer Post-Install Setup');
 console.log(`   Platform: ${process.platform} (${os.arch()})`);
 console.log(`   Node: ${process.version}`);
 console.log('');

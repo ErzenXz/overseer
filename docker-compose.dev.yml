@@ -1,5 +1,5 @@
 # ============================================
-# MyBot Docker Compose - Development
+# Overseer Docker Compose - Development
 # ============================================
 # Usage:
 #   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
@@ -17,7 +17,7 @@ services:
       # Mount source code for hot reloading
       - .:/app
       - /app/node_modules
-      - mybot-data:/app/data
+      - overseer-data:/app/data
     environment:
       - NODE_ENV=development
       - NEXT_TELEMETRY_DISABLED=1
@@ -44,7 +44,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - mybot-data:/app/data
+      - overseer-data:/app/data
     environment:
       - NODE_ENV=development
     ports:
@@ -65,7 +65,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - mybot-data:/app/data
+      - overseer-data:/app/data
     environment:
       - NODE_ENV=development
     ports:

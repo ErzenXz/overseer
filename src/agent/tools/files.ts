@@ -7,17 +7,11 @@ import {
   statSync,
   readdirSync,
   mkdirSync,
-  unlinkSync,
-  copyFileSync,
-  renameSync,
   lstatSync,
-  readlinkSync,
-  symlinkSync,
-  chmodSync,
   constants,
   accessSync,
 } from "fs";
-import { join, dirname, basename, extname, resolve, sep, posix, win32, isAbsolute } from "path";
+import { join, dirname, basename, resolve } from "path";
 import { toolExecutionsModel } from "../../database/index";
 import { createLogger } from "../../lib/logger";
 import {
@@ -81,7 +75,7 @@ function resolveCrossPlatformPath(inputPath: string): string {
   // Handle home directory expansion
   if (inputPath.startsWith("~")) {
     const homeDir = isWindows()
-      ? process.env.USERPROFILE || process.env.HOMEDRIVE + process.env.HOMEPATH
+      ? process.env.USERPROFILE || ((process.env.HOMEDRIVE ?? "") + (process.env.HOMEPATH ?? ""))
       : process.env.HOME;
     if (homeDir) {
       return resolve(join(homeDir, inputPath.slice(1)));
@@ -120,30 +114,40 @@ function hasWriteAccess(filePath: string): boolean {
  * Get file permissions in a cross-platform way
  */
 function getFilePermissions(stats: ReturnType<typeof statSync>): string {
+  if (!stats) return "???";
   if (isWindows()) {
     // Windows doesn't have Unix-style permissions
     // Return a simplified version based on what we can determine
-    const isReadOnly = !(stats.mode & 0o200);
+    const mode = stats.mode;
+    if (typeof mode !== "number") return "???";
+    const isReadOnly = !(mode & 0o200);
     return isReadOnly ? "r--" : "rw-";
   }
-  return stats.mode.toString(8).slice(-3);
+  const mode = stats.mode;
+  if (typeof mode !== "number") return "???";
+  return mode.toString(8).slice(-3);
 }
 
-export const readFile = tool({
+// Define schema separately for proper type inference
+const readFileSchema = z.object({
+  path: z.string().describe("Path to the file to read (supports Unix and Windows formats)"),
+  startLine: z.number().optional().describe("Starting line number (1-based, default: 1)"),
+  endLine: z.number().optional().describe("Ending line number (default: startLine + 1000)"),
+  encoding: z.enum(["utf-8", "ascii", "base64"]).optional().describe("File encoding (default: utf-8)"),
+});
+
+type ReadFileInput = z.infer<typeof readFileSchema>;
+
+export const readFile = tool<any, any>({
   description: `Read the contents of a file. Use this to view file contents.
 Works on: Windows, Linux, macOS
-Note: 
+Note:
 - Sensitive files (.env, credentials, keys) will be blocked for security
 - Large files will be truncated
 - Binary files are not supported
 - Handles both Unix (/) and Windows (\\) path formats`,
-  parameters: z.object({
-    path: z.string().describe("Path to the file to read (supports Unix and Windows formats)"),
-    startLine: z.number().optional().describe("Starting line number (1-based, default: 1)"),
-    endLine: z.number().optional().describe("Ending line number (default: startLine + 1000)"),
-    encoding: z.enum(["utf-8", "ascii", "base64"]).optional().describe("File encoding (default: utf-8)"),
-  }),
-  execute: async ({ path, startLine = 1, endLine, encoding = "utf-8" }) => {
+  inputSchema: readFileSchema,
+  execute: async ({ path, startLine = 1, endLine, encoding = "utf-8" }: ReadFileInput) => {
     const startTime = Date.now();
     const resolvedPath = resolveCrossPlatformPath(path);
 
@@ -262,17 +266,22 @@ Note:
   },
 });
 
-export const writeFile = tool({
+// Define schema separately for proper type inference
+const writeFileSchema = z.object({
+  path: z.string().describe("Path to the file to write"),
+  content: z.string().describe("Content to write to the file"),
+  createDirectories: z.boolean().optional().describe("Create parent directories if they don't exist (default: true)"),
+  append: z.boolean().optional().describe("Append to file instead of overwriting (default: false)"),
+});
+
+type WriteFileInput = z.infer<typeof writeFileSchema>;
+
+export const writeFile = tool<any, any>({
   description: `Write content to a file. Creates the file if it doesn't exist, or overwrites if it does.
 Works on: Windows, Linux, macOS
 Use this to create or modify files.`,
-  parameters: z.object({
-    path: z.string().describe("Path to the file to write"),
-    content: z.string().describe("Content to write to the file"),
-    createDirectories: z.boolean().optional().describe("Create parent directories if they don't exist (default: true)"),
-    append: z.boolean().optional().describe("Append to file instead of overwriting (default: false)"),
-  }),
-  execute: async ({ path, content, createDirectories = true, append = false }) => {
+  inputSchema: writeFileSchema,
+  execute: async ({ path, content, createDirectories = true, append = false }: WriteFileInput) => {
     const startTime = Date.now();
     const resolvedPath = resolveCrossPlatformPath(path);
 
@@ -349,15 +358,20 @@ Use this to create or modify files.`,
   },
 });
 
-export const listDirectory = tool({
+// Define schema separately for proper type inference
+const listDirectorySchema = z.object({
+  path: z.string().describe("Path to the directory to list"),
+  showHidden: z.boolean().optional().describe("Include hidden files (starting with .) (default: false)"),
+  recursive: z.boolean().optional().describe("List recursively (default: false, max 2 levels)"),
+});
+
+type ListDirectoryInput = z.infer<typeof listDirectorySchema>;
+
+export const listDirectory = tool<any, any>({
   description: `List contents of a directory. Shows files and subdirectories with details.
 Works on: Windows, Linux, macOS`,
-  parameters: z.object({
-    path: z.string().describe("Path to the directory to list"),
-    showHidden: z.boolean().optional().describe("Include hidden files (starting with .) (default: false)"),
-    recursive: z.boolean().optional().describe("List recursively (default: false, max 2 levels)"),
-  }),
-  execute: async ({ path, showHidden = false, recursive = false }) => {
+  inputSchema: listDirectorySchema,
+  execute: async ({ path, showHidden = false, recursive = false }: ListDirectoryInput) => {
     const startTime = Date.now();
     const resolvedPath = resolveCrossPlatformPath(path);
 
@@ -493,472 +507,6 @@ Works on: Windows, Linux, macOS`,
         success: false,
         entries: null,
         error: errorMessage,
-        platform: getPlatform(),
-      };
-    }
-  },
-});
-
-export const fileInfo = tool({
-  description: `Get detailed information about a file or directory.
-Works on: Windows, Linux, macOS`,
-  parameters: z.object({
-    path: z.string().describe("Path to the file or directory"),
-  }),
-  execute: async ({ path }) => {
-    const startTime = Date.now();
-    const resolvedPath = resolveCrossPlatformPath(path);
-
-    try {
-      if (!existsSync(resolvedPath)) {
-        return {
-          success: false,
-          info: null,
-          error: `Path not found: ${path}`,
-          platform: getPlatform(),
-        };
-      }
-
-      const stats = statSync(resolvedPath);
-      const lstats = lstatSync(resolvedPath);
-      const isSymlink = lstats.isSymbolicLink();
-
-      let symlinkTarget: string | undefined;
-      if (isSymlink) {
-        try {
-          symlinkTarget = readlinkSync(resolvedPath);
-        } catch {
-          symlinkTarget = "(unable to read)";
-        }
-      }
-
-      const info: Record<string, unknown> = {
-        path: resolvedPath,
-        name: basename(resolvedPath),
-        extension: extname(resolvedPath) || null,
-        type: stats.isDirectory() ? "directory" : isSymlink ? "symlink" : "file",
-        size: formatFileSize(stats.size),
-        sizeBytes: stats.size,
-        created: stats.birthtime.toISOString(),
-        modified: stats.mtime.toISOString(),
-        accessed: stats.atime.toISOString(),
-        permissions: getFilePermissions(stats),
-        isReadable: hasReadAccess(resolvedPath),
-        isWritable: hasWriteAccess(resolvedPath),
-        platform: getPlatform(),
-      };
-
-      if (isSymlink) {
-        info.symlinkTarget = symlinkTarget;
-      }
-
-      // Add Windows-specific info
-      if (isWindows()) {
-        info.isHidden = basename(resolvedPath).startsWith(".");
-      }
-
-      return {
-        success: true,
-        info,
-      };
-    } catch (error: unknown) {
-      const err = error as { message?: string };
-      return {
-        success: false,
-        info: null,
-        error: err.message || String(error),
-        platform: getPlatform(),
-      };
-    }
-  },
-});
-
-export const createDirectory = tool({
-  description: `Create a new directory.
-Works on: Windows, Linux, macOS`,
-  parameters: z.object({
-    path: z.string().describe("Path of the directory to create"),
-    recursive: z.boolean().optional().describe("Create parent directories if needed (default: true)"),
-  }),
-  execute: async ({ path, recursive = true }) => {
-    const resolvedPath = resolveCrossPlatformPath(path);
-
-    try {
-      if (existsSync(resolvedPath)) {
-        return {
-          success: false,
-          error: `Path already exists: ${path}`,
-          platform: getPlatform(),
-        };
-      }
-
-      mkdirSync(resolvedPath, { recursive });
-
-      toolExecutionsModel.create({
-        tool_name: "createDirectory",
-        input: { path },
-        output: "Directory created",
-        success: true,
-      });
-
-      return {
-        success: true,
-        path: resolvedPath,
-        message: `Directory created: ${resolvedPath}`,
-        platform: getPlatform(),
-      };
-    } catch (error: unknown) {
-      const err = error as { message?: string };
-      return {
-        success: false,
-        error: err.message || String(error),
-        platform: getPlatform(),
-      };
-    }
-  },
-});
-
-export const deleteFile = tool({
-  description: `Delete a file. Use with caution - this cannot be undone!
-Works on: Windows, Linux, macOS`,
-  parameters: z.object({
-    path: z.string().describe("Path to the file to delete"),
-    confirmed: z.boolean().describe("Set to true to confirm deletion"),
-  }),
-  execute: async ({ path, confirmed }) => {
-    const resolvedPath = resolveCrossPlatformPath(path);
-
-    if (!confirmed) {
-      return {
-        success: false,
-        error: `⚠️ Deletion not confirmed. Set 'confirmed: true' to delete "${basename(resolvedPath)}"`,
-        requiresConfirmation: true,
-        platform: getPlatform(),
-      };
-    }
-
-    try {
-      if (!existsSync(resolvedPath)) {
-        return {
-          success: false,
-          error: `File not found: ${path}`,
-          platform: getPlatform(),
-        };
-      }
-
-      const stats = statSync(resolvedPath);
-      if (stats.isDirectory()) {
-        const deleteCmd = isWindows()
-          ? `Use PowerShell: Remove-Item -Recurse -Force "${resolvedPath}"`
-          : `Use shell command: rm -r "${resolvedPath}"`;
-        return {
-          success: false,
-          error: `"${path}" is a directory. ${deleteCmd}`,
-          platform: getPlatform(),
-        };
-      }
-
-      unlinkSync(resolvedPath);
-
-      toolExecutionsModel.create({
-        tool_name: "deleteFile",
-        input: { path },
-        output: "File deleted",
-        success: true,
-      });
-
-      return {
-        success: true,
-        message: `Deleted: ${resolvedPath}`,
-        platform: getPlatform(),
-      };
-    } catch (error: unknown) {
-      const err = error as { message?: string };
-      return {
-        success: false,
-        error: err.message || String(error),
-        platform: getPlatform(),
-      };
-    }
-  },
-});
-
-export const copyFile = tool({
-  description: `Copy a file to a new location.
-Works on: Windows, Linux, macOS`,
-  parameters: z.object({
-    source: z.string().describe("Path to the source file"),
-    destination: z.string().describe("Path to the destination"),
-    overwrite: z.boolean().optional().describe("Overwrite if destination exists (default: false)"),
-  }),
-  execute: async ({ source, destination, overwrite = false }) => {
-    const sourcePath = resolveCrossPlatformPath(source);
-    const destPath = resolveCrossPlatformPath(destination);
-
-    try {
-      if (!existsSync(sourcePath)) {
-        return {
-          success: false,
-          error: `Source file not found: ${source}`,
-          platform: getPlatform(),
-        };
-      }
-
-      if (existsSync(destPath) && !overwrite) {
-        return {
-          success: false,
-          error: `Destination already exists: ${destination}. Set overwrite: true to replace.`,
-          platform: getPlatform(),
-        };
-      }
-
-      // Create destination directory if needed
-      const destDir = dirname(destPath);
-      if (!existsSync(destDir)) {
-        mkdirSync(destDir, { recursive: true });
-      }
-
-      copyFileSync(sourcePath, destPath);
-
-      toolExecutionsModel.create({
-        tool_name: "copyFile",
-        input: { source, destination },
-        output: "File copied",
-        success: true,
-      });
-
-      return {
-        success: true,
-        source: sourcePath,
-        destination: destPath,
-        message: `Copied to ${destPath}`,
-        platform: getPlatform(),
-      };
-    } catch (error: unknown) {
-      const err = error as { message?: string };
-      return {
-        success: false,
-        error: err.message || String(error),
-        platform: getPlatform(),
-      };
-    }
-  },
-});
-
-export const moveFile = tool({
-  description: `Move or rename a file.
-Works on: Windows, Linux, macOS`,
-  parameters: z.object({
-    source: z.string().describe("Path to the source file"),
-    destination: z.string().describe("Path to the destination"),
-    overwrite: z.boolean().optional().describe("Overwrite if destination exists (default: false)"),
-  }),
-  execute: async ({ source, destination, overwrite = false }) => {
-    const sourcePath = resolveCrossPlatformPath(source);
-    const destPath = resolveCrossPlatformPath(destination);
-
-    try {
-      if (!existsSync(sourcePath)) {
-        return {
-          success: false,
-          error: `Source not found: ${source}`,
-          platform: getPlatform(),
-        };
-      }
-
-      if (existsSync(destPath) && !overwrite) {
-        return {
-          success: false,
-          error: `Destination already exists: ${destination}. Set overwrite: true to replace.`,
-          platform: getPlatform(),
-        };
-      }
-
-      // Create destination directory if needed
-      const destDir = dirname(destPath);
-      if (!existsSync(destDir)) {
-        mkdirSync(destDir, { recursive: true });
-      }
-
-      renameSync(sourcePath, destPath);
-
-      toolExecutionsModel.create({
-        tool_name: "moveFile",
-        input: { source, destination },
-        output: "File moved",
-        success: true,
-      });
-
-      return {
-        success: true,
-        source: sourcePath,
-        destination: destPath,
-        message: `Moved to ${destPath}`,
-        platform: getPlatform(),
-      };
-    } catch (error: unknown) {
-      const err = error as { message?: string; code?: string };
-      
-      // Handle cross-device moves
-      if (err.code === "EXDEV") {
-        // Cross-device move: copy then delete
-        try {
-          copyFileSync(sourcePath, destPath);
-          unlinkSync(sourcePath);
-          
-          return {
-            success: true,
-            source: sourcePath,
-            destination: destPath,
-            message: `Moved to ${destPath} (cross-device)`,
-            platform: getPlatform(),
-          };
-        } catch (copyErr: unknown) {
-          const copyError = copyErr as { message?: string };
-          return {
-            success: false,
-            error: copyError.message || String(copyErr),
-            platform: getPlatform(),
-          };
-        }
-      }
-      
-      return {
-        success: false,
-        error: err.message || String(error),
-        platform: getPlatform(),
-      };
-    }
-  },
-});
-
-export const createSymlink = tool({
-  description: `Create a symbolic link.
-Works on: Windows (requires admin or developer mode), Linux, macOS`,
-  parameters: z.object({
-    target: z.string().describe("Path to the target file/directory"),
-    linkPath: z.string().describe("Path where the symlink will be created"),
-    type: z.enum(["file", "dir"]).optional().describe("Type of symlink (Windows only, default: auto-detect)"),
-  }),
-  execute: async ({ target, linkPath, type }) => {
-    const targetPath = resolveCrossPlatformPath(target);
-    const symlinkPath = resolveCrossPlatformPath(linkPath);
-
-    try {
-      if (!existsSync(targetPath)) {
-        return {
-          success: false,
-          error: `Target not found: ${target}`,
-          platform: getPlatform(),
-        };
-      }
-
-      if (existsSync(symlinkPath)) {
-        return {
-          success: false,
-          error: `Link path already exists: ${linkPath}`,
-          platform: getPlatform(),
-        };
-      }
-
-      // Determine symlink type for Windows
-      let symlinkType: "file" | "dir" | "junction" = "file";
-      if (type) {
-        symlinkType = type;
-      } else {
-        const targetStats = statSync(targetPath);
-        symlinkType = targetStats.isDirectory() ? "dir" : "file";
-      }
-
-      // On Windows, symlinks require elevated privileges or developer mode
-      if (isWindows()) {
-        symlinkSync(targetPath, symlinkPath, symlinkType);
-      } else {
-        symlinkSync(targetPath, symlinkPath);
-      }
-
-      return {
-        success: true,
-        target: targetPath,
-        link: symlinkPath,
-        type: symlinkType,
-        message: `Symlink created: ${symlinkPath} -> ${targetPath}`,
-        platform: getPlatform(),
-      };
-    } catch (error: unknown) {
-      const err = error as { message?: string; code?: string };
-      let errorMessage = err.message || String(error);
-
-      if (isWindows() && err.code === "EPERM") {
-        errorMessage = "Creating symlinks on Windows requires administrator privileges or Developer Mode enabled.";
-      }
-
-      return {
-        success: false,
-        error: errorMessage,
-        platform: getPlatform(),
-      };
-    }
-  },
-});
-
-export const setPermissions = tool({
-  description: `Set file permissions (Unix-style chmod, limited on Windows).
-Works on: Linux, macOS (full support), Windows (limited - read-only flag only)`,
-  parameters: z.object({
-    path: z.string().describe("Path to the file"),
-    mode: z.string().describe("Permission mode (e.g., '755', '644')"),
-  }),
-  execute: async ({ path, mode }) => {
-    const resolvedPath = resolveCrossPlatformPath(path);
-
-    try {
-      if (!existsSync(resolvedPath)) {
-        return {
-          success: false,
-          error: `File not found: ${path}`,
-          platform: getPlatform(),
-        };
-      }
-
-      const numericMode = parseInt(mode, 8);
-      if (isNaN(numericMode)) {
-        return {
-          success: false,
-          error: `Invalid permission mode: ${mode}. Use octal format like '755' or '644'.`,
-          platform: getPlatform(),
-        };
-      }
-
-      if (isWindows()) {
-        // Windows only supports read-only flag through chmod
-        // For full control, would need icacls which requires shell execution
-        chmodSync(resolvedPath, numericMode);
-        
-        return {
-          success: true,
-          path: resolvedPath,
-          mode,
-          message: `Permissions set (note: Windows has limited chmod support)`,
-          platform: getPlatform(),
-          note: "For full Windows permission control, use the shell with 'icacls' command.",
-        };
-      }
-
-      chmodSync(resolvedPath, numericMode);
-
-      return {
-        success: true,
-        path: resolvedPath,
-        mode,
-        message: `Permissions set to ${mode}`,
-        platform: getPlatform(),
-      };
-    } catch (error: unknown) {
-      const err = error as { message?: string };
-      return {
-        success: false,
-        error: err.message || String(error),
         platform: getPlatform(),
       };
     }

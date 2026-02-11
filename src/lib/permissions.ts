@@ -2,7 +2,7 @@
  * Role-Based Access Control (RBAC) Permission System
  * 
  * This module provides a comprehensive permission system with:
- * - Granular permissions for all MyBot operations
+ * - Granular permissions for all Overseer operations
  * - Role-based permission mapping
  * - Per-user custom permission grants/revokes
  * - Permission checking with audit logging

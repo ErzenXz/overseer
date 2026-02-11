@@ -13,7 +13,7 @@ function getEncryptionKey(): Buffer {
     throw new Error("ENCRYPTION_KEY environment variable is not set");
   }
   // Derive a proper key using scrypt
-  const salt = Buffer.from("mybot-salt-v1"); // Fixed salt for consistency
+  const salt = Buffer.from("overseer-salt-v1"); // Fixed salt for consistency
   return scryptSync(envKey, salt, KEY_LENGTH);
 }
 

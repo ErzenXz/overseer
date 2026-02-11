@@ -1,5 +1,5 @@
 /**
- * Discord Bot Implementation for MyBot
+ * Discord Bot Implementation for Overseer
  * Full-featured Discord bot with slash commands, streaming, and multi-modal support
  */
 
@@ -501,10 +501,10 @@ async function handleStatusCommand(interaction: ChatInputCommandInteraction) {
 
 // Handle /help command
 async function handleHelpCommand(interaction: ChatInputCommandInteraction) {
-  const helpText = getHelpMessage("MyBot Discord");
+  const helpText = getHelpMessage("Overseer Discord");
 
   const embed = new EmbedBuilder()
-    .setTitle("🤖 MyBot Help")
+    .setTitle("🤖 Overseer Help")
     .setDescription(helpText)
     .setColor(0x5865f2)
     .addFields(
@@ -841,7 +841,7 @@ async function startBot() {
         default:
           await interaction.reply({
             content: "Unknown command.",
-            flags: MessageFlags.Ephemeral,
+            ephemeral: true,
           });
       }
     } catch (error) {
@@ -852,7 +852,7 @@ async function startBot() {
 
       const errorReply = {
         content: "❌ An error occurred while processing your command.",
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       };
 
       if (interaction.replied || interaction.deferred) {

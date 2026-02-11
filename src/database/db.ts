@@ -33,7 +33,7 @@ function getDatabasePath(): string {
   }
 
   // Default: use platform-appropriate data directory or local ./data
-  const defaultPath = join(process.cwd(), "data", "mybot.db");
+  const defaultPath = join(process.cwd(), "data", "overseer.db");
   return normalizePath(defaultPath);
 }
 

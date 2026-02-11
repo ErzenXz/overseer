@@ -2,7 +2,7 @@
   "name": "Git Helper",
   "description": "Advanced git operations, branch management, commit formatting, and workflow assistance",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["git", "commit", "branch", "merge", "rebase", "stash", "cherry-pick", "bisect"],
   "system_prompt": "You are a Git expert. Help users with version control operations, branch strategies, commit messages, and resolving complex git situations. Always explain the implications of destructive operations.",
   "tools": [

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #################################################
-# MyBot Update Script
-# Updates MyBot to the latest version
+# Overseer Update Script
+# Updates Overseer to the latest version
 #################################################
 
 set -e
@@ -17,8 +17,8 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # Configuration
-MYBOT_DIR="${MYBOT_DIR:-$HOME/mybot}"
-BACKUP_DIR="${MYBOT_DIR}/backups"
+OVERSEER_DIR="${OVERSEER_DIR:-$HOME/overseer}"
+BACKUP_DIR="${OVERSEER_DIR}/backups"
 
 # Print helpers
 print_step() {
@@ -43,19 +43,19 @@ print_success() {
 
 # Detect installation type
 detect_installation() {
-    if [ -f "$MYBOT_DIR/docker-compose.yml" ] && command -v docker &>/dev/null; then
-        if docker compose ps 2>/dev/null | grep -q "mybot"; then
+    if [ -f "$OVERSEER_DIR/docker-compose.yml" ] && command -v docker &>/dev/null; then
+        if docker compose ps 2>/dev/null | grep -q "overseer"; then
             INSTALL_TYPE="docker"
             return
         fi
     fi
 
-    if systemctl is-active --quiet mybot 2>/dev/null; then
+    if systemctl is-active --quiet overseer 2>/dev/null; then
         INSTALL_TYPE="systemd"
         return
     fi
 
-    if launchctl list 2>/dev/null | grep -q "mybot"; then
+    if launchctl list 2>/dev/null | grep -q "overseer"; then
         INSTALL_TYPE="launchd"
         return
     fi
@@ -72,7 +72,7 @@ create_backup() {
 
     # Backup database and .env
     tar -czf "$BACKUP_FILE" \
-        -C "$MYBOT_DIR" \
+        -C "$OVERSEER_DIR" \
         data/ \
         .env \
         2>/dev/null || true
@@ -86,15 +86,15 @@ stop_services() {
 
     case "$INSTALL_TYPE" in
         docker)
-            cd "$MYBOT_DIR"
+            cd "$OVERSEER_DIR"
             docker compose down
             ;;
         systemd)
-            sudo systemctl stop mybot mybot-telegram 2>/dev/null || true
+            sudo systemctl stop overseer overseer-telegram 2>/dev/null || true
             ;;
         launchd)
-            launchctl unload ~/Library/LaunchAgents/com.mybot.web.plist 2>/dev/null || true
-            launchctl unload ~/Library/LaunchAgents/com.mybot.telegram.plist 2>/dev/null || true
+            launchctl unload ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null || true
+            launchctl unload ~/Library/LaunchAgents/com.overseer.telegram.plist 2>/dev/null || true
             ;;
         *)
             print_warning "Could not detect service manager, please stop services manually"
@@ -108,7 +108,7 @@ stop_services() {
 pull_updates() {
     print_step "Pulling latest changes..."
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
     if [ -d ".git" ]; then
         # Stash any local changes
@@ -130,7 +130,7 @@ pull_updates() {
 update_dependencies() {
     print_step "Updating dependencies..."
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
     if [ "$INSTALL_TYPE" == "docker" ]; then
         print_substep "Rebuilding Docker images..."
@@ -150,7 +150,7 @@ update_dependencies() {
 run_migrations() {
     print_step "Running database migrations..."
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
     if [ "$INSTALL_TYPE" == "docker" ]; then
         # Run in container
@@ -166,7 +166,7 @@ run_migrations() {
 build_application() {
     print_step "Building application..."
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
     if [ "$INSTALL_TYPE" == "docker" ]; then
         # Already built during docker compose build
@@ -183,19 +183,19 @@ start_services() {
 
     case "$INSTALL_TYPE" in
         docker)
-            cd "$MYBOT_DIR"
+            cd "$OVERSEER_DIR"
             docker compose up -d
             ;;
         systemd)
-            sudo systemctl start mybot mybot-telegram
+            sudo systemctl start overseer overseer-telegram
             ;;
         launchd)
-            launchctl load ~/Library/LaunchAgents/com.mybot.web.plist 2>/dev/null || true
-            launchctl load ~/Library/LaunchAgents/com.mybot.telegram.plist 2>/dev/null || true
+            launchctl load ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null || true
+            launchctl load ~/Library/LaunchAgents/com.overseer.telegram.plist 2>/dev/null || true
             ;;
         *)
             print_warning "Please start services manually"
-            echo "  ./mybot start"
+            echo "  ./overseer start"
             ;;
     esac
 
@@ -218,29 +218,29 @@ verify_update() {
             fi
             ;;
         systemd)
-            if systemctl is-active --quiet mybot; then
+            if systemctl is-active --quiet overseer; then
                 print_success "Web service is running"
             else
                 print_warning "Web service may not be running"
             fi
-            if systemctl is-active --quiet mybot-telegram; then
+            if systemctl is-active --quiet overseer-telegram; then
                 print_success "Telegram bot is running"
             else
                 print_warning "Telegram bot may not be running"
             fi
             ;;
         launchd)
-            if launchctl list | grep -q "mybot.web"; then
+            if launchctl list | grep -q "overseer.web"; then
                 print_success "Web service is running"
             fi
-            if launchctl list | grep -q "mybot.telegram"; then
+            if launchctl list | grep -q "overseer.telegram"; then
                 print_success "Telegram bot is running"
             fi
             ;;
     esac
 
     # Try to reach the health endpoint
-    local PORT=$(grep "^PORT=" "$MYBOT_DIR/.env" 2>/dev/null | cut -d'=' -f2)
+    local PORT=$(grep "^PORT=" "$OVERSEER_DIR/.env" 2>/dev/null | cut -d'=' -f2)
     PORT=${PORT:-3000}
 
     if curl -sf "http://localhost:$PORT/api/health" &>/dev/null; then
@@ -255,7 +255,7 @@ print_completion() {
     echo ""
     echo -e "${GREEN}"
     echo "=============================================="
-    echo "  MyBot Update Complete!"
+    echo "  Overseer Update Complete!"
     echo "=============================================="
     echo -e "${NC}"
     echo ""
@@ -272,15 +272,15 @@ print_completion() {
             echo "  docker compose logs -f"
             ;;
         systemd)
-            echo "  sudo systemctl status mybot"
-            echo "  sudo journalctl -u mybot -f"
+            echo "  sudo systemctl status overseer"
+            echo "  sudo journalctl -u overseer -f"
             ;;
         launchd)
-            echo "  ./mybot status"
-            echo "  tail -f ~/mybot/logs/*.log"
+            echo "  ./overseer status"
+            echo "  tail -f ~/overseer/logs/*.log"
             ;;
         *)
-            echo "  ./mybot status"
+            echo "  ./overseer status"
             ;;
     esac
     echo ""
@@ -291,7 +291,7 @@ rollback() {
     print_error "Update failed, attempting rollback..."
 
     if [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
-        cd "$MYBOT_DIR"
+        cd "$OVERSEER_DIR"
         tar -xzf "$BACKUP_FILE"
         print_warning "Restored from backup: $BACKUP_FILE"
     fi
@@ -303,16 +303,16 @@ rollback() {
 # Main
 main() {
     echo ""
-    echo -e "${BOLD}MyBot Update Script${NC}"
+    echo -e "${BOLD}Overseer Update Script${NC}"
     echo ""
 
     # Check if in correct directory
-    if [ ! -d "$MYBOT_DIR" ]; then
-        print_error "MyBot directory not found: $MYBOT_DIR"
+    if [ ! -d "$OVERSEER_DIR" ]; then
+        print_error "Overseer directory not found: $OVERSEER_DIR"
         exit 1
     fi
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
     # Detect installation type
     detect_installation

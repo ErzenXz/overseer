@@ -99,7 +99,7 @@ async function executeCommand(
     return new Promise((resolve, reject) => {
       const child = spawn(shell, args, {
         cwd: normalizedCwd,
-        env: getPlatformEnv(),
+        env: getPlatformEnv() as NodeJS.ProcessEnv,
         shell: false,
         timeout,
       });
@@ -107,17 +107,17 @@ async function executeCommand(
       let stdout = "";
       let stderr = "";
 
-      child.stdout.on("data", (data) => {
+      child.stdout.on("data", (data: Buffer) => {
         stdout += data.toString();
       });
 
-      child.stderr.on("data", (data) => {
+      child.stderr.on("data", (data: Buffer) => {
         stderr += data.toString();
       });
 
       child.on("error", reject);
 
-      child.on("close", (code) => {
+      child.on("close", (code: number | null) => {
         if (code === 0 || stdout || stderr) {
           resolve({ stdout, stderr });
         } else {
@@ -138,12 +138,12 @@ async function executeCommand(
     cwd: normalizedCwd,
     timeout,
     maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-    env: getPlatformEnv(),
+    env: getPlatformEnv() as NodeJS.ProcessEnv,
     shell: process.env.SHELL || "/bin/bash",
   });
 }
 
-export const executeShellCommand = tool({
+export const executeShellCommand = tool<any, any>({
   description: `Execute a shell command on the system. 
 Platform: ${getPlatform().toUpperCase()}
 Shell: ${isWindows() ? "PowerShell" : "Bash/Zsh"}
@@ -155,7 +155,7 @@ IMPORTANT:
 - Long-running commands will timeout after ${TIMEOUT_MS / 1000} seconds
 - Use this for: file operations, git, npm, system info, etc.
 - For cross-platform compatibility, commands may be automatically mapped between Unix and Windows equivalents`,
-  parameters: z.object({
+  inputSchema: z.object({
     command: z.string().describe("The shell command to execute"),
     workingDirectory: z
       .string()
@@ -170,10 +170,10 @@ IMPORTANT:
       .optional()
       .describe("Automatically map Unix commands to Windows equivalents (default: false)"),
   }),
-  execute: async ({ command, workingDirectory, timeout, autoMap = false }) => {
+  execute: async ({ command, workingDirectory, timeout, autoMap = false }: { command: string; workingDirectory?: string; timeout?: number; autoMap?: boolean }) => {
     const startTime = Date.now();
-    const homeDir = isWindows() 
-      ? process.env.USERPROFILE || process.env.HOMEDRIVE + process.env.HOMEPATH 
+    const homeDir = isWindows()
+      ? process.env.USERPROFILE || `${process.env.HOMEDRIVE ?? ""}${process.env.HOMEPATH ?? ""}`
       : process.env.HOME;
     const cwd = workingDirectory || homeDir || process.cwd();
 
@@ -295,11 +295,11 @@ IMPORTANT:
   },
 });
 
-export const executeShellCommandConfirmed = tool({
+export const executeShellCommandConfirmed = tool<any, any>({
   description: `Execute a dangerous/destructive shell command after user confirmation.
 Only use this when the user has explicitly confirmed they want to run a dangerous command.
 Platform: ${getPlatform().toUpperCase()}`,
-  parameters: z.object({
+  inputSchema: z.object({
     command: z.string().describe("The dangerous shell command to execute"),
     workingDirectory: z
       .string()
@@ -313,10 +313,10 @@ Platform: ${getPlatform().toUpperCase()}`,
       .optional()
       .describe("Automatically map Unix commands to Windows equivalents (default: false)"),
   }),
-  execute: async ({ command, workingDirectory, userConfirmation, autoMap = false }) => {
+  execute: async ({ command, workingDirectory, userConfirmation, autoMap = false }: { command: string; workingDirectory?: string; userConfirmation: string; autoMap?: boolean }) => {
     const startTime = Date.now();
-    const homeDir = isWindows() 
-      ? process.env.USERPROFILE || process.env.HOMEDRIVE + process.env.HOMEPATH 
+    const homeDir = isWindows()
+      ? process.env.USERPROFILE || `${process.env.HOMEDRIVE ?? ""}${process.env.HOMEPATH ?? ""}`
       : process.env.HOME;
     const cwd = workingDirectory || homeDir || process.cwd();
 
@@ -398,9 +398,9 @@ Platform: ${getPlatform().toUpperCase()}`,
 /**
  * Get shell information for the current platform
  */
-export const getShellInfo = tool({
+export const getShellInfo = tool<any, any>({
   description: `Get information about the current shell and platform.`,
-  parameters: z.object({}),
+  inputSchema: z.object({}),
   execute: async () => {
     const platform = getPlatform();
     const { shell } = getShellArgs("echo test");

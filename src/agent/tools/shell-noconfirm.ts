@@ -17,13 +17,13 @@ const logger = createLogger("tools:shell");
 const TIMEOUT_MS = parseInt(process.env.SHELL_TIMEOUT_MS || "60000", 10); // 60s default
 const MAX_OUTPUT_LENGTH = 100000; // 100KB max output
 
-export const executeShellCommand = tool({
+export const executeShellCommand = tool<any, any>({
   description: `Execute ANY shell command on the VPS immediately without confirmation.
 IMPORTANT: This tool executes commands IMMEDIATELY without asking for confirmation.
 You have full root-level access to the system.
 Use this for: file operations, git, npm, system commands, package management, etc.
 Timeout: ${TIMEOUT_MS / 1000} seconds`,
-  parameters: z.object({
+  inputSchema: z.object({
     command: z.string().describe("The shell command to execute immediately"),
     workingDirectory: z
       .string()
@@ -38,7 +38,7 @@ Timeout: ${TIMEOUT_MS / 1000} seconds`,
       .optional()
       .describe("Brief explanation of what this command does (for logging)"),
   }),
-  execute: async ({ command, workingDirectory, timeout, explanation }) => {
+  execute: async ({ command, workingDirectory, timeout, explanation }: { command: string; workingDirectory?: string; timeout?: number; explanation?: string }) => {
     const startTime = Date.now();
     const cwd = workingDirectory || process.cwd();
 
@@ -53,7 +53,7 @@ Timeout: ${TIMEOUT_MS / 1000} seconds`,
         cwd,
         timeout: timeout || TIMEOUT_MS,
         maxBuffer: 50 * 1024 * 1024, // 50MB buffer
-        env: { ...process.env, TERM: "dumb" },
+        env: { ...process.env, TERM: "dumb" } as NodeJS.ProcessEnv,
       });
 
       let output = stdout || "";
@@ -127,10 +127,10 @@ Timeout: ${TIMEOUT_MS / 1000} seconds`,
   },
 });
 
-export const executeMultipleCommands = tool({
+export const executeMultipleCommands = tool<any, any>({
   description: `Execute multiple shell commands in sequence.
 Use this to run several commands in order, like setting up an environment or running build steps.`,
-  parameters: z.object({
+  inputSchema: z.object({
     commands: z.array(z.object({
       command: z.string().describe("The command to execute"),
       workingDirectory: z.string().optional().describe("Working directory (optional)"),
@@ -138,7 +138,7 @@ Use this to run several commands in order, like setting up an environment or run
     workingDirectory: z.string().optional().describe("Default working directory for all commands"),
     stopOnError: z.boolean().default(true).describe("Stop execution if a command fails"),
   }),
-  execute: async ({ commands, workingDirectory, stopOnError }) => {
+  execute: async ({ commands, workingDirectory, stopOnError }: { commands: Array<{ command: string; workingDirectory?: string }>; workingDirectory?: string; stopOnError: boolean }) => {
     const startTime = Date.now();
     const results: Array<{
       command: string;
@@ -159,7 +159,7 @@ Use this to run several commands in order, like setting up an environment or run
           cwd,
           timeout: TIMEOUT_MS,
           maxBuffer: 50 * 1024 * 1024,
-          env: { ...process.env, TERM: "dumb" },
+          env: { ...process.env, TERM: "dumb" } as NodeJS.ProcessEnv,
         });
 
         let output = stdout || "";

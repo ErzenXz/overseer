@@ -1,4 +1,4 @@
-# MyBot Agent - Full VPS Control Setup Guide
+# Overseer Agent - Full VPS Control Setup Guide
 
 ## What You Now Have
 
@@ -27,7 +27,7 @@ I've created a **standalone agent system** that can run independently from the w
 ### 1. Install Dependencies
 
 ```bash
-cd /Users/erzenkrasniqi/Projects/MyBot
+cd /Users/erzenkrasniqi/Projects/Overseer
 npm install --legacy-peer-deps
 ```
 
@@ -215,7 +215,8 @@ const cost = calculateCost(model, 1000, 500); // input/output tokens
 ```
 src/agent/
 ├── runner.ts                    # Standalone agent runner
-├── providers-comprehensive.ts   # 20+ provider support
+├── providers.ts                 # Unified provider support (7+ providers)
+├── provider-info.ts             # Provider metadata and models
 ├── models-dev.ts               # Models.dev integration
 ├── tools/
 │   ├── shell-noconfirm.ts      # No confirmation shell tools
@@ -238,7 +239,7 @@ The project is using AI SDK v6 which has different types. Some type errors are e
 ### Provider Not Working
 Check logs in `logs/` directory:
 ```bash
-tail -f logs/mybot.log
+tail -f logs/overseer.log
 ```
 
 ### No Provider Configured
@@ -275,7 +276,7 @@ console.log(`Used ${result.steps} steps`);
 
 ### Adding New Providers
 
-Edit `src/agent/providers-comprehensive.ts` and add to `PROVIDER_INFO`:
+Edit `src/agent/provider-info.ts` and add to `PROVIDER_INFO`:
 
 ```typescript
 newprovider: {

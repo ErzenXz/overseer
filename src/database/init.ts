@@ -7,7 +7,7 @@ import { runIfNeeded as runPermissionsMigration } from "./migrations/001_add_per
 config();
 
 async function initDatabase() {
-  console.log("🚀 Initializing MyBot database...\n");
+  console.log("🚀 Initializing Overseer database...\n");
 
   // Initialize schema
   initializeSchema();
@@ -68,7 +68,7 @@ async function initDatabase() {
   console.log(`📝 Messages: ${messageCount.count}`);
 
   console.log("\n✨ Database initialization complete!");
-  console.log(`📁 Database location: ${process.env.DATABASE_PATH || "./data/mybot.db"}`);
+  console.log(`📁 Database location: ${process.env.DATABASE_PATH || "./data/overseer.db"}`);
 }
 
 initDatabase().catch(console.error);

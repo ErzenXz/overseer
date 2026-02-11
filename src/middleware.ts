@@ -23,7 +23,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Check for session cookie
-  const sessionCookie = request.cookies.get("mybot_session");
+  const sessionCookie = request.cookies.get("overseer_session");
 
   // For API routes
   if (pathname.startsWith("/api/")) {

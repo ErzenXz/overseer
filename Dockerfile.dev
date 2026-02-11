@@ -1,5 +1,5 @@
 # ============================================
-# MyBot Development Dockerfile
+# Overseer Development Dockerfile
 # ============================================
 
 FROM node:20-alpine

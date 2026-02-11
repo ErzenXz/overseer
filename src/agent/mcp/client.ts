@@ -1,18 +1,28 @@
 /**
  * MCP (Model Context Protocol) Support
  * Connects to MCP servers for extended tool capabilities
+ *
+ * NOTE: MCP functionality is optional. To enable, install:
+ * npm install @modelcontextprotocol/sdk
  */
 
 import { db } from "../../database/db";
 import { createLogger } from "../../lib/logger";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+// Uncomment below line after installing @modelcontextprotocol/sdk
+// import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+// import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+// import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { Tool } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
 
 const logger = createLogger("mcp");
+
+// Runtime stubs for MCP when SDK is not installed
+const Client: any = undefined;
+const StdioClientTransport: any = undefined;
+const SSEClientTransport: any = undefined;
+type Client = any;
 
 // Active MCP connections
 const mcpClients = new Map<string, Client>();
@@ -142,7 +152,7 @@ export async function connectToServer(serverId: number): Promise<boolean> {
     }
     
     const client = new Client(
-      { name: "mybot-mcp-client", version: "1.0.0" },
+      { name: "overseer-mcp-client", version: "1.0.0" },
       { capabilities: {} }
     );
     
@@ -207,10 +217,10 @@ async function loadToolsFromServer(serverName: string, client: Client): Promise<
     
     for (const mcpTool of toolsResponse.tools) {
       // Convert MCP tool to AI SDK tool
-      const aiTool = tool({
+      const aiTool = tool<any, any>({
         description: mcpTool.description || `MCP tool: ${mcpTool.name}`,
-        parameters: convertMCPSchemaToZod(mcpTool.inputSchema),
-        execute: async (args) => {
+        inputSchema: convertMCPSchemaToZod(mcpTool.inputSchema),
+        execute: async (args: Record<string, any>) => {
           const result = await client.callTool({
             name: mcpTool.name,
             arguments: args,

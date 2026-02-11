@@ -1,6 +1,6 @@
 # 👨‍💻 Developer Guide
 
-Complete guide for developers who want to build, extend, or contribute to MyBot.
+Complete guide for developers who want to build, extend, or contribute to Overseer.
 
 ## Table of Contents
 
@@ -33,8 +33,8 @@ Complete guide for developers who want to build, extend, or contribute to MyBot.
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/mybot.git
-cd mybot
+git clone https://github.com/ErzenXz/overseer.git
+cd overseer
 
 # 2. Install dependencies
 pnpm install  # or npm install
@@ -89,7 +89,7 @@ pnpm discord:dev  # Discord bot (optional)
 ## Project Structure
 
 ```
-mybot/
+overseer/
 ├── src/
 │   ├── agent/                  # AI Agent Core
 │   │   ├── agent.ts           # Main agent logic
@@ -170,9 +170,9 @@ mybot/
 │   └── postinstall.js         # Post-install hook
 │
 ├── systemd/                    # Service Files
-│   ├── mybot-web.service
-│   ├── mybot-telegram.service
-│   └── mybot-discord.service
+│   ├── overseer-web.service
+│   ├── overseer-telegram.service
+│   └── overseer-discord.service
 │
 ├── docs/                       # Documentation
 │   ├── DEPLOYMENT.md
@@ -181,7 +181,7 @@ mybot/
 │   └── ...
 │
 ├── data/                       # Runtime Data
-│   └── mybot.db               # SQLite database
+│   └── overseer.db               # SQLite database
 │
 ├── logs/                       # Application Logs
 │
@@ -200,7 +200,7 @@ mybot/
 
 ### Agent Core
 
-The agent is the brain of MyBot. It uses **Vercel AI SDK's** `generateText` with tool calling:
+The agent is the brain of Overseer. It uses **Vercel AI SDK's** `generateText` with tool calling:
 
 ```typescript
 // src/agent/agent.ts
@@ -499,7 +499,7 @@ export async function doSomething(args: DoSomethingArgs): Promise<any> {
   const { input } = args;
   
   // Get skill config (if needed)
-  const config: SkillConfig = {}; // Loaded by MyBot
+  const config: SkillConfig = {}; // Loaded by Overseer
   
   try {
     // Your implementation
@@ -559,7 +559,7 @@ curl -X PUT http://localhost:3000/api/skills/1 \
 
 ## Adding LLM Providers
 
-MyBot supports 20+ providers via Vercel AI SDK. Here's how to add a new one:
+Overseer supports 20+ providers via Vercel AI SDK. Here's how to add a new one:
 
 ### 1. Install Provider Package
 
@@ -783,13 +783,13 @@ View logs:
 
 ```bash
 # Real-time logs
-tail -f logs/mybot.log
+tail -f logs/overseer.log
 
 # Systemd logs
-sudo journalctl -u mybot-web -f
+sudo journalctl -u overseer-web -f
 
 # PM2 logs
-pm2 logs mybot-web
+pm2 logs overseer-web
 ```
 
 ### VS Code Debugging
@@ -825,8 +825,8 @@ pm2 logs mybot-web
 **Problem**: `Database locked`
 ```bash
 # Solution: Stop all processes using the database
-pkill -f mybot
-rm data/mybot.db-wal data/mybot.db-shm
+pkill -f overseer
+rm data/overseer.db-wal data/overseer.db-shm
 ```
 
 **Problem**: `Tool not found`
@@ -858,7 +858,7 @@ pnpm build
 pnpm start
 
 # Build Docker image
-docker build -t mybot:latest .
+docker build -t overseer:latest .
 ```
 
 ### Environment Variables
@@ -867,7 +867,7 @@ Production `.env`:
 
 ```env
 NODE_ENV=production
-APP_URL=https://mybot.example.com
+APP_URL=https://overseer.example.com
 
 # Use strong secrets in production!
 ENCRYPTION_KEY=<64-char-hex>
@@ -875,7 +875,7 @@ SESSION_SECRET=<64-char-hex>
 ADMIN_PASSWORD=<strong-password>
 
 # Database
-DATABASE_PATH=./data/mybot.db
+DATABASE_PATH=./data/overseer.db
 
 # Logging
 LOG_LEVEL=info
@@ -971,4 +971,4 @@ git push origin feature/my-feature
 
 ---
 
-**Need help?** Join our [Discord](https://discord.gg/mybot) or [open an issue](https://github.com/yourusername/mybot/issues).
+**Need help?** Join our [Discord](https://discord.gg/overseer) or [open an issue](https://github.com/ErzenXz/overseer/issues).

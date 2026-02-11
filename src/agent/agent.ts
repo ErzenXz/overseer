@@ -1,9 +1,12 @@
-import { generateText, streamText, type CoreMessage, type LanguageModel } from "ai";
+import { generateText, streamText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
 import { loadSoul } from "./soul";
 import { getDefaultModel, getActiveModels } from "./providers";
 import { allTools, getAllAvailableTools, getToolCounts } from "./tools/index";
 import { messagesModel, conversationsModel, logsModel } from "../database/index";
 import { createLogger } from "../lib/logger";
+
+// Type alias for messages (using ModelMessage from AI SDK)
+type CoreMessage = ModelMessage;
 
 // MCP and Skills imports
 import { getConnectionStatus as getMCPStatus, getActiveServers as getActiveMCPServers } from "./mcp/client";
@@ -110,9 +113,9 @@ Based on the user's query, the following specialized skills are activated:
 You can spawn specialized sub-agents for complex tasks using the spawnSubAgent tool:
 - **code**: Code generation, modification, and review
 - **file**: File system operations specialist
-- **git**: Version control operations
-- **system**: System administration
-- **web**: Web scraping and API calls
+- **git**: Version control operations (via shell)
+- **system**: System administration (via shell)
+- **web**: Web scraping and API calls (via shell)
 - **docker**: Container management
 - **db**: Database operations
 - **security**: Security and firewall
@@ -135,16 +138,13 @@ Use sub-agents when a task requires focused expertise or when you want to delega
 ## Available Tools
 
 You have access to ${toolCounts.total} tools:
-- **Built-in tools**: ${toolCounts.builtin} (shell, file, git, system, search, sub-agents)
+- **Built-in tools**: ${toolCounts.builtin} (shell, files, sub-agents)
 - **MCP tools**: ${toolCounts.mcp} (from connected MCP servers)
 - **Skill tools**: ${toolCounts.skills} (from active skills)
 
 Built-in capabilities include:
-- Shell commands (bash execution)
-- File operations (read, write, list, search)
-- Git operations (status, commit, push, pull, etc.)
-- System information (CPU, memory, processes, network)
-- Search operations (find files, grep, replace)
+- Shell access for any command (git, system admin, networking, search)
+- File operations (read, write, list)
 - Sub-agent spawning (delegate specialized tasks)
 ${mcpSection}${skillsSection}${matchedSkillsSection}${subAgentsSection}
 
@@ -237,18 +237,20 @@ export async function runAgent(
         system: buildSystemPrompt(prompt),
         messages,
         tools: combinedTools,
-        maxSteps,
+        stopWhen: stepCountIs(maxSteps),
         onStepFinish: ({ toolCalls, toolResults }) => {
           if (toolCalls) {
             for (const tc of toolCalls) {
-              logger.debug("Tool called", { name: tc.toolName, args: tc.args });
-              onToolCall?.(tc.toolName, tc.args);
+              const args = 'args' in tc ? tc.args : undefined;
+              logger.debug("Tool called", { name: tc.toolName, args });
+              onToolCall?.(tc.toolName, args);
             }
           }
           if (toolResults) {
             for (const tr of toolResults) {
               logger.debug("Tool result", { name: tr.toolName });
-              onToolResult?.(tr.toolName, tr.result);
+              const result = 'result' in tr ? tr.result : undefined;
+              onToolResult?.(tr.toolName, result);
             }
           }
         },
@@ -258,8 +260,8 @@ export async function runAgent(
       logger.info("Agent completed", {
         executionTime,
         steps: result.steps?.length || 0,
-        inputTokens: result.usage?.promptTokens,
-        outputTokens: result.usage?.completionTokens,
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
       });
 
       // Extract tool calls from steps
@@ -271,10 +273,12 @@ export async function runAgent(
               const matchingResult = step.toolResults?.find(
                 (tr) => tr.toolCallId === tc.toolCallId
               );
+              const args = 'args' in tc ? tc.args : undefined;
+              const result = matchingResult && 'result' in matchingResult ? matchingResult.result : undefined;
               toolCalls.push({
                 name: tc.toolName,
-                args: tc.args,
-                result: matchingResult?.result,
+                args,
+                result,
               });
             }
           }
@@ -285,8 +289,8 @@ export async function runAgent(
         success: true,
         text: result.text,
         toolCalls,
-        inputTokens: result.usage?.promptTokens,
-        outputTokens: result.usage?.completionTokens,
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
         model: (model as { modelId?: string }).modelId || "unknown",
       };
     } catch (error) {
@@ -386,17 +390,19 @@ export async function runAgentStream(
     system: buildSystemPrompt(prompt),
     messages,
     tools: combinedTools,
-    maxSteps,
-    onStepFinish: ({ toolCalls, toolResults }) => {
+    stopWhen: stepCountIs(maxSteps),
+        onStepFinish: ({ toolCalls, toolResults }) => {
       if (toolCalls) {
         for (const tc of toolCalls) {
-          logger.debug("Tool called (stream)", { name: tc.toolName });
-          onToolCall?.(tc.toolName, tc.args);
+          const args = 'args' in tc ? tc.args : undefined;
+          logger.debug("Tool called (stream)", { name: tc.toolName, args });
+          onToolCall?.(tc.toolName, args);
         }
       }
       if (toolResults) {
         for (const tr of toolResults) {
-          onToolResult?.(tr.toolName, tr.result);
+          const result = 'result' in tr ? tr.result : undefined;
+          onToolResult?.(tr.toolName, result);
         }
       }
     },
@@ -404,9 +410,11 @@ export async function runAgentStream(
 
   return {
     textStream: result.textStream,
-    fullText: result.text,
-    usage: result.usage.then((u) => 
-      u ? { inputTokens: u.promptTokens, outputTokens: u.completionTokens } : undefined
+    fullText: Promise.resolve(result.text),
+    usage: Promise.resolve(result.usage).then((u) =>
+      u && u.inputTokens !== undefined && u.outputTokens !== undefined
+        ? { inputTokens: u.inputTokens, outputTokens: u.outputTokens }
+        : undefined
     ),
   };
 }

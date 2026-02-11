@@ -1,6 +1,6 @@
 # Advanced Session Management System
 
-This document describes the advanced session management system implemented for MyBot, which handles conversation context, token tracking, and multi-turn conversations.
+This document describes the advanced session management system implemented for Overseer, which handles conversation context, token tracking, and multi-turn conversations.
 
 ## Overview
 
@@ -438,4 +438,4 @@ Key metrics to monitor:
 
 ## License
 
-Part of MyBot project. See main LICENSE file.
+Part of Overseer project. See main LICENSE file.

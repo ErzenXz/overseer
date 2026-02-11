@@ -269,15 +269,15 @@ tsx src/database/init.ts
 
 Check that tables were created:
 ```bash
-sqlite3 data/mybot.db ".schema role_permissions"
-sqlite3 data/mybot.db ".schema user_custom_permissions"
-sqlite3 data/mybot.db ".schema security_audit_log"
+sqlite3 data/overseer.db ".schema role_permissions"
+sqlite3 data/overseer.db ".schema user_custom_permissions"
+sqlite3 data/overseer.db ".schema security_audit_log"
 ```
 
 ### 3. Check Default Permissions
 
 ```bash
-sqlite3 data/mybot.db "SELECT COUNT(*) FROM role_permissions;"
+sqlite3 data/overseer.db "SELECT COUNT(*) FROM role_permissions;"
 # Should show ~200+ default role permissions
 ```
 
@@ -498,7 +498,7 @@ That's it! The middleware handles:
 
 ## 🎉 Summary
 
-The RBAC permission system is now fully implemented and integrated with MyBot. It provides:
+The RBAC permission system is now fully implemented and integrated with Overseer. It provides:
 
 ✅ **70+ granular permissions** across all operations  
 ✅ **4 predefined roles** with different access levels  
@@ -515,4 +515,4 @@ The system is designed to be:
 - **Maintainable** - Clear code structure and documentation
 - **Production-ready** - Full error handling and type safety
 
-Start integrating permission checks into your API routes and UI components to secure MyBot!
+Start integrating permission checks into your API routes and UI components to secure Overseer!

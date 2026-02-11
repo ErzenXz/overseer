@@ -2,7 +2,7 @@
   "name": "Code Review",
   "description": "Review code for bugs, security issues, performance problems, and best practices violations",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["review code", "check code", "code review", "analyze code", "review my code", "code quality"],
   "system_prompt": "You are an expert code reviewer. Analyze code for bugs, security vulnerabilities, performance issues, and adherence to best practices. Provide actionable feedback with specific line references and suggested fixes.",
   "tools": [

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { User } from "@/database";
+import type { User } from "@/types/database";
 
 interface UserCardProps {
   user: User;
@@ -13,7 +13,8 @@ interface UserCardProps {
 
 const roleColors: Record<string, string> = {
   admin: "bg-red-500/10 text-red-400 border-red-500/30",
-  user: "bg-green-500/10 text-green-400 border-green-500/30",
+  developer: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+  operator: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
   viewer: "bg-blue-500/10 text-blue-400 border-blue-500/30",
 };
 
@@ -23,9 +24,14 @@ const roleIcons: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
     </svg>
   ),
-  user: (
+  developer: (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  ),
+  operator: (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.97a1 1 0 00.95.69h4.173c.969 0 1.371 1.24.588 1.81l-3.377 2.455a1 1 0 00-.364 1.118l1.287 3.97c.3.92-.755 1.688-1.54 1.118l-3.377-2.456a1 1 0 00-1.176 0l-3.377 2.456c-.784.57-1.838-.197-1.539-1.118l1.287-3.97a1 1 0 00-.364-1.118L2.98 9.397c-.783-.57-.38-1.81.588-1.81h4.173a1 1 0 00.95-.69l1.286-3.97z" />
     </svg>
   ),
   viewer: (
@@ -41,7 +47,8 @@ export function UserCard({ user, onEdit, onDelete, onResetPassword, onToggleStat
 
   const getAvatarColor = () => {
     if (user.role === "admin") return "bg-gradient-to-br from-red-500 to-orange-600";
-    if (user.role === "user") return "bg-gradient-to-br from-green-500 to-emerald-600";
+    if (user.role === "developer") return "bg-gradient-to-br from-amber-500 to-yellow-600";
+    if (user.role === "operator") return "bg-gradient-to-br from-emerald-500 to-teal-600";
     return "bg-gradient-to-br from-blue-500 to-cyan-600";
   };
 

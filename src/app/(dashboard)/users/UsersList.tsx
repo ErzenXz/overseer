@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { User } from "@/database";
+import type { User } from "@/types/database";
 
 interface UsersListProps {
   users: User[];
@@ -10,13 +10,15 @@ interface UsersListProps {
 
 const roleColors: Record<string, string> = {
   admin: "bg-red-500/10 text-red-400",
-  user: "bg-green-500/10 text-green-400",
+  developer: "bg-amber-500/10 text-amber-400",
+  operator: "bg-emerald-500/10 text-emerald-400",
   viewer: "bg-blue-500/10 text-blue-400",
 };
 
 const roleBorderColors: Record<string, string> = {
   admin: "border-red-500/30",
-  user: "border-green-500/30",
+  developer: "border-amber-500/30",
+  operator: "border-emerald-500/30",
   viewer: "border-blue-500/30",
 };
 
@@ -73,7 +75,7 @@ export function UsersList({ users }: UsersListProps) {
           />
         </div>
         <div className="flex gap-2">
-          {["all", "admin", "user", "viewer"].map((role) => (
+          {["all", "admin", "developer", "operator", "viewer"].map((role) => (
             <button
               key={role}
               onClick={() => setFilter(role)}
@@ -109,8 +111,10 @@ export function UsersList({ users }: UsersListProps) {
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                       user.role === "admin" 
                         ? "bg-gradient-to-br from-red-500 to-orange-600"
-                        : user.role === "user"
-                        ? "bg-gradient-to-br from-green-500 to-emerald-600"
+                        : user.role === "developer"
+                        ? "bg-gradient-to-br from-amber-500 to-yellow-600"
+                        : user.role === "operator"
+                        ? "bg-gradient-to-br from-emerald-500 to-teal-600"
                         : "bg-gradient-to-br from-blue-500 to-cyan-600"
                     }`}>
                       <span className="text-sm font-bold text-white">
@@ -129,9 +133,10 @@ export function UsersList({ users }: UsersListProps) {
                     onChange={(e) => handleRoleChange(user.id, e.target.value)}
                     className={`text-xs px-3 py-1.5 rounded-lg border ${roleColors[user.role]} ${roleBorderColors[user.role]} bg-transparent cursor-pointer focus:outline-none`}
                   >
-                    <option value="admin" className="bg-zinc-900">Admin</option>
-                    <option value="user" className="bg-zinc-900">User</option>
-                    <option value="viewer" className="bg-zinc-900">Viewer</option>
+                      <option value="admin" className="bg-zinc-900">Admin</option>
+                      <option value="developer" className="bg-zinc-900">Developer</option>
+                      <option value="operator" className="bg-zinc-900">Operator</option>
+                      <option value="viewer" className="bg-zinc-900">Viewer</option>
                   </select>
                 </td>
                 <td className="px-6 py-4 text-sm text-zinc-400">

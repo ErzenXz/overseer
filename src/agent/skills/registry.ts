@@ -1,5 +1,5 @@
 /**
- * Skills System for MyBot
+ * Skills System for Overseer
  * Modular, discoverable capabilities like Vercel's skills.sh
  */
 
@@ -175,29 +175,29 @@ export function syncBuiltinSkills(): void {
     
     if (!existing) {
       // Create new skill
-      createSkill({
-        skill_id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        version: skill.version,
-        author: skill.author,
-        source: "builtin",
-        triggers: skill.triggers,
-        system_prompt: skill.system_prompt,
-        tools: skill.tools,
-        config_schema: skill.config_schema,
-        config: skill.default_config,
-        is_builtin: true,
-      });
+        createSkill({
+          skill_id: skill.id,
+          name: skill.name,
+          description: skill.description,
+          version: skill.version,
+          author: skill.author,
+          source: "builtin",
+          triggers: JSON.stringify(skill.triggers || []),
+          system_prompt: skill.system_prompt,
+          tools: JSON.stringify(skill.tools || []),
+          config_schema: skill.config_schema ? JSON.stringify(skill.config_schema) : null,
+          config: skill.default_config ? JSON.stringify(skill.default_config) : null,
+          is_builtin: 1,
+        });
     } else if (existing.is_builtin) {
       // Update existing built-in skill
       updateSkill(existing.id, {
         name: skill.name,
         description: skill.description,
         version: skill.version,
-        triggers: skill.triggers,
+        triggers: JSON.stringify(skill.triggers || []),
         system_prompt: skill.system_prompt,
-        tools: skill.tools,
+        tools: JSON.stringify(skill.tools || []),
       });
     }
   }
@@ -360,10 +360,10 @@ export function getSkillTools(skillId: string): Record<string, Tool> {
         : executePath;
       
       // Create tool that dynamically executes the skill function
-      tools[toolDef.name] = tool({
+      tools[toolDef.name] = tool<any, any>({
         description: toolDef.description,
-        parameters: convertJsonSchemaToZod(toolDef.parameters),
-        execute: async (args) => {
+        inputSchema: convertJsonSchemaToZod(toolDef.parameters),
+        execute: async (args: Record<string, any>) => {
           logger.info("Executing skill tool", { 
             skill: skillId, 
             tool: toolDef.name, 

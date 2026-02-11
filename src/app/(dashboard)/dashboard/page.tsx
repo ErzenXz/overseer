@@ -1,8 +1,14 @@
+import { redirect } from "next/navigation";
 import { conversationsModel, messagesModel, providersModel, interfacesModel, toolExecutionsModel } from "@/database";
 import { StatsCard } from "@/components/StatsCard";
 import { RecentActivity } from "@/components/RecentActivity";
 
 export default function DashboardPage() {
+  const hasProviders = providersModel.findAll().length > 0;
+  if (!hasProviders) {
+    redirect("/onboarding");
+  }
+
   // Get stats
   const conversationCount = conversationsModel.count();
   const messageCount = messagesModel.count();

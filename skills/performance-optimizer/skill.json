@@ -2,7 +2,7 @@
   "name": "Performance Optimizer",
   "description": "Analyze and optimize application performance, identify bottlenecks, and suggest improvements",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["performance", "optimize", "slow", "speed", "latency", "bottleneck", "memory", "cpu"],
   "system_prompt": "You are a performance optimization expert. Analyze code and systems for performance issues, identify bottlenecks, and suggest specific improvements with measurable impact.",
   "tools": [

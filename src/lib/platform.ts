@@ -1,5 +1,5 @@
 /**
- * Cross-platform utilities for MyBot
+ * Cross-platform utilities for Overseer
  * Provides platform detection and command mapping for Windows, Linux, and macOS
  */
 
@@ -106,12 +106,12 @@ export function getTempDir(): string {
 
 /**
  * Get the data directory for the application
- * Windows: %APPDATA%\mybot
- * macOS: ~/Library/Application Support/mybot
- * Linux: ~/.local/share/mybot or $XDG_DATA_HOME/mybot
+ * Windows: %APPDATA%\overseer
+ * macOS: ~/Library/Application Support/overseer
+ * Linux: ~/.local/share/overseer or $XDG_DATA_HOME/overseer
  */
 export function getDataDir(): string {
-  const appName = "mybot";
+  const appName = "overseer";
 
   if (isWindows()) {
     return path.join(process.env.APPDATA || path.join(getHomeDir(), "AppData", "Roaming"), appName);

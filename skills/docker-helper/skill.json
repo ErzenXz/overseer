@@ -2,7 +2,7 @@
   "name": "Docker Helper",
   "description": "Help with Docker operations, Dockerfile creation, compose files, and container management",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["docker", "container", "compose", "dockerfile", "image", "kubernetes", "k8s"],
   "system_prompt": "You are a Docker and containerization expert. Help users create Dockerfiles, manage containers, write docker-compose files, and follow container best practices.",
   "tools": [

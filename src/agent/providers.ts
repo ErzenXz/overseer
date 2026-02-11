@@ -1,16 +1,29 @@
+/**
+ * AI Provider System for Overseer
+ * Supports multiple providers via Vercel AI SDK v6
+ */
+
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createCohere } from "@ai-sdk/cohere";
+import { createMistral } from "@ai-sdk/mistral";
+import { createXai } from "@ai-sdk/xai";
+import { createPerplexity } from "@ai-sdk/perplexity";
+import { createFireworks } from "@ai-sdk/fireworks";
+import { createTogetherAI } from "@ai-sdk/togetherai";
+import { createDeepInfra } from "@ai-sdk/deepinfra";
+import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import type { LanguageModel } from "ai";
 import { providersModel } from "../database/index";
 import { decrypt } from "../lib/crypto";
 import { createLogger } from "../lib/logger";
-import type { LanguageModel } from "ai";
-
-// Re-export client-safe provider info
-export { PROVIDER_INFO, type ProviderName } from "./provider-info";
-import type { ProviderName } from "./provider-info";
+import { PROVIDER_INFO, type ProviderName } from "./provider-info";
 
 const logger = createLogger("providers");
+
+export { PROVIDER_INFO, type ProviderName } from "./provider-info";
 
 interface ProviderConfig {
   name: ProviderName;
@@ -23,6 +36,7 @@ interface ProviderConfig {
 
 /**
  * Create a language model instance from provider config
+ * Uses Vercel AI SDK v6 patterns
  */
 export function createModel(config: ProviderConfig): LanguageModel {
   switch (config.name) {
@@ -50,13 +64,110 @@ export function createModel(config: ProviderConfig): LanguageModel {
       return google(config.model);
     }
 
+    case "azure": {
+      // Azure uses environment variables primarily
+      const azure = createOpenAI({
+        apiKey: config.apiKey || process.env.AZURE_API_KEY,
+        baseURL: config.baseUrl || process.env.AZURE_BASE_URL,
+      });
+      return azure(config.model);
+    }
+
+    case "groq": {
+      const groq = createOpenAI({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl || "https://api.groq.com/openai/v1",
+      });
+      return groq(config.model);
+    }
+
     case "ollama": {
-      // Ollama uses OpenAI-compatible API
       const ollama = createOpenAI({
-        apiKey: "ollama", // Ollama doesn't need a real API key
+        apiKey: "ollama",
         baseURL: config.baseUrl || "http://localhost:11434/v1",
       });
       return ollama(config.model);
+    }
+
+    case "openai-compatible": {
+      const compatible = createOpenAI({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return compatible(config.model);
+    }
+
+    case "cohere": {
+      const cohere = createCohere({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return cohere(config.model) as unknown as LanguageModel;
+    }
+
+    case "mistral": {
+      const mistral = createMistral({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return mistral(config.model) as unknown as LanguageModel;
+    }
+
+    case "xai": {
+      const xai = createXai({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return xai(config.model) as unknown as LanguageModel;
+    }
+
+    case "perplexity": {
+      const perplexity = createPerplexity({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return perplexity(config.model) as unknown as LanguageModel;
+    }
+
+    case "fireworks": {
+      const fireworks = createFireworks({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return fireworks(config.model) as unknown as LanguageModel;
+    }
+
+    case "togetherai": {
+      const togetherai = createTogetherAI({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return togetherai(config.model) as unknown as LanguageModel;
+    }
+
+    case "deepinfra": {
+      const deepinfra = createDeepInfra({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return deepinfra(config.model) as unknown as LanguageModel;
+    }
+
+    case "deepseek": {
+      const deepseek = createDeepSeek({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+      return deepseek(config.model) as unknown as LanguageModel;
+    }
+
+    case "amazon-bedrock": {
+      const bedrock = createAmazonBedrock({
+        accessKeyId: config.apiKey,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        region: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION,
+      });
+      return bedrock(config.model) as unknown as LanguageModel;
     }
 
     default:
@@ -65,12 +176,139 @@ export function createModel(config: ProviderConfig): LanguageModel {
 }
 
 /**
+ * Detect provider from environment variables
+ * Falls back to env vars if no database provider is configured
+ */
+function detectProviderFromEnv(): ProviderConfig | null {
+  const providers: Array<{
+    key: string;
+    name: ProviderName;
+    model: string;
+    baseUrl?: string;
+  }> = [
+    {
+      key: "OPENAI_API_KEY",
+      name: "openai",
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    },
+    {
+      key: "ANTHROPIC_API_KEY",
+      name: "anthropic",
+      model: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest",
+    },
+    {
+      key: "GOOGLE_API_KEY",
+      name: "google",
+      model: process.env.GOOGLE_MODEL || "gemini-1.5-flash",
+    },
+    {
+      key: "GOOGLE_GENERATIVE_AI_API_KEY",
+      name: "google",
+      model: process.env.GOOGLE_MODEL || "gemini-1.5-flash",
+    },
+    {
+      key: "GROQ_API_KEY",
+      name: "groq",
+      model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+    },
+    {
+      key: "AZURE_API_KEY",
+      name: "azure",
+      model: process.env.AZURE_MODEL || "gpt-4o",
+      baseUrl: process.env.AZURE_BASE_URL,
+    },
+    {
+      key: "COHERE_API_KEY",
+      name: "cohere",
+      model: process.env.COHERE_MODEL || "command-r-plus",
+    },
+    {
+      key: "MISTRAL_API_KEY",
+      name: "mistral",
+      model: process.env.MISTRAL_MODEL || "mistral-large-latest",
+    },
+    {
+      key: "XAI_API_KEY",
+      name: "xai",
+      model: process.env.XAI_MODEL || "grok-2-latest",
+    },
+    {
+      key: "PERPLEXITY_API_KEY",
+      name: "perplexity",
+      model: process.env.PERPLEXITY_MODEL || "sonar-pro",
+    },
+    {
+      key: "FIREWORKS_API_KEY",
+      name: "fireworks",
+      model: process.env.FIREWORKS_MODEL || "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    },
+    {
+      key: "TOGETHER_API_KEY",
+      name: "togetherai",
+      model: process.env.TOGETHER_MODEL || "meta-llama/Llama-3.1-70B-Instruct-Turbo",
+    },
+    {
+      key: "DEEPINFRA_API_KEY",
+      name: "deepinfra",
+      model: process.env.DEEPINFRA_MODEL || "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    },
+    {
+      key: "DEEPSEEK_API_KEY",
+      name: "deepseek",
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+    },
+    {
+      key: "AWS_ACCESS_KEY_ID",
+      name: "amazon-bedrock",
+      model: process.env.BEDROCK_MODEL || "anthropic.claude-3-sonnet-20240229-v1:0",
+    },
+  ];
+
+  for (const provider of providers) {
+    const apiKey = process.env[provider.key];
+    if (apiKey) {
+      return {
+        name: provider.name,
+        apiKey,
+        model: provider.model,
+        baseUrl: provider.baseUrl,
+      };
+    }
+  }
+
+  // Check for Ollama
+  if (process.env.OLLAMA_BASE_URL || process.env.ENABLE_OLLAMA === "true") {
+    return {
+      name: "ollama",
+      model: process.env.OLLAMA_MODEL || "llama3.2",
+      baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
+    };
+  }
+
+  return null;
+}
+
+/**
  * Get the configured default model from database
+ * Falls back to environment variables if no database provider is set
  */
 export function getDefaultModel(): LanguageModel | null {
   const provider = providersModel.findDefault();
+
   if (!provider) {
-    logger.warn("No default provider configured");
+    logger.warn("No default provider configured in database");
+
+    // Try environment fallback
+    const envProvider = detectProviderFromEnv();
+    if (envProvider) {
+      logger.info("Using provider from environment", { provider: envProvider.name });
+      try {
+        return createModel(envProvider);
+      } catch (error) {
+        logger.error("Failed to create model from env", { error });
+      }
+    }
+
     return null;
   }
 
@@ -174,12 +412,10 @@ export async function testProvider(config: ProviderConfig): Promise<{
     const model = createModel(config);
     const startTime = Date.now();
 
-    // Use the AI SDK to make a simple test call
     const { generateText } = await import("ai");
     await generateText({
       model,
       prompt: "Say 'OK' and nothing else.",
-      maxTokens: 10,
     });
 
     return {
@@ -192,4 +428,28 @@ export async function testProvider(config: ProviderConfig): Promise<{
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Get all provider info
+ */
+export function getAllProvidersInfo() {
+  return Object.entries(PROVIDER_INFO).map(([id, info]) => ({
+    id,
+    ...info,
+  }));
+}
+
+/**
+ * Get provider info
+ */
+export function getProviderInfo(providerName: ProviderName) {
+  return PROVIDER_INFO[providerName];
+}
+
+/**
+ * Check if provider is supported
+ */
+export function isProviderSupported(name: string): name is ProviderName {
+  return name in PROVIDER_INFO;
 }

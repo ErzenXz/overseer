@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #################################################
-# MyBot Docker Installation Script
-# Installs Docker and sets up MyBot with containers
+# Overseer Docker Installation Script
+# Installs Docker and sets up Overseer with containers
 #################################################
 
 set -e
@@ -18,7 +18,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # Configuration
-MYBOT_DIR="${MYBOT_DIR:-$HOME/mybot}"
+OVERSEER_DIR="${OVERSEER_DIR:-$HOME/overseer}"
 
 # Detect OS
 detect_os() {
@@ -300,20 +300,20 @@ generate_secrets() {
 create_env_file() {
     print_step "Creating environment configuration..."
 
-    if [ -f "$MYBOT_DIR/.env" ]; then
+    if [ -f "$OVERSEER_DIR/.env" ]; then
         read -p "Environment file exists. Overwrite? (y/N) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             print_warning "Keeping existing .env file"
             # Load existing env for display later
-            source "$MYBOT_DIR/.env" 2>/dev/null || true
+            source "$OVERSEER_DIR/.env" 2>/dev/null || true
             return 0
         fi
     fi
 
     # Interactive configuration
     echo ""
-    echo -e "${BOLD}Configure MyBot:${NC}"
+    echo -e "${BOLD}Configure Overseer:${NC}"
     echo ""
 
     read -p "Web admin port [3000]: " PORT
@@ -324,9 +324,9 @@ create_env_file() {
     read -p "Telegram Bot Token (optional): " TELEGRAM_BOT_TOKEN
     read -p "Telegram Allowed Users (comma-separated, optional): " TELEGRAM_ALLOWED_USERS
 
-    cat > "$MYBOT_DIR/.env" << EOF
+    cat > "$OVERSEER_DIR/.env" << EOF
 # ============================================
-# MyBot Docker Configuration
+# Overseer Docker Configuration
 # Generated on $(date)
 # ============================================
 
@@ -365,7 +365,7 @@ HOST_HOME=$HOME
 HOST_PROJECTS=/opt/projects
 EOF
 
-    chmod 600 "$MYBOT_DIR/.env"
+    chmod 600 "$OVERSEER_DIR/.env"
     print_success "Environment file created"
 }
 
@@ -373,17 +373,17 @@ EOF
 create_volumes() {
     print_step "Creating Docker volumes..."
 
-    docker volume create mybot-data 2>/dev/null || true
-    docker volume create mybot-skills 2>/dev/null || true
+    docker volume create overseer-data 2>/dev/null || true
+    docker volume create overseer-skills 2>/dev/null || true
 
-    print_success "Volumes created: mybot-data, mybot-skills"
+    print_success "Volumes created: overseer-data, overseer-skills"
 }
 
 # Build and start containers
 start_containers() {
     print_step "Building and starting containers..."
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
     echo ""
     echo "This may take a few minutes on first run..."
@@ -431,10 +431,10 @@ wait_for_health() {
 create_docker_script() {
     print_step "Creating Docker management script..."
 
-    cat > "$MYBOT_DIR/mybot-docker" << 'SCRIPT'
+    cat > "$OVERSEER_DIR/overseer-docker" << 'SCRIPT'
 #!/bin/bash
 
-# MyBot Docker Management Script
+# Overseer Docker Management Script
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -447,15 +447,15 @@ NC='\033[0m'
 
 case "${1:-help}" in
     start)
-        echo -e "${GREEN}Starting MyBot containers...${NC}"
+        echo -e "${GREEN}Starting Overseer containers...${NC}"
         docker compose up -d
         ;;
     stop)
-        echo -e "${YELLOW}Stopping MyBot containers...${NC}"
+        echo -e "${YELLOW}Stopping Overseer containers...${NC}"
         docker compose down
         ;;
     restart)
-        echo -e "${CYAN}Restarting MyBot containers...${NC}"
+        echo -e "${CYAN}Restarting Overseer containers...${NC}"
         docker compose restart
         ;;
     status)
@@ -469,12 +469,12 @@ case "${1:-help}" in
         fi
         ;;
     build)
-        echo -e "${CYAN}Rebuilding MyBot containers...${NC}"
+        echo -e "${CYAN}Rebuilding Overseer containers...${NC}"
         docker compose build --no-cache
         docker compose up -d
         ;;
     update)
-        echo -e "${CYAN}Updating MyBot...${NC}"
+        echo -e "${CYAN}Updating Overseer...${NC}"
         git pull
         docker compose build
         docker compose up -d
@@ -485,16 +485,16 @@ case "${1:-help}" in
         ;;
     db)
         echo "Opening database..."
-        docker compose exec web sqlite3 /app/data/mybot.db
+        docker compose exec web sqlite3 /app/data/overseer.db
         ;;
     clean)
         echo -e "${YELLOW}Cleaning up unused Docker resources...${NC}"
         docker system prune -f
         ;;
     help|*)
-        echo "MyBot Docker Management Script"
+        echo "Overseer Docker Management Script"
         echo ""
-        echo "Usage: ./mybot-docker <command> [options]"
+        echo "Usage: ./overseer-docker <command> [options]"
         echo ""
         echo "Commands:"
         echo "  start              Start all containers"
@@ -512,8 +512,8 @@ case "${1:-help}" in
 esac
 SCRIPT
 
-    chmod +x "$MYBOT_DIR/mybot-docker"
-    print_success "Management script created: $MYBOT_DIR/mybot-docker"
+    chmod +x "$OVERSEER_DIR/overseer-docker"
+    print_success "Management script created: $OVERSEER_DIR/overseer-docker"
 }
 
 # Print final success message
@@ -521,11 +521,11 @@ print_success_message() {
     echo ""
     echo -e "${GREEN}"
     echo "=============================================="
-    echo "  MyBot Docker Installation Complete!"
+    echo "  Overseer Docker Installation Complete!"
     echo "=============================================="
     echo -e "${NC}"
     echo ""
-    echo "Installation Directory: $MYBOT_DIR"
+    echo "Installation Directory: $OVERSEER_DIR"
     echo ""
     echo -e "${BOLD}Admin Credentials:${NC}"
     echo "  Username: admin"
@@ -538,11 +538,11 @@ print_success_message() {
     echo "  Web Admin: http://localhost:${PORT:-3000}"
     echo ""
     echo -e "${BOLD}Commands:${NC}"
-    echo "  ./mybot-docker start     - Start containers"
-    echo "  ./mybot-docker stop      - Stop containers"
-    echo "  ./mybot-docker status    - Show status"
-    echo "  ./mybot-docker logs      - View logs"
-    echo "  ./mybot-docker update    - Update and rebuild"
+    echo "  ./overseer-docker start     - Start containers"
+    echo "  ./overseer-docker stop      - Stop containers"
+    echo "  ./overseer-docker status    - Show status"
+    echo "  ./overseer-docker logs      - View logs"
+    echo "  ./overseer-docker update    - Update and rebuild"
     echo ""
     echo -e "${BOLD}Useful Docker Commands:${NC}"
     echo "  docker compose logs -f                    # Follow all logs"
@@ -556,14 +556,14 @@ main() {
     detect_os
     print_banner
 
-    # Check if in MyBot directory
-    if [ ! -f "$MYBOT_DIR/docker-compose.yml" ]; then
-        print_error "docker-compose.yml not found in $MYBOT_DIR"
-        echo "Please run this script from the MyBot directory"
+    # Check if in Overseer directory
+    if [ ! -f "$OVERSEER_DIR/docker-compose.yml" ]; then
+        print_error "docker-compose.yml not found in $OVERSEER_DIR"
+        echo "Please run this script from the Overseer directory"
         exit 1
     fi
 
-    cd "$MYBOT_DIR"
+    cd "$OVERSEER_DIR"
 
     install_docker
     verify_docker

@@ -1,7 +1,7 @@
 /**
- * PM2 Ecosystem Configuration for MyBot
+ * PM2 Ecosystem Configuration for Overseer
  * 
- * This configuration defines all MyBot processes for production deployment.
+ * This configuration defines all Overseer processes for production deployment.
  * 
  * Features:
  * - Cluster mode for web server (multi-core support)
@@ -25,7 +25,7 @@ module.exports = {
     // Web Server (Next.js)
     // ======================
     {
-      name: 'mybot-web',
+      name: 'overseer-web',
       script: 'npm',
       args: 'run start',
       instances: 'max', // Use all CPU cores
@@ -70,7 +70,7 @@ module.exports = {
     // Telegram Bot
     // ======================
     {
-      name: 'mybot-telegram',
+      name: 'overseer-telegram',
       script: 'npx',
       args: 'tsx src/bot/index.ts',
       instances: 1, // Single instance (bot requires one process)
@@ -112,7 +112,7 @@ module.exports = {
     // Discord Bot
     // ======================
     {
-      name: 'mybot-discord',
+      name: 'overseer-discord',
       script: 'npx',
       args: 'tsx src/bot/discord.ts',
       instances: 1, // Single instance
@@ -147,7 +147,7 @@ module.exports = {
     // Agent Runner (Optional)
     // ======================
     {
-      name: 'mybot-agent',
+      name: 'overseer-agent',
       script: 'npx',
       args: 'tsx src/agent/runner.ts',
       instances: 1,
@@ -191,8 +191,8 @@ module.exports = {
       user: 'deploy',
       host: ['your-server.com'],
       ref: 'origin/main',
-      repo: 'git@github.com:yourusername/mybot.git',
-      path: '/opt/mybot',
+      repo: 'git@github.com:ErzenXz/overseer.git',
+      path: '/opt/overseer',
       'pre-deploy-local': '',
       'post-deploy': 'npm install && npm run build && pm2 reload ecosystem.config.js --env production',
       'pre-setup': '',
@@ -203,8 +203,8 @@ module.exports = {
       user: 'deploy',
       host: ['staging-server.com'],
       ref: 'origin/develop',
-      repo: 'git@github.com:yourusername/mybot.git',
-      path: '/opt/mybot-staging',
+      repo: 'git@github.com:ErzenXz/overseer.git',
+      path: '/opt/overseer-staging',
       'post-deploy': 'npm install && npm run build && pm2 reload ecosystem.config.js --env staging',
       env: {
         NODE_ENV: 'staging',

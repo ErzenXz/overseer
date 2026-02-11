@@ -2,7 +2,7 @@
   "name": "Database Helper",
   "description": "Help with database queries, schema management, migrations, and optimization",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["database", "sql", "query", "migrate", "schema", "table", "migration", "db"],
   "system_prompt": "You are a database expert. Help users write efficient queries, design schemas, manage migrations, and optimize database performance. Always consider security (SQL injection prevention), performance (indexes, query optimization), and data integrity.",
   "tools": [

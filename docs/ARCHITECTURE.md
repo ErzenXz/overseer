@@ -1,6 +1,6 @@
 # 🏗️ System Architecture
 
-Deep dive into MyBot's architecture, design decisions, and internals.
+Deep dive into Overseer's architecture, design decisions, and internals.
 
 ## Table of Contents
 
@@ -18,7 +18,7 @@ Deep dive into MyBot's architecture, design decisions, and internals.
 
 ## Overview
 
-MyBot is built as a **modular, extensible AI agent platform** using modern TypeScript and the Vercel AI SDK. The architecture follows a **layered design** with clear separation of concerns:
+Overseer is built as a **modular, extensible AI agent platform** using modern TypeScript and the Vercel AI SDK. The architecture follows a **layered design** with clear separation of concerns:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -211,7 +211,7 @@ graph TB
 
 #### **AI Agent** (`src/agent/agent.ts`)
 
-The heart of MyBot. Implements agentic behavior using **Vercel AI SDK v6**:
+The heart of Overseer. Implements agentic behavior using **Vercel AI SDK v6**:
 
 ```typescript
 export async function runAgent(
@@ -479,7 +479,7 @@ const hashedPassword = await bcrypt.hash(password, 10);
 
 // Session management
 const session = createSession(user);
-setCookie('mybot-session', session, { httpOnly: true, secure: true });
+setCookie('overseer-session', session, { httpOnly: true, secure: true });
 ```
 
 #### **Logging** (`src/lib/logger.ts`)

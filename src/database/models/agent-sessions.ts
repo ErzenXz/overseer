@@ -83,6 +83,13 @@ export interface SessionStats {
   total_tokens: number;
   average_session_length: number;
   sessions_by_interface: Record<string, number>;
+  // Additional properties expected by the UI
+  active: number;
+  busy: number;
+  idle: number;
+  error: number;
+  total: number;
+  total_cost: number;
 }
 
 // =====================================================
@@ -580,6 +587,16 @@ export const agentSessionsModel = {
   },
 
   /**
+   * Find all active sessions (alias for findAllActive)
+   */
+  findActive(limit = 100): AgentSession[] {
+    return this.findAllActive(limit);
+  },
+
+  /**
+   * Get session statistics
+   */
+  /**
    * Get session statistics
    */
   getStats(): SessionStats {
@@ -616,13 +633,24 @@ export const agentSessionsModel = {
         sessions_by_interface[row.interface_type] = row.count;
       }
 
+      // Calculate derived stats for UI compatibility
+      const active = activeResult.count;
+      const total = totalResult.count;
+
       return {
-        total_sessions: totalResult.count,
-        active_sessions: activeResult.count,
+        total_sessions: total,
+        active_sessions: active,
         total_messages: messagesResult.total || 0,
         total_tokens: tokensResult.total || 0,
         average_session_length: avgResult.avg || 0,
         sessions_by_interface,
+        // UI-compatible properties
+        active,
+        busy: 0, // Could be calculated from sessions with processing state
+        idle: Math.max(0, active - 0), // For now, all active are considered idle
+        error: 0, // Could be calculated from sessions with errors
+        total,
+        total_cost: 0, // TODO: Calculate based on token usage and provider pricing
       };
     } catch (error) {
       logger.error("Failed to get session stats", { error });
@@ -633,6 +661,12 @@ export const agentSessionsModel = {
         total_tokens: 0,
         average_session_length: 0,
         sessions_by_interface: {},
+        active: 0,
+        busy: 0,
+        idle: 0,
+        error: 0,
+        total: 0,
+        total_cost: 0,
       };
     }
   },

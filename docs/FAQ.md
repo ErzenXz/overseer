@@ -1,6 +1,6 @@
 # ❓ Frequently Asked Questions
 
-Common questions and answers about MyBot.
+Common questions and answers about Overseer.
 
 ## Table of Contents
 
@@ -18,17 +18,17 @@ Common questions and answers about MyBot.
 
 ## General
 
-### What is MyBot?
+### What is Overseer?
 
-MyBot is a **self-hosted AI agent platform** that gives you complete control over your server through natural language. It combines:
+Overseer is a **self-hosted AI agent platform** that gives you complete control over your server through natural language. It combines:
 - **Chat interfaces** (Telegram, Discord, Web)
 - **35+ built-in tools** for server management
 - **20+ LLM providers** (OpenAI, Claude, Gemini, local models)
 - **Extensible architecture** (skills, MCP servers, sub-agents)
 
-### How is MyBot different from ChatGPT or Claude?
+### How is Overseer different from ChatGPT or Claude?
 
-| Feature | MyBot | ChatGPT | Claude |
+| Feature | Overseer | ChatGPT | Claude |
 |---------|-------|---------|--------|
 | **Server Control** | ✅ Full VPS access | ❌ No | ❌ No |
 | **Self-Hosted** | ✅ Your infrastructure | ❌ Cloud only | ❌ Cloud only |
@@ -37,7 +37,7 @@ MyBot is a **self-hosted AI agent platform** that gives you complete control ove
 | **Cost** | 💰 API usage only | 💰💰 $20+/month | 💰💰 $20+/month |
 | **Provider Choice** | ✅ 20+ providers | ❌ OpenAI only | ❌ Anthropic only |
 
-### What can MyBot do?
+### What can Overseer do?
 
 **Server Management:**
 - Monitor system resources (CPU, memory, disk)
@@ -57,9 +57,9 @@ MyBot is a **self-hosted AI agent platform** that gives you complete control ove
 - Multi-step operations
 - Integration with external services (via MCP)
 
-### Is MyBot production-ready?
+### Is Overseer production-ready?
 
-**Yes**, MyBot is production-ready for:
+**Yes**, Overseer is production-ready for:
 - ✅ Personal VPS management
 - ✅ Small team server administration
 - ✅ Development environment automation
@@ -71,9 +71,9 @@ MyBot is a **self-hosted AI agent platform** that gives you complete control ove
 - Additional security hardening
 - Professional support
 
-### Is MyBot open source?
+### Is Overseer open source?
 
-**Yes!** MyBot is MIT licensed. You can:
+**Yes!** Overseer is MIT licensed. You can:
 - ✅ Use commercially
 - ✅ Modify source code
 - ✅ Create derivative works
@@ -130,17 +130,17 @@ Without domain:
 3. Send `/newbot`
 4. Follow prompts to choose name and username
 5. Copy the token (format: `123456:ABC-DEF...`)
-6. Add to MyBot Settings → Interfaces
+6. Add to Overseer Settings → Interfaces
 
 **Find your user ID:**
 1. Message [@userinfobot](https://t.me/userinfobot)
 2. Copy your numeric user ID
 3. Add to `TELEGRAM_ALLOWED_USERS`
 
-### Can I use MyBot without a bot? Just the web interface?
+### Can I use Overseer without a bot? Just the web interface?
 
 **Yes!** The Telegram/Discord bots are optional. You can:
-1. Install MyBot
+1. Install Overseer
 2. Configure LLM provider
 3. Use only the web admin chat interface
 4. Skip bot configuration entirely
@@ -175,7 +175,7 @@ Depends on your priorities:
 
 ### Can I use local models (Ollama)?
 
-**Yes!** MyBot supports Ollama:
+**Yes!** Overseer supports Ollama:
 
 1. **Install Ollama:**
    ```bash
@@ -187,7 +187,7 @@ Depends on your priorities:
    ollama pull llama3.2
    ```
 
-3. **Add to MyBot:**
+3. **Add to Overseer:**
    - Provider: Ollama
    - Model: llama3.2
    - Base URL: http://localhost:11434
@@ -220,7 +220,7 @@ Edit **SOUL.md** via web admin:
 
 See [User Guide - SOUL.md](USER_GUIDE.md#customizing-soulmd) for examples.
 
-### Can MyBot send me notifications?
+### Can Overseer send me notifications?
 
 **Via Telegram:** Yes, the bot can proactively message you:
 ```typescript
@@ -235,11 +235,11 @@ await telegramBot.sendMessage(userId, 'Server CPU is at 95%!');
 - Use MCP server for email
 - Integrate with external service (SendGrid, etc.)
 
-### How do I update MyBot?
+### How do I update Overseer?
 
 ```bash
 # 1. Backup database
-cp data/mybot.db data/mybot.db.backup
+cp data/overseer.db data/overseer.db.backup
 
 # 2. Pull latest code
 git pull origin main
@@ -251,7 +251,7 @@ npm install
 npm run build
 
 # 5. Restart services
-systemctl restart mybot-web mybot-telegram mybot-discord
+systemctl restart overseer-web overseer-telegram overseer-discord
 ```
 
 **Check for updates:**
@@ -264,7 +264,7 @@ git log HEAD..origin/main --oneline
 
 ## Configuration
 
-### How many conversations can MyBot handle?
+### How many conversations can Overseer handle?
 
 **Tested capacity:**
 - 1,000 conversations/day on 2GB RAM server
@@ -312,7 +312,7 @@ TELEGRAM_ALLOWED_USERS=123456789,987654321,111222333
 
 ```bash
 # Using systemd
-systemctl start mybot-web mybot-telegram mybot-discord
+systemctl start overseer-web overseer-telegram overseer-discord
 
 # Or manually
 npm run dev         # Terminal 1: Web
@@ -332,11 +332,11 @@ Each interface maintains separate conversations.
 ### Bot doesn't respond to messages
 
 **Checklist:**
-1. ✅ Bot service is running: `systemctl status mybot-telegram`
+1. ✅ Bot service is running: `systemctl status overseer-telegram`
 2. ✅ Your user ID is in `TELEGRAM_ALLOWED_USERS`
 3. ✅ Bot token is correct
 4. ✅ LLM provider is configured and has credits
-5. ✅ No errors in logs: `journalctl -u mybot-telegram -f`
+5. ✅ No errors in logs: `journalctl -u overseer-telegram -f`
 
 **Common causes:**
 - Typo in user ID
@@ -351,14 +351,14 @@ Each interface maintains separate conversations.
 **Solution:**
 ```bash
 # Stop all services
-systemctl stop mybot-web mybot-telegram mybot-discord
+systemctl stop overseer-web overseer-telegram overseer-discord
 
 # Remove lock files
-rm data/mybot.db-wal data/mybot.db-shm
+rm data/overseer.db-wal data/overseer.db-shm
 
 # Start services one by one
-systemctl start mybot-web
-systemctl start mybot-telegram
+systemctl start overseer-web
+systemctl start overseer-telegram
 ```
 
 **Prevention:**
@@ -397,7 +397,7 @@ systemctl start mybot-telegram
 
 ## Performance
 
-### How much does it cost to run MyBot?
+### How much does it cost to run Overseer?
 
 **Server costs:**
 - VPS: $6-30/month (depends on provider)
@@ -462,7 +462,7 @@ Varies by usage and provider:
 
 ## Security
 
-### Is MyBot secure?
+### Is Overseer secure?
 
 **Yes**, when configured properly:
 - ✅ AES-256 encryption for secrets
@@ -481,9 +481,9 @@ Varies by usage and provider:
 
 See [Security Guide](SECURITY.md) for details.
 
-### Can MyBot access my entire server?
+### Can Overseer access my entire server?
 
-**Yes**, MyBot runs with the permissions of its user.
+**Yes**, Overseer runs with the permissions of its user.
 
 **Best practice:**
 - Run as dedicated user (not root)
@@ -498,7 +498,7 @@ See [Security Guide](SECURITY.md) for details.
 - Sandbox dangerous operations
 - Restrict network access
 
-### What data does MyBot store?
+### What data does Overseer store?
 
 **Stored locally (in your database):**
 - Conversations and messages
@@ -518,13 +518,13 @@ See [Security Guide](SECURITY.md) for details.
 - Passwords are never logged
 - Encryption keys are never logged
 
-### How do I back up MyBot?
+### How do I back up Overseer?
 
 **Automated backup:**
 ```bash
 #!/bin/bash
 # backup.sh
-cp data/mybot.db backups/mybot_$(date +%Y%m%d).db
+cp data/overseer.db backups/overseer_$(date +%Y%m%d).db
 cp .env backups/.env_$(date +%Y%m%d)
 
 # Keep last 30 days
@@ -537,7 +537,7 @@ find backups/ -mtime +30 -delete
 ```
 
 **What to backup:**
-- ✅ `data/mybot.db` (database)
+- ✅ `data/overseer.db` (database)
 - ✅ `.env` (configuration)
 - ✅ `src/agent/soul.md` (if customized)
 - ✅ `skills/` (if custom skills)
@@ -546,7 +546,7 @@ find backups/ -mtime +30 -delete
 
 ## Cost & Pricing
 
-### Is MyBot free?
+### Is Overseer free?
 
 **The software is free** (MIT licensed), but you pay for:
 - **VPS/hosting**: $6-30/month
@@ -574,7 +574,7 @@ find backups/ -mtime +30 -delete
 
 **Cheapest: Groq or Gemini Flash**
 
-### Can I use MyBot commercially?
+### Can I use Overseer commercially?
 
 **Yes!** MIT license allows:
 - ✅ Commercial use
@@ -592,7 +592,7 @@ find backups/ -mtime +30 -delete
 
 ## Advanced Topics
 
-### Can I extend MyBot with custom tools?
+### Can I extend Overseer with custom tools?
 
 **Yes!** See [Developer Guide - Adding Tools](DEVELOPMENT.md#adding-custom-tools)
 
@@ -618,7 +618,7 @@ See [Developer Guide - Creating Skills](DEVELOPMENT.md#creating-skills)
 1. Create `skills/my-skill/` directory
 2. Add `skill.json` manifest
 3. Implement functions in `index.ts`
-4. Restart MyBot
+4. Restart Overseer
 5. Enable skill in settings
 
 ### Can I integrate with other services (Slack, email, etc.)?
@@ -640,7 +640,7 @@ See [Developer Guide - Creating Skills](DEVELOPMENT.md#creating-skills)
 - Send to external service
 - Receive webhooks from services
 
-### Can I run MyBot in a Docker container?
+### Can I run Overseer in a Docker container?
 
 **Yes!** See [Deployment Guide - Docker](DEPLOYMENT.md#docker-deployment)
 
@@ -654,7 +654,7 @@ docker-compose up -d
 - Reproducible builds
 - Resource limits
 
-### How do I scale MyBot for high traffic?
+### How do I scale Overseer for high traffic?
 
 **Current architecture:** Single server, good for 1000+ conversations/day
 
@@ -683,10 +683,10 @@ See [Architecture - Scalability](ARCHITECTURE.md#scalability-considerations)
 ## Still Have Questions?
 
 - 📖 **Read the docs**: [/docs](/docs)
-- 💬 **Join Discord**: [discord.gg/mybot](https://discord.gg/mybot)
-- 🐛 **Report issues**: [GitHub Issues](https://github.com/yourusername/mybot/issues)
-- 📧 **Email**: support@mybot.io
-- 🐦 **Twitter**: [@mybot](https://twitter.com/mybot)
+- 💬 **Join Discord**: [discord.gg/overseer](https://discord.gg/overseer)
+- 🐛 **Report issues**: [GitHub Issues](https://github.com/ErzenXz/overseer/issues)
+- 📧 **Email**: support@overseer.io
+- 🐦 **Twitter**: [@overseer](https://twitter.com/overseer)
 
 ---
 

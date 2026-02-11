@@ -2,7 +2,7 @@
   "name": "Deploy Assistant",
   "description": "Help with deployment processes, environment setup, and release management",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["deploy", "deployment", "release", "publish", "ship", "go live", "push to production"],
   "system_prompt": "You are a deployment expert. Help users deploy their applications safely, manage environments, and handle releases. Always emphasize safety checks, rollback procedures, and monitoring.",
   "tools": [

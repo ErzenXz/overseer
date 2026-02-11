@@ -107,7 +107,7 @@ export function SoulEditor({ initialContent, isCustom, defaultSoul }: SoulEditor
         value={content}
         onChange={(e) => setContent(e.target.value)}
         className="w-full h-[600px] p-4 bg-transparent text-zinc-300 font-mono text-sm resize-none focus:outline-none"
-        placeholder="# MyBot Soul Document
+        placeholder="# Overseer Soul Document
 
 ## Identity
 ..."

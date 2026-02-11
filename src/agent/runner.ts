@@ -1,12 +1,15 @@
 /**
- * Standalone Agent Runner for MyBot
+ * Standalone Agent Runner for Overseer
  * Runs independently with full VPS control, retry logic, and context management
  * NO CONFIRMATIONS - Executes commands immediately!
  */
 
-import { generateText, streamText, type CoreMessage } from "ai";
+import { generateText, streamText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
+
+// Type alias for messages
+type CoreMessage = ModelMessage;
 import { loadSoul } from "./soul";
-import { getDefaultModel, getActiveModels, createModel, type ProviderName } from "./providers-comprehensive";
+import { getDefaultModel, getActiveModels, type ProviderName } from "./providers";
 import { executeShellCommand, executeMultipleCommands } from "./tools/shell-noconfirm";
 import { allTools } from "./tools/index";
 import { messagesModel, conversationsModel } from "../database/index";
@@ -83,13 +86,11 @@ You have FULL ACCESS to this VPS with NO RESTRICTIONS.
 - You have full system access
 
 ## Available Tools
-You have access to powerful tools for VPS control:
+You have access to a minimal, powerful toolset:
 - executeShellCommand: Run any shell command immediately
 - executeMultipleCommands: Run a sequence of commands
-- File operations: readFile, writeFile, listDirectory, fileInfo
-- Git operations: gitStatus, gitCommit, gitPush, gitPull, etc.
-- System info: systemInfo, processInfo, networkInfo
-- Search: searchFiles, searchInFiles
+- File operations: readFile, writeFile, listDirectory
+- Sub-agents: spawnSubAgent, checkSubAgentStatus
 
 ## Important
 - Explain what you're doing before executing commands
@@ -163,7 +164,9 @@ export async function executeAgent(
     conversationId: convId,
     messages: await getConversationHistory(convId),
     workingDirectory: process.cwd(),
-    environment: { ...process.env },
+    environment: Object.fromEntries(
+      Object.entries(process.env).filter(([, v]) => v !== undefined)
+    ) as Record<string, string>,
     metadata: {
       startTime: Date.now(),
       totalTokens: 0,
@@ -211,7 +214,7 @@ export async function executeAgent(
             { role: "user", content: prompt },
           ],
           tools: { ...allTools, executeShellCommand, executeMultipleCommands },
-          maxSteps: MAX_STEPS,
+          stopWhen: stepCountIs(MAX_STEPS),
           maxRetries: 3,
           onStepFinish: ({ toolCalls, toolResults }) => {
             context.metadata.stepCount++;
@@ -243,8 +246,8 @@ export async function executeAgent(
         result = {
           text: finalText,
           usage: {
-            promptTokens: usage?.promptTokens || 0,
-            completionTokens: usage?.completionTokens || 0,
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
           },
         };
       } else {
@@ -257,7 +260,7 @@ export async function executeAgent(
             { role: "user", content: prompt },
           ],
           tools: { ...allTools, executeShellCommand, executeMultipleCommands },
-          maxSteps: MAX_STEPS,
+          stopWhen: stepCountIs(MAX_STEPS),
           maxRetries: 3,
           onStepFinish: ({ toolCalls, toolResults }) => {
             context.metadata.stepCount++;
@@ -282,8 +285,8 @@ export async function executeAgent(
         conversation_id: convId,
         role: "assistant",
         content: result.text,
-        input_tokens: result.usage?.promptTokens,
-        output_tokens: result.usage?.completionTokens,
+        input_tokens: result.usage?.inputTokens,
+        output_tokens: result.usage?.outputTokens,
       });
 
       const executionTimeMs = Date.now() - startTime;
@@ -292,16 +295,16 @@ export async function executeAgent(
         executionTimeMs,
         steps: context.metadata.stepCount,
         toolCalls: context.metadata.toolCalls.length,
-        inputTokens: result.usage?.promptTokens,
-        outputTokens: result.usage?.completionTokens,
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
       });
 
       return {
         success: true,
         text: result.text,
         steps: context.metadata.stepCount,
-        inputTokens: result.usage?.promptTokens,
-        outputTokens: result.usage?.completionTokens,
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
         executionTimeMs,
         toolCalls: context.metadata.toolCalls.map(t => t.name),
       };
@@ -343,7 +346,7 @@ export async function executeAgent(
  * Interactive CLI mode
  */
 export async function startInteractiveMode() {
-  console.log("\n🤖 MyBot Agent - Interactive Mode");
+  console.log("\n🤖 Overseer Agent - Interactive Mode");
   console.log("====================================");
   console.log("Type your commands or 'quit' to exit.\n");
 
@@ -394,7 +397,7 @@ export async function startInteractiveMode() {
  * Execute a single command and exit
  */
 export async function executeSingleCommand(command: string) {
-  console.log(`\n🤖 MyBot Agent - Single Command Mode`);
+  console.log(`\n🤖 Overseer Agent - Single Command Mode`);
   console.log(`Command: ${command}\n`);
 
   const result = await executeAgent(command, {
@@ -442,5 +445,3 @@ if (require.main === module) {
     executeSingleCommand(command);
   }
 }
-
-export { executeAgent };

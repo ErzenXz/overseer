@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { usersModel, sessionsModel } from "../database/index";
 import type { User } from "../database/index";
 
-const SESSION_COOKIE_NAME = "mybot_session";
+const SESSION_COOKIE_NAME = "overseer_session";
 
 export interface AuthResult {
   success: boolean;

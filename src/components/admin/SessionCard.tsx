@@ -1,19 +1,9 @@
 "use client";
 
+import type { AgentSession } from "@/database/models/agent-sessions";
+
 interface SessionCardProps {
-  session: {
-    session_id: string;
-    interface_type: string;
-    username: string | null;
-    user_id: string | null;
-    status: string;
-    started_at: string;
-    last_activity_at: string;
-    current_task: string | null;
-    step_count: number;
-    total_tokens: number;
-    estimated_cost: number;
-  };
+  session: AgentSession;
   onTerminate?: () => void;
 }
 
@@ -50,7 +40,7 @@ const interfaceIcons: Record<string, React.ReactNode> = {
 
 export function SessionCard({ session, onTerminate }: SessionCardProps) {
   const formatDuration = () => {
-    const started = new Date(session.started_at);
+    const started = new Date(session.created_at);
     const now = new Date();
     const diff = Math.floor((now.getTime() - started.getTime()) / 1000);
     
@@ -59,21 +49,22 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
     return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
   };
 
+  const status = session.is_active ? "active" : "ended";
+  const badgeClass = status === "active"
+    ? "bg-green-500/10 text-green-400"
+    : "bg-red-500/10 text-red-400";
+  const displayName = session.external_user_id || session.external_chat_id || "Unknown";
+
   return (
     <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 hover:border-zinc-700 transition-colors">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className={`w-3 h-3 rounded-full ${statusColors[session.status] || statusColors.ended}`} />
+          <div className={`w-3 h-3 rounded-full ${statusColors[status] || statusColors.ended}`} />
           <div>
             <div className="flex items-center gap-2">
-              <code className="text-sm font-mono text-white">{session.session_id.slice(0, 12)}...</code>
-              <span className={`text-xs px-2 py-0.5 rounded ${
-                session.status === 'active' ? 'bg-green-500/10 text-green-400' :
-                session.status === 'busy' ? 'bg-yellow-500/10 text-yellow-400' :
-                session.status === 'idle' ? 'bg-blue-500/10 text-blue-400' :
-                'bg-red-500/10 text-red-400'
-              }`}>
-                {session.status}
+              <code className="text-sm font-mono text-white">{String(session.id).padStart(6, "0")}</code>
+              <span className={`text-xs px-2 py-0.5 rounded ${badgeClass}`}>
+                {status}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
@@ -82,12 +73,12 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
                 {session.interface_type}
               </span>
               <span>•</span>
-              <span>{session.username || session.user_id || "Unknown"}</span>
+              <span>{displayName}</span>
             </div>
           </div>
         </div>
 
-        {onTerminate && session.status !== 'ended' && (
+        {onTerminate && status !== "ended" && (
           <button
             onClick={onTerminate}
             className="px-3 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
@@ -98,13 +89,6 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
       </div>
 
       <div className="space-y-2">
-        {session.current_task && (
-          <div className="p-3 bg-zinc-800/30 rounded-lg">
-            <p className="text-xs text-zinc-500 mb-1">Current Task</p>
-            <p className="text-sm text-zinc-300 truncate">{session.current_task}</p>
-          </div>
-        )}
-
         <div className="grid grid-cols-4 gap-4 pt-3 border-t border-zinc-800">
           <div>
             <p className="text-xs text-zinc-500">Duration</p>
@@ -112,7 +96,7 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
           </div>
           <div>
             <p className="text-xs text-zinc-500">Steps</p>
-            <p className="text-sm font-medium text-white mt-1">{session.step_count}</p>
+            <p className="text-sm font-medium text-white mt-1">{session.message_count}</p>
           </div>
           <div>
             <p className="text-xs text-zinc-500">Tokens</p>
@@ -120,7 +104,7 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
           </div>
           <div>
             <p className="text-xs text-zinc-500">Cost</p>
-            <p className="text-sm font-medium text-white mt-1">${session.estimated_cost.toFixed(4)}</p>
+            <p className="text-sm font-medium text-white mt-1">$0.0000</p>
           </div>
         </div>
       </div>

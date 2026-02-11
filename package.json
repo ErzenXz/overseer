@@ -1,5 +1,5 @@
 {
-  "name": "mybot",
+  "name": "overseer",
   "version": "1.0.0",
   "description": "Self-hosted AI Agent with full VPS access - Telegram, Discord, and Web Admin. Cross-platform: Windows, Linux, macOS.",
   "private": true,

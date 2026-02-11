@@ -2,7 +2,7 @@
   "name": "Web Search",
   "description": "Search the web using DuckDuckGo API to find information, articles, and resources online",
   "version": "1.0.0",
-  "author": "MyBot",
+  "author": "Overseer",
   "triggers": ["search", "look up", "find online", "google", "search the web", "web search"],
   "system_prompt": "You have access to web search capabilities. Use the search tool to find current information from the internet. Always cite your sources and provide relevant links when available.",
   "tools": [

@@ -76,7 +76,7 @@ export function getConfig(): Config {
     encryptionKey: process.env.ENCRYPTION_KEY || "change-this-key",
 
     // Database
-    databasePath: process.env.DATABASE_PATH || "./data/mybot.db",
+    databasePath: process.env.DATABASE_PATH || "./data/overseer.db",
 
     // Default Admin
     defaultAdminUsername: process.env.DEFAULT_ADMIN_USERNAME || "admin",

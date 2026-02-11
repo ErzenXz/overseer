@@ -2,7 +2,7 @@
 
 ## Overview
 
-MyBot now includes a comprehensive Role-Based Access Control (RBAC) permission system that provides:
+Overseer now includes a comprehensive Role-Based Access Control (RBAC) permission system that provides:
 
 - **Granular Permissions**: 70+ specific permissions for all operations
 - **Role-Based Access**: 4 predefined roles (admin, developer, operator, viewer)
