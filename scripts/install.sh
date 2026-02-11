@@ -799,7 +799,7 @@ install_dependencies() {
     cd "$OVERSEER_DIR"
 
     if command_exists pnpm; then
-        pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>&1 | tail -5
+        pnpm install --no-frozen-lockfile 2>&1 | tail -5
     else
         npm install 2>&1 | tail -5
     fi
@@ -840,6 +840,19 @@ build_app() {
         pnpm run build 2>&1 | tail -5
     else
         npm run build 2>&1 | tail -5
+    fi
+
+    # Ensure standalone server can serve static assets
+    if [ -d ".next/standalone" ]; then
+        print_substep "Preparing standalone assets..."
+        mkdir -p ".next/standalone/.next"
+        rm -rf ".next/standalone/.next/static" ".next/standalone/public"
+        if [ -d ".next/static" ]; then
+            cp -R ".next/static" ".next/standalone/.next/"
+        fi
+        if [ -d "public" ]; then
+            cp -R "public" ".next/standalone/"
+        fi
     fi
 
     print_success "Application built"

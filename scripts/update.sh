@@ -137,7 +137,7 @@ update_dependencies() {
         docker compose build
     else
         if command -v pnpm &>/dev/null; then
-            pnpm install
+            pnpm install --no-frozen-lockfile
         else
             npm install
         fi
@@ -173,6 +173,17 @@ build_application() {
         print_success "Application built (Docker)"
     else
         npm run build 2>&1 | tail -5
+        if [ -d ".next/standalone" ]; then
+            print_substep "Preparing standalone assets..."
+            mkdir -p ".next/standalone/.next"
+            rm -rf ".next/standalone/.next/static" ".next/standalone/public"
+            if [ -d ".next/static" ]; then
+                cp -R ".next/static" ".next/standalone/.next/"
+            fi
+            if [ -d "public" ]; then
+                cp -R "public" ".next/standalone/"
+            fi
+        fi
         print_success "Application built"
     fi
 }
