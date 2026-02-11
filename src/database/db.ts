@@ -87,6 +87,41 @@ function createDatabaseConnection(): Database.Database {
 // Create database connection
 const db = createDatabaseConnection();
 
+/**
+ * Ensure a table has all expected columns, adding any that are missing.
+ * This handles the case where CREATE TABLE IF NOT EXISTS skips creation
+ * but new columns have been added to the schema since the table was created.
+ */
+function migrateTableColumns(
+  tableName: string,
+  expectedColumns: { name: string; definition: string }[]
+) {
+  const existingCols = db.pragma(`table_info(${tableName})`) as Array<{
+    cid: number;
+    name: string;
+    type: string;
+    notnull: number;
+    dflt_value: any;
+    pk: number;
+  }>;
+
+  if (existingCols.length === 0) return; // Table doesn't exist yet, schema will create it
+
+  const existingColNames = new Set(existingCols.map((c) => c.name));
+
+  for (const col of expectedColumns) {
+    if (!existingColNames.has(col.name)) {
+      try {
+        db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${col.definition}`);
+        console.log(`  Migrated: added column '${col.name}' to '${tableName}'`);
+      } catch (err) {
+        // Column may already exist due to a race or prior partial migration
+        console.warn(`  Warning: could not add column '${col.name}' to '${tableName}':`, err);
+      }
+    }
+  }
+}
+
 // Initialize schema
 function initializeSchema() {
   const schemaPath = join(__dirname, "schema.sql");
@@ -96,6 +131,31 @@ function initializeSchema() {
     console.log("Database schema initialized");
     console.log(`Database location: ${DB_PATH}`);
   }
+
+  // Migrate existing tables to add any new columns before running the agent schema.
+  // This prevents "no such column" errors when CREATE TABLE IF NOT EXISTS skips
+  // creation of tables that already exist from an older schema version.
+  migrateTableColumns("agent_sessions", [
+    { name: "status", definition: "TEXT NOT NULL DEFAULT 'active'" },
+    { name: "provider_id", definition: "INTEGER" },
+    { name: "model_name", definition: "TEXT" },
+    { name: "current_task", definition: "TEXT" },
+    { name: "step_count", definition: "INTEGER DEFAULT 0" },
+    { name: "total_tokens", definition: "INTEGER DEFAULT 0" },
+    { name: "estimated_cost", definition: "REAL DEFAULT 0" },
+    { name: "metadata", definition: "TEXT" },
+    { name: "context_data", definition: "TEXT" },
+    { name: "ended_at", definition: "TEXT" },
+    { name: "last_activity_at", definition: "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+  ]);
+
+  migrateTableColumns("sub_agents", [
+    { name: "status", definition: "TEXT NOT NULL DEFAULT 'idle'" },
+    { name: "task_result", definition: "TEXT" },
+    { name: "step_count", definition: "INTEGER DEFAULT 0" },
+    { name: "tokens_used", definition: "INTEGER DEFAULT 0" },
+    { name: "metadata", definition: "TEXT" },
+  ]);
 
   // Also load agent-related schema (sub_agents, mcp_servers, skills, etc.)
   const agentSchemaPath = join(__dirname, "schema-agents.sql");

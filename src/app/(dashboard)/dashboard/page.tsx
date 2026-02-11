@@ -134,7 +134,7 @@ export default function DashboardPage() {
               Edit Soul
             </a>
             <a
-              href="/logs"
+              href="/audit"
               className="flex items-center gap-2 px-3 py-2.5 bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] rounded text-sm text-[var(--color-text-primary)] transition-colors"
             >
               <svg className="w-3.5 h-3.5 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

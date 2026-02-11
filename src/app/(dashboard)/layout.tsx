@@ -14,9 +14,9 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen flex bg-[var(--color-surface)]">
+    <div className="h-screen flex overflow-hidden bg-[var(--color-surface)]">
       <Sidebar user={user} />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
         <div className="p-6 lg:p-8 max-w-[1400px]">{children}</div>
       </main>
     </div>

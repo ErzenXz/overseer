@@ -64,7 +64,7 @@ const navigationSections: NavSection[] = [
       },
       {
         name: "Logs",
-        href: "/logs",
+        href: "/audit",
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h10M4 18h7" />
@@ -192,7 +192,7 @@ export function Sidebar({ user }: SidebarProps) {
   };
 
   return (
-    <aside className="w-56 bg-[var(--color-surface-raised)] border-r border-[var(--color-border)] flex flex-col shrink-0">
+    <aside className="w-56 h-full bg-[var(--color-surface-raised)] border-r border-[var(--color-border)] flex flex-col shrink-0">
       {/* Logo */}
       <div className="px-4 py-5 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2.5">
