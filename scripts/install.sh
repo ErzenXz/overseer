@@ -849,10 +849,14 @@ build_app() {
         rm -rf ".next/standalone/.next/static" ".next/standalone/public"
         if [ -d ".next/static" ]; then
             cp -R ".next/static" ".next/standalone/.next/"
+        else
+            print_warning "Missing .next/static; build may be incomplete"
         fi
         if [ -d "public" ]; then
             cp -R "public" ".next/standalone/"
         fi
+    else
+        print_warning "Missing .next/standalone; standalone build not found"
     fi
 
     print_success "Application built"

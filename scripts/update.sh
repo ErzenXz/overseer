@@ -156,7 +156,11 @@ run_migrations() {
         # Run in container
         docker compose run --rm web npm run db:init
     else
-        npm run db:init
+        if command -v pnpm &>/dev/null; then
+            pnpm run db:init
+        else
+            npm run db:init
+        fi
     fi
 
     print_success "Database updated"
@@ -172,17 +176,25 @@ build_application() {
         # Already built during docker compose build
         print_success "Application built (Docker)"
     else
-        npm run build 2>&1 | tail -5
+        if command -v pnpm &>/dev/null; then
+            pnpm run build 2>&1 | tail -5
+        else
+            npm run build 2>&1 | tail -5
+        fi
         if [ -d ".next/standalone" ]; then
             print_substep "Preparing standalone assets..."
             mkdir -p ".next/standalone/.next"
             rm -rf ".next/standalone/.next/static" ".next/standalone/public"
             if [ -d ".next/static" ]; then
                 cp -R ".next/static" ".next/standalone/.next/"
+            else
+                print_warning "Missing .next/static; build may be incomplete"
             fi
             if [ -d "public" ]; then
                 cp -R "public" ".next/standalone/"
             fi
+        else
+            print_warning "Missing .next/standalone; standalone build not found"
         fi
         print_success "Application built"
     fi
