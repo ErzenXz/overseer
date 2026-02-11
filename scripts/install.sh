@@ -1063,119 +1063,16 @@ EOF
 # =========================================
 
 create_management_script() {
-    print_step "Creating management script..."
+    print_step "Setting up management script..."
 
-    cat > "$OVERSEER_DIR/overseer" << 'MGMT_SCRIPT'
-#!/bin/bash
-
-# Overseer Management Script
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-# Load environment
-if [ -f ".env" ]; then
-    set -a; source .env; set +a
-fi
-
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-is_linux() { [[ "$OSTYPE" == "linux-gnu"* ]]; }
-
-cmd_start() {
-    echo -e "${GREEN}Starting Overseer services...${NC}"
-    if is_linux; then
-        sudo systemctl start overseer
-        [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && sudo systemctl start overseer-telegram
-        [ -n "${DISCORD_BOT_TOKEN:-}" ] && sudo systemctl start overseer-discord
-        [ "${WHATSAPP_ENABLED:-}" = "true" ] && sudo systemctl start overseer-whatsapp
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        launchctl load ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null
-    fi
-    echo -e "${GREEN}Started! Admin panel: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo localhost):${PORT:-3000}${NC}"
-}
-
-cmd_stop() {
-    echo -e "${YELLOW}Stopping Overseer services...${NC}"
-    if is_linux; then
-        sudo systemctl stop overseer overseer-telegram overseer-discord overseer-whatsapp 2>/dev/null
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        launchctl unload ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null
-    fi
-    echo "Stopped."
-}
-
-cmd_restart() {
-    cmd_stop; sleep 2; cmd_start
-}
-
-cmd_status() {
-    echo -e "${CYAN}${BOLD}=== Overseer Status ===${NC}"
-    echo ""
-    if is_linux; then
-        for svc in overseer overseer-telegram overseer-discord overseer-whatsapp; do
-            local status=$(systemctl is-active $svc 2>/dev/null || echo "inactive")
-            local icon="[x]"
-            [ "$status" = "active" ] && icon="[+]"
-            echo "  $icon $svc: $status"
-        done
-    fi
-    echo ""
-    echo "  Admin: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo localhost):${PORT:-3000}"
-}
-
-cmd_logs() {
-    local svc="${1:-overseer}"
-    if is_linux; then
-        sudo journalctl -u "overseer${svc:+-$svc}" -f --no-hostname 2>/dev/null || \
-        sudo journalctl -u overseer -u overseer-telegram -u overseer-discord -u overseer-whatsapp -f --no-hostname
+    # The management script is tracked in git at the repo root.
+    # Just ensure it's executable.
+    if [ -f "$OVERSEER_DIR/overseer" ]; then
+        chmod +x "$OVERSEER_DIR/overseer"
+        print_success "Management script ready: ${OVERSEER_DIR}/overseer"
     else
-        tail -f "$SCRIPT_DIR/logs/"*.log 2>/dev/null || echo "No log files found."
+        print_warning "Management script not found in repo - re-clone may be needed"
     fi
-}
-
-cmd_update() {
-    echo -e "${CYAN}Updating Overseer...${NC}"
-    [ -d ".git" ] && git pull origin main
-    pnpm install --no-frozen-lockfile 2>/dev/null || npm install
-    rm -rf .next
-    pnpm run build 2>/dev/null || npm run build
-    cmd_restart
-    echo -e "${GREEN}Updated!${NC}"
-}
-
-cmd_help() {
-    echo -e "${BOLD}Overseer Management${NC}"
-    echo ""
-    echo "Usage: ./overseer <command>"
-    echo ""
-    echo "Commands:"
-    echo "  start     Start all configured services"
-    echo "  stop      Stop all services"
-    echo "  restart   Restart all services"
-    echo "  status    Show service status"
-    echo "  logs      View logs (logs web|telegram|discord|whatsapp)"
-    echo "  update    Update to latest version"
-    echo "  help      Show this help"
-}
-
-case "${1:-help}" in
-    start)   cmd_start ;;
-    stop)    cmd_stop ;;
-    restart) cmd_restart ;;
-    status)  cmd_status ;;
-    logs)    cmd_logs "$2" ;;
-    update)  cmd_update ;;
-    help|*)  cmd_help ;;
-esac
-MGMT_SCRIPT
-
-    chmod +x "$OVERSEER_DIR/overseer"
-    print_success "Management script created: ${OVERSEER_DIR}/overseer"
 }
 
 # =========================================

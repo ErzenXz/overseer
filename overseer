@@ -1,0 +1,224 @@
+#!/bin/bash
+
+# Overseer Management Script
+# This file is tracked in git - ./overseer update will keep it current.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Load environment
+if [ -f ".env" ]; then
+    set -a; source .env; set +a
+fi
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+is_linux() { [[ "$OSTYPE" == "linux-gnu"* ]]; }
+
+get_port() {
+    echo "${PORT:-3000}"
+}
+
+get_ip() {
+    hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost"
+}
+
+# ---- Regenerate systemd service to match current config ----
+regenerate_systemd_service() {
+    if ! is_linux || ! command -v systemctl &>/dev/null; then
+        return 0
+    fi
+
+    local npx_path=$(which npx)
+    local port=$(get_port)
+    local user=$(whoami)
+    local dir="$SCRIPT_DIR"
+
+    echo -e "    ${CYAN}>${NC} Updating systemd service file..."
+
+    sudo tee /etc/systemd/system/overseer.service > /dev/null << SVCEOF
+[Unit]
+Description=Overseer AI Agent - Web Admin Dashboard
+Documentation=https://github.com/ErzenXz/overseer
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${user}
+WorkingDirectory=${dir}
+ExecStart=${npx_path} next start -H 0.0.0.0 -p ${port}
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=overseer
+Environment=NODE_ENV=production
+Environment=PORT=${port}
+EnvironmentFile=${dir}/.env
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=${dir}
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+    sudo systemctl daemon-reload
+    echo -e "    ${GREEN}+${NC} Service file updated (next start on port ${port})"
+}
+
+# ---- Commands ----
+
+cmd_start() {
+    echo -e "${GREEN}Starting Overseer services...${NC}"
+    if is_linux && command -v systemctl &>/dev/null; then
+        sudo systemctl start overseer
+        [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && sudo systemctl start overseer-telegram 2>/dev/null || true
+        [ -n "${DISCORD_BOT_TOKEN:-}" ] && sudo systemctl start overseer-discord 2>/dev/null || true
+        [ "${WHATSAPP_ENABLED:-}" = "true" ] && sudo systemctl start overseer-whatsapp 2>/dev/null || true
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        launchctl load ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null || true
+    else
+        echo "Starting manually..."
+        PORT=$(get_port) npx next start -H 0.0.0.0 -p $(get_port) &
+    fi
+    echo -e "${GREEN}Started! Admin panel: http://$(get_ip):$(get_port)${NC}"
+}
+
+cmd_stop() {
+    echo -e "${YELLOW}Stopping Overseer services...${NC}"
+    if is_linux && command -v systemctl &>/dev/null; then
+        sudo systemctl stop overseer overseer-telegram overseer-discord overseer-whatsapp 2>/dev/null || true
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        launchctl unload ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null || true
+    fi
+    echo "Stopped."
+}
+
+cmd_restart() {
+    cmd_stop
+    sleep 2
+    cmd_start
+}
+
+cmd_status() {
+    echo -e "${CYAN}${BOLD}=== Overseer Status ===${NC}"
+    echo ""
+    if is_linux && command -v systemctl &>/dev/null; then
+        for svc in overseer overseer-telegram overseer-discord overseer-whatsapp; do
+            local status=$(systemctl is-active $svc 2>/dev/null || echo "inactive")
+            local icon="[x]"
+            [ "$status" = "active" ] && icon="[+]"
+            echo "  $icon $svc: $status"
+        done
+    fi
+    echo ""
+    echo "  Admin: http://$(get_ip):$(get_port)"
+}
+
+cmd_logs() {
+    local svc="${1:-}"
+    if is_linux && command -v journalctl &>/dev/null; then
+        if [ -n "$svc" ] && [ "$svc" != "web" ]; then
+            sudo journalctl -u "overseer-${svc}" -f --no-hostname
+        else
+            sudo journalctl -u overseer -f --no-hostname
+        fi
+    else
+        tail -f "$SCRIPT_DIR/logs/"*.log 2>/dev/null || echo "No log files found."
+    fi
+}
+
+cmd_update() {
+    echo -e "${CYAN}${BOLD}Updating Overseer...${NC}"
+    echo ""
+
+    # 1. Pull latest code (this also updates THIS script)
+    echo -e "${BLUE}==>${NC} Pulling latest code..."
+    if [ -d ".git" ]; then
+        git stash 2>/dev/null || true
+        git pull origin main
+        git stash pop 2>/dev/null || true
+    fi
+    echo ""
+
+    # 2. Install dependencies
+    echo -e "${BLUE}==>${NC} Installing dependencies..."
+    if command -v pnpm &>/dev/null; then
+        pnpm install --no-frozen-lockfile
+    else
+        npm install
+    fi
+    echo ""
+
+    # 3. Run database migrations
+    echo -e "${BLUE}==>${NC} Running database migrations..."
+    if command -v pnpm &>/dev/null; then
+        pnpm run db:init 2>&1 || true
+    else
+        npm run db:init 2>&1 || true
+    fi
+    echo ""
+
+    # 4. Clean build
+    echo -e "${BLUE}==>${NC} Building application..."
+    rm -rf .next
+    if command -v pnpm &>/dev/null; then
+        pnpm run build
+    else
+        npm run build
+    fi
+
+    if [ ! -d ".next" ]; then
+        echo -e "${RED}Build failed!${NC}"
+        exit 1
+    fi
+    echo ""
+
+    # 5. Regenerate systemd service (ensures it matches current config)
+    echo -e "${BLUE}==>${NC} Updating system service..."
+    regenerate_systemd_service
+
+    # 6. Restart
+    echo -e "${BLUE}==>${NC} Restarting services..."
+    cmd_stop
+    sleep 2
+    cmd_start
+
+    echo ""
+    echo -e "${GREEN}${BOLD}Update complete!${NC}"
+    echo -e "  Admin: http://$(get_ip):$(get_port)"
+}
+
+cmd_help() {
+    echo -e "${BOLD}Overseer Management${NC}"
+    echo ""
+    echo "Usage: ./overseer <command>"
+    echo ""
+    echo "Commands:"
+    echo "  start     Start all configured services"
+    echo "  stop      Stop all services"
+    echo "  restart   Restart all services"
+    echo "  status    Show service status"
+    echo "  logs      View logs (logs web|telegram|discord|whatsapp)"
+    echo "  update    Update to latest version"
+    echo "  help      Show this help"
+}
+
+case "${1:-help}" in
+    start)   cmd_start ;;
+    stop)    cmd_stop ;;
+    restart) cmd_restart ;;
+    status)  cmd_status ;;
+    logs)    cmd_logs "${2:-}" ;;
+    update)  cmd_update ;;
+    help|*)  cmd_help ;;
+esac
