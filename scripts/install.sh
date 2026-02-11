@@ -836,6 +836,8 @@ build_app() {
 
     cd "$OVERSEER_DIR"
 
+    print_substep "Cleaning previous build..."
+    rm -rf .next
     if command_exists pnpm; then
         pnpm run build 2>&1 | tail -5
     else
@@ -850,13 +852,19 @@ build_app() {
         if [ -d ".next/static" ]; then
             cp -R ".next/static" ".next/standalone/.next/"
         else
-            print_warning "Missing .next/static; build may be incomplete"
+            print_error "Missing .next/static; build failed"
+            exit 1
         fi
         if [ -d "public" ]; then
             cp -R "public" ".next/standalone/"
         fi
+        if [ ! -d ".next/standalone/.next/static" ]; then
+            print_error "Standalone static assets not found after copy"
+            exit 1
+        fi
     else
-        print_warning "Missing .next/standalone; standalone build not found"
+        print_error "Missing .next/standalone; standalone build not found"
+        exit 1
     fi
 
     print_success "Application built"
