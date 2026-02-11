@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/overseer/.next/standalone
-ExecStart=/usr/bin/node /opt/overseer/.next/standalone/server.js
+WorkingDirectory=/opt/overseer
+ExecStart=/usr/bin/npx next start -H 0.0.0.0 -p 3000
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production

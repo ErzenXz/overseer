@@ -57,12 +57,11 @@ ENCRYPTION_KEY=""
 print_banner() {
     echo -e "${PURPLE}"
     cat << 'BANNER'
-  __  __       ____        _   
- |  \/  |_   _| __ )  ___ | |_ 
- | |\/| | | | |  _ \ / _ \| __|
- | |  | | |_| | |_) | (_) | |_ 
- |_|  |_|\__, |____/ \___/ \__|
-         |___/                  
+    ____                                     
+   / __ \__   _____  _____________  ___  _____
+  / / / / | / / _ \/ ___/ ___/ _ \/ _ \/ ___/
+ / /_/ /| |/ /  __/ /  (__  )  __/  __/ /    
+ \____/ |___/\___/_/  /____/\___/\___/_/     
 BANNER
     echo -e "${NC}"
     echo -e "${CYAN}  Self-hosted AI Agent with Full VPS Access${NC}"
@@ -839,35 +838,18 @@ build_app() {
     print_substep "Cleaning previous build..."
     rm -rf .next
     if command_exists pnpm; then
-        pnpm run build 2>&1 | tail -5
+        pnpm run build 2>&1 | tail -10
     else
-        npm run build 2>&1 | tail -5
+        npm run build 2>&1 | tail -10
     fi
 
-    # Ensure standalone server can serve static assets
-    if [ -d ".next/standalone" ]; then
-        print_substep "Preparing standalone assets..."
-        mkdir -p ".next/standalone/.next"
-        rm -rf ".next/standalone/.next/static" ".next/standalone/public"
-        if [ -d ".next/static" ]; then
-            cp -R ".next/static" ".next/standalone/.next/"
-        else
-            print_error "Missing .next/static; build failed"
-            exit 1
-        fi
-        if [ -d "public" ]; then
-            cp -R "public" ".next/standalone/"
-        fi
-        if [ ! -d ".next/standalone/.next/static" ]; then
-            print_error "Standalone static assets not found after copy"
-            exit 1
-        fi
-    else
-        print_error "Missing .next/standalone; standalone build not found"
+    # Verify build output exists
+    if [ ! -d ".next" ]; then
+        print_error "Build failed - .next directory not found"
         exit 1
     fi
 
-    print_success "Application built"
+    print_success "Application built (using next start)"
 }
 
 # =========================================
@@ -888,8 +870,17 @@ create_systemd_services() {
 
     local node_path=$(which node)
     local npx_path=$(which npx)
+    local pnpm_path=$(which pnpm 2>/dev/null || echo "")
 
-    # Main web admin service
+    # Determine the start command: prefer pnpm, fallback to npx
+    local start_cmd
+    if [ -n "$pnpm_path" ]; then
+        start_cmd="${pnpm_path} start -- -H 0.0.0.0 -p \${PORT}"
+    else
+        start_cmd="${npx_path} next start -H 0.0.0.0 -p \${PORT}"
+    fi
+
+    # Main web admin service - uses 'next start' (NOT standalone)
     sudo_cmd tee /etc/systemd/system/overseer.service > /dev/null << EOF
 [Unit]
 Description=Overseer AI Agent - Web Admin Dashboard
@@ -900,8 +891,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${OVERSEER_USER}
-WorkingDirectory=${OVERSEER_DIR}/.next/standalone
-ExecStart=${node_path} ${OVERSEER_DIR}/.next/standalone/server.js
+WorkingDirectory=${OVERSEER_DIR}
+ExecStart=${npx_path} next start -H 0.0.0.0 -p ${OVERSEER_PORT}
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -913,7 +904,7 @@ EnvironmentFile=${OVERSEER_DIR}/.env
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+ReadWritePaths=${OVERSEER_DIR}
 PrivateTmp=true
 
 [Install]
@@ -941,7 +932,7 @@ Environment=NODE_ENV=production
 EnvironmentFile=${OVERSEER_DIR}/.env
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+ReadWritePaths=${OVERSEER_DIR}
 PrivateTmp=true
 
 [Install]
@@ -969,7 +960,7 @@ Environment=NODE_ENV=production
 EnvironmentFile=${OVERSEER_DIR}/.env
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+ReadWritePaths=${OVERSEER_DIR}
 PrivateTmp=true
 
 [Install]
@@ -997,7 +988,7 @@ Environment=NODE_ENV=production
 EnvironmentFile=${OVERSEER_DIR}/.env
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=${OVERSEER_DIR}/data ${OVERSEER_DIR}/logs
+ReadWritePaths=${OVERSEER_DIR}
 PrivateTmp=true
 
 [Install]
@@ -1035,8 +1026,13 @@ create_launchd_services() {
     <string>com.overseer.web</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$(which node)</string>
-        <string>${OVERSEER_DIR}/.next/standalone/server.js</string>
+        <string>$(which npx)</string>
+        <string>next</string>
+        <string>start</string>
+        <string>-H</string>
+        <string>0.0.0.0</string>
+        <string>-p</string>
+        <string>${OVERSEER_PORT}</string>
     </array>
     <key>WorkingDirectory</key>
     <string>${OVERSEER_DIR}</string>
@@ -1145,7 +1141,8 @@ cmd_logs() {
 cmd_update() {
     echo -e "${CYAN}Updating Overseer...${NC}"
     [ -d ".git" ] && git pull origin main
-    pnpm install 2>/dev/null || npm install
+    pnpm install --no-frozen-lockfile 2>/dev/null || npm install
+    rm -rf .next
     pnpm run build 2>/dev/null || npm run build
     cmd_restart
     echo -e "${GREEN}Updated!${NC}"

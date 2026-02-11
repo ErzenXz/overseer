@@ -179,38 +179,62 @@ build_application() {
         print_substep "Cleaning previous build..."
         rm -rf .next
         if command -v pnpm &>/dev/null; then
-            pnpm run build 2>&1 | tail -5
+            pnpm run build 2>&1 | tail -10
         else
-            npm run build 2>&1 | tail -5
+            npm run build 2>&1 | tail -10
         fi
-        if [ -d ".next/standalone" ]; then
-            print_substep "Preparing standalone assets..."
-            mkdir -p ".next/standalone/.next"
-            rm -rf ".next/standalone/.next/static" ".next/standalone/public"
-            if [ -d ".next/static" ]; then
-                cp -R ".next/static" ".next/standalone/.next/"
-            else
-                print_error "Missing .next/static; build failed"
-                exit 1
-            fi
-            if [ -d "public" ]; then
-                cp -R "public" ".next/standalone/"
-            fi
-            if [ ! -d ".next/standalone/.next/static" ]; then
-                print_error "Standalone static assets not found after copy"
-                exit 1
-            fi
-        else
-            print_error "Missing .next/standalone; standalone build not found"
+
+        # Verify build output exists
+        if [ ! -d ".next" ]; then
+            print_error "Build failed - .next directory not found"
             exit 1
         fi
-        print_success "Application built"
+
+        print_success "Application built (using next start)"
     fi
 }
 
 # Start services
 start_services() {
     print_step "Starting services..."
+
+    # If systemd, update the service file to use next start (in case upgrading from standalone)
+    if [ "$INSTALL_TYPE" == "systemd" ]; then
+        local npx_path=$(which npx)
+        local PORT=$(grep "^PORT=" "$OVERSEER_DIR/.env" 2>/dev/null | cut -d'=' -f2)
+        PORT=${PORT:-3000}
+
+        sudo tee /etc/systemd/system/overseer.service > /dev/null << SVCEOF
+[Unit]
+Description=Overseer AI Agent - Web Admin Dashboard
+Documentation=https://github.com/ErzenXz/overseer
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$(whoami)
+WorkingDirectory=${OVERSEER_DIR}
+ExecStart=${npx_path} next start -H 0.0.0.0 -p ${PORT}
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=overseer
+Environment=NODE_ENV=production
+Environment=PORT=${PORT}
+EnvironmentFile=${OVERSEER_DIR}/.env
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=${OVERSEER_DIR}
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+        sudo systemctl daemon-reload
+        print_success "Systemd service updated to use next start"
+    fi
 
     case "$INSTALL_TYPE" in
         docker)
