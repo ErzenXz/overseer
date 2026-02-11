@@ -193,37 +193,37 @@ export function OnboardingWizard() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white">{step.title}</h1>
-            <p className="text-zinc-400 mt-2">{step.description}</p>
+            <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">{step.title}</h1>
+            <p className="text-[var(--color-text-secondary)] mt-2">{step.description}</p>
           </div>
-          <div className="text-xs text-zinc-500">
+          <div className="text-xs text-[var(--color-text-muted)]">
             Step {stepIndex + 1} of {steps.length}
           </div>
         </div>
-        <div className="mt-4 h-2 rounded-full bg-zinc-900 overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400" style={{ width: `${stepProgress}%` }} />
+        <div className="mt-4 h-2 rounded-full bg-[var(--color-surface-raised)] overflow-hidden">
+          <div className="h-full bg-[var(--color-accent)]" style={{ width: `${stepProgress}%` }} />
         </div>
       </div>
 
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-8">
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-8">
         {step.id === "welcome" && (
-          <div className="space-y-6 text-zinc-300">
+          <div className="space-y-6 text-[var(--color-text-primary)]">
             <p>
               Overseer is your self-hosted AI agent. It can manage your VPS, automate workflows,
               and connect to chat platforms.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <p className="text-white font-medium">Shell access</p>
-                <p className="text-sm text-zinc-500 mt-1">Full command execution on your server.</p>
+                <p className="text-sm text-[var(--color-text-muted)] mt-1">Full command execution on your server.</p>
               </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <p className="text-white font-medium">Safe by design</p>
-                <p className="text-sm text-zinc-500 mt-1">Built-in guardrails for sensitive ops.</p>
+                <p className="text-sm text-[var(--color-text-muted)] mt-1">Built-in guardrails for sensitive ops.</p>
               </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <p className="text-white font-medium">Multi-channel</p>
-                <p className="text-sm text-zinc-500 mt-1">Telegram and more when you're ready.</p>
+                <p className="text-sm text-[var(--color-text-muted)] mt-1">Telegram and more when you're ready.</p>
               </div>
             </div>
           </div>
@@ -238,11 +238,11 @@ export function OnboardingWizard() {
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Provider</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Provider</label>
                 <select
                   value={providerForm.name}
                   onChange={(e) => handleProviderChange(e.target.value as ProviderName)}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   {Object.entries(PROVIDER_INFO).map(([key, info]) => (
                     <option key={key} value={key}>
@@ -252,11 +252,11 @@ export function OnboardingWizard() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Model</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Model</label>
                 <select
                   value={providerForm.model}
                   onChange={(e) => setProviderForm((prev) => ({ ...prev, model: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   {PROVIDER_INFO[providerForm.name].models.map((model) => (
                     <option key={model} value={model}>
@@ -268,12 +268,12 @@ export function OnboardingWizard() {
             </div>
             {PROVIDER_INFO[providerForm.name].requiresKey && (
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">API Key</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">API Key</label>
                 <input
                   type="password"
                   value={providerForm.api_key}
                   onChange={(e) => setProviderForm((prev) => ({ ...prev, api_key: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   placeholder="sk-..."
                   required
                 />
@@ -281,28 +281,28 @@ export function OnboardingWizard() {
             )}
             {providerForm.name === "ollama" && (
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Base URL</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Base URL</label>
                 <input
                   type="text"
                   value={providerForm.base_url}
                   onChange={(e) => setProviderForm((prev) => ({ ...prev, base_url: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   placeholder="http://localhost:11434/v1"
                 />
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Max Tokens</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Max Tokens</label>
                 <input
                   type="number"
                   value={providerForm.max_tokens}
                   onChange={(e) => setProviderForm((prev) => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Temperature</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Temperature</label>
                 <input
                   type="number"
                   step="0.1"
@@ -310,7 +310,7 @@ export function OnboardingWizard() {
                   max="2"
                   value={providerForm.temperature}
                   onChange={(e) => setProviderForm((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 />
               </div>
             </div>
@@ -326,11 +326,11 @@ export function OnboardingWizard() {
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Platform</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Platform</label>
                 <select
                   value={interfaceForm.type}
                   onChange={(e) => setInterfaceForm((prev) => ({ ...prev, type: e.target.value as "telegram" | "discord" }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   <option value="telegram">Telegram</option>
                   <option value="discord" disabled>
@@ -339,34 +339,34 @@ export function OnboardingWizard() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Name</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Name</label>
                 <input
                   type="text"
                   value={interfaceForm.name}
                   onChange={(e) => setInterfaceForm((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   placeholder="My Bot"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">Bot Token</label>
+              <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Bot Token</label>
               <input
                 type="password"
                 value={interfaceForm.bot_token}
                 onChange={(e) => setInterfaceForm((prev) => ({ ...prev, bot_token: e.target.value }))}
-                className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
               />
-              <p className="text-xs text-zinc-500 mt-1">Leave empty to skip for now.</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">Leave empty to skip for now.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">Allowed Users (Optional)</label>
+              <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Allowed Users (Optional)</label>
               <input
                 type="text"
                 value={interfaceForm.allowed_users}
                 onChange={(e) => setInterfaceForm((prev) => ({ ...prev, allowed_users: e.target.value }))}
-                className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 placeholder="123456789, 987654321"
               />
             </div>
@@ -380,13 +380,13 @@ export function OnboardingWizard() {
                 {soulError}
               </div>
             )}
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-[var(--color-text-secondary)]">
               Optional: paste a custom SOUL.md snippet to override the default personality.
             </p>
             <textarea
               value={soulContent}
               onChange={(e) => setSoulContent(e.target.value)}
-              className="w-full h-64 p-4 bg-zinc-950/70 border border-zinc-800 rounded-lg text-zinc-200 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full h-64 p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
               placeholder="# Overseer Soul\n\n## Identity\n..."
               spellCheck={false}
             />
@@ -394,11 +394,11 @@ export function OnboardingWizard() {
         )}
 
         {step.id === "done" && (
-          <div className="space-y-4 text-zinc-300">
+          <div className="space-y-4 text-[var(--color-text-primary)]">
             <p>You're ready to go. Visit the dashboard to see live stats and tools.</p>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <p className="text-white font-medium">Next suggestions</p>
-              <ul className="text-sm text-zinc-500 mt-2 space-y-1">
+              <ul className="text-sm text-[var(--color-text-muted)] mt-2 space-y-1">
                 <li>• Add a second provider for fallback.</li>
                 <li>• Connect Telegram to chat with your agent.</li>
                 <li>• Review the soul to set tone and safety rules.</li>
@@ -412,7 +412,7 @@ export function OnboardingWizard() {
         <button
           onClick={handleBack}
           disabled={stepIndex === 0}
-          className="px-4 py-2 text-zinc-400 hover:text-white disabled:opacity-50"
+          className="px-4 py-2 text-[var(--color-text-secondary)] hover:text-white disabled:opacity-50"
         >
           Back
         </button>
@@ -421,7 +421,7 @@ export function OnboardingWizard() {
           disabled={
             providerSaving || interfaceSaving || soulSaving
           }
-          className="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-lg transition-colors disabled:opacity-60"
+          className="px-5 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded-lg transition-colors disabled:opacity-60"
         >
           {step.id === "done" ? "Go to Dashboard" : providerSaving || interfaceSaving || soulSaving ? "Saving..." : "Continue"}
         </button>

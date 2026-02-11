@@ -188,22 +188,22 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">Sub-Agents</h1>
-          <p className="text-zinc-400 mt-1">Specialized agents for specific tasks</p>
+          <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">Sub-Agents</h1>
+          <p className="text-[var(--color-text-secondary)] mt-1">Specialized agents for specific tasks</p>
         </div>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
+          <label className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
             <input
               type="checkbox"
               checked={autoRefresh}
               onChange={(event) => setAutoRefresh(event.target.checked)}
-              className="rounded border-zinc-700 bg-zinc-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-zinc-900"
+              className="rounded border-[var(--color-border)] bg-[var(--color-surface-overlay)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] focus:ring-offset-zinc-900"
             />
             Auto-refresh
           </label>
           <button
             onClick={() => fetchHealthData()}
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium rounded-lg transition-colors border border-zinc-700"
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium rounded-lg transition-colors border border-[var(--color-border)]"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -217,7 +217,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
           </button>
           <a
             href="/subagents/spawn"
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-white text-sm font-medium rounded-lg transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -228,7 +228,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
       </div>
 
       {healthData && (
-        <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-xl p-6 mb-8">
+        <div className="bg-[var(--color-accent-dim)] border border-[var(--color-accent-border)] rounded-lg p-6 mb-8">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white mb-2">System Health</h2>
@@ -240,7 +240,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
               </div>
             </div>
             <div className="text-right">
-              <div className="text-sm text-zinc-400 mb-2">
+              <div className="text-sm text-[var(--color-text-secondary)] mb-2">
                 Last updated: {new Date(healthData.timestamp).toLocaleTimeString()}
               </div>
               {healthData.overall.degradedAgents > 0 && (
@@ -257,12 +257,12 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
           </div>
 
           {healthData.recommendations.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-indigo-500/20">
+            <div className="mt-4 pt-4 border-t border-[var(--color-accent-border)]">
               <h3 className="text-sm font-medium text-white mb-2">Recommendations</h3>
               <ul className="space-y-1">
                 {healthData.recommendations.slice(0, 3).map((rec, index) => (
-                  <li key={index} className="text-sm text-zinc-300 flex items-start gap-2">
-                    <span className="text-indigo-400">•</span>
+                  <li key={index} className="text-sm text-[var(--color-text-primary)] flex items-start gap-2">
+                    <span className="text-[var(--color-accent)]">•</span>
                     <span>{rec}</span>
                   </li>
                 ))}
@@ -286,7 +286,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
               />
             </svg>
           }
-          color="indigo"
+          color="accent"
         />
         <StatsCard
           title="Currently Working"
@@ -296,7 +296,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           }
-          color="green"
+          color="success"
         />
         <StatsCard
           title="Completed Tasks"
@@ -306,7 +306,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           }
-          color="blue"
+          color="info"
         />
         <StatsCard
           title="Errors"
@@ -316,12 +316,12 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           }
-          color="red"
+          color="danger"
         />
       </div>
 
       {healthData && healthData.circuitBreakers.states.length > 0 && (
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
+        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">Circuit Breakers</h2>
             <div className="flex items-center gap-4 text-sm">
@@ -367,13 +367,13 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
                       {state.state}
                     </span>
                   </div>
-                  <div className="text-sm text-zinc-400 mb-3">
+                  <div className="text-sm text-[var(--color-text-secondary)] mb-3">
                     Failure Rate: {(state.failureRate * 100).toFixed(1)}%
                   </div>
                   {state.state === "OPEN" && (
                     <button
                       onClick={() => handleResetCircuit(state.agentType)}
-                      className="w-full px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors"
+                      className="w-full px-3 py-1.5 text-xs font-medium bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] rounded transition-colors"
                     >
                       Reset Circuit
                     </button>
@@ -386,39 +386,39 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
       )}
 
       {healthData && healthData.resourcePools.summary.totalActive + healthData.resourcePools.summary.totalQueued > 0 && (
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
+        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
           <h2 className="text-lg font-semibold text-white mb-4">Resource Pools</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div className="text-center p-3 bg-zinc-800/50 rounded-lg">
+            <div className="text-center p-3 bg-[var(--color-surface-overlay)] rounded-lg">
               <div className="text-2xl font-bold text-green-400">
                 {healthData.resourcePools.summary.totalActive}
               </div>
-              <div className="text-xs text-zinc-400 mt-1">Active</div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1">Active</div>
             </div>
-            <div className="text-center p-3 bg-zinc-800/50 rounded-lg">
+            <div className="text-center p-3 bg-[var(--color-surface-overlay)] rounded-lg">
               <div className="text-2xl font-bold text-yellow-400">
                 {healthData.resourcePools.summary.totalQueued}
               </div>
-              <div className="text-xs text-zinc-400 mt-1">Queued</div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1">Queued</div>
             </div>
-            <div className="text-center p-3 bg-zinc-800/50 rounded-lg">
+            <div className="text-center p-3 bg-[var(--color-surface-overlay)] rounded-lg">
               <div className="text-2xl font-bold text-blue-400">
                 {healthData.resourcePools.summary.totalCompleted}
               </div>
-              <div className="text-xs text-zinc-400 mt-1">Completed</div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1">Completed</div>
             </div>
-            <div className="text-center p-3 bg-zinc-800/50 rounded-lg">
+            <div className="text-center p-3 bg-[var(--color-surface-overlay)] rounded-lg">
               <div className="text-2xl font-bold text-red-400">
                 {healthData.resourcePools.summary.totalFailed}
               </div>
-              <div className="text-xs text-zinc-400 mt-1">Failed</div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1">Failed</div>
             </div>
           </div>
         </div>
       )}
 
       {Object.keys(stats.by_type).length > 0 && (
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
+        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
           <h2 className="text-lg font-semibold text-white mb-4">Usage by Agent Type</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {Object.entries(stats.by_type).map(([type, count]) => {
@@ -427,9 +427,9 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
               const successRate = agentHealth?.successRate || 0;
 
               return (
-                <div key={type} className="text-center p-4 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                <div key={type} className="text-center p-4 bg-[var(--color-surface-overlay)] rounded-lg border border-[var(--color-border)]">
                   <div className="text-2xl font-bold text-white">{count}</div>
-                  <div className="text-sm text-zinc-400 mt-1">{config?.name || type}</div>
+                  <div className="text-sm text-[var(--color-text-secondary)] mt-1">{config?.name || type}</div>
                   {agentHealth && (
                     <div className="text-xs mt-2">
                       <span
@@ -452,7 +452,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
         </div>
       )}
 
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
         <h2 className="text-lg font-semibold text-white mb-4">Available Sub-Agent Types</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {allTypes.map((type) => {
@@ -473,10 +473,10 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
             };
 
             return (
-              <div key={type} className="p-4 bg-zinc-800/50 rounded-lg border border-zinc-700">
+              <div key={type} className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border border-[var(--color-border)]">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-10 h-10 rounded-lg bg-[var(--color-accent-dim)] flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-[var(--color-accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -487,10 +487,10 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
                   </div>
                   <div>
                     <h3 className="font-medium text-white">{config?.name || type}</h3>
-                    <p className="text-xs text-zinc-400 mt-1">{config?.description || ""}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-1">{config?.description || ""}</p>
                     <div className="flex items-center gap-2 mt-2">
-                      <span className="text-xs px-2 py-0.5 bg-zinc-700 text-zinc-300 rounded">{type}</span>
-                      {config?.tools && <span className="text-xs text-zinc-500">{config.tools.length} tools</span>}
+                      <span className="text-xs px-2 py-0.5 bg-[var(--color-surface-overlay)] text-[var(--color-text-primary)] rounded">{type}</span>
+                      {config?.tools && <span className="text-xs text-[var(--color-text-muted)]">{config.tools.length} tools</span>}
                     </div>
                   </div>
                 </div>
@@ -500,10 +500,10 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
         </div>
       </div>
 
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl">
-        <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg">
+        <div className="p-6 border-b border-[var(--color-border)] flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">Recent Sub-Agents</h2>
-          <a href="/subagents/all" className="text-sm text-indigo-400 hover:text-indigo-300">
+          <a href="/subagents/all" className="text-sm text-[var(--color-accent)] hover:text-[var(--color-accent)]">
             View All
           </a>
         </div>

@@ -159,22 +159,22 @@ export function ChatInput({
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
   return (
-    <div className="border-t border-zinc-800 bg-zinc-900/80 backdrop-blur-sm p-4">
+    <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
       {/* Attachments preview */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">
           {attachments.map((file, index) => (
             <div
               key={index}
-              className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 rounded-lg text-sm"
+              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-surface-overlay)] rounded-lg text-sm"
             >
-              <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-[var(--color-text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
               </svg>
-              <span className="text-zinc-300 max-w-[150px] truncate">{file.name}</span>
+              <span className="text-[var(--color-text-primary)] max-w-[150px] truncate">{file.name}</span>
               <button
                 onClick={() => removeAttachment(index)}
-                className="text-zinc-500 hover:text-zinc-300"
+                className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -190,7 +190,7 @@ export function ChatInput({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex-shrink-0 p-2.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+          className="flex-shrink-0 p-2.5 text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-overlay)] rounded-lg transition-colors"
           title="Attach file"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -215,7 +215,7 @@ export function ChatInput({
             placeholder={placeholder}
             rows={1}
             disabled={isLoading}
-            className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50 transition-all"
+            className="w-full px-4 py-3 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent disabled:opacity-50 transition-all"
             style={{ minHeight: "48px", maxHeight: "200px" }}
           />
         </div>
@@ -228,7 +228,7 @@ export function ChatInput({
             className={`flex-shrink-0 p-2.5 rounded-lg transition-colors ${
               isListening
                 ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-overlay)]"
             }`}
             title={isListening ? "Stop recording" : "Voice input"}
           >
@@ -259,7 +259,7 @@ export function ChatInput({
           <button
             type="submit"
             disabled={!message.trim() && attachments.length === 0}
-            className="flex-shrink-0 p-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg transition-colors"
+            className="flex-shrink-0 p-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] disabled:bg-[var(--color-border)] disabled:text-[var(--color-text-muted)] text-black rounded-lg transition-colors"
             title="Send message"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,7 +270,7 @@ export function ChatInput({
       </form>
 
       {/* Input hints */}
-      <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
+      <div className="mt-2 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
         <span>Press Enter to send, Shift+Enter for new line</span>
         {isListening && (
           <span className="flex items-center gap-1 text-red-400">

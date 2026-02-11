@@ -13,7 +13,7 @@ export function ChatToolCall({ toolCall }: ChatToolCallProps) {
   const getStatusColor = () => {
     switch (toolCall.status) {
       case "pending":
-        return "text-zinc-400 bg-zinc-800";
+        return "text-[var(--color-text-secondary)] bg-[var(--color-surface-overlay)]";
       case "executing":
         return "text-amber-400 bg-amber-500/10";
       case "completed":
@@ -21,7 +21,7 @@ export function ChatToolCall({ toolCall }: ChatToolCallProps) {
       case "error":
         return "text-red-400 bg-red-500/10";
       default:
-        return "text-zinc-400 bg-zinc-800";
+        return "text-[var(--color-text-secondary)] bg-[var(--color-surface-overlay)]";
     }
   };
 
@@ -165,7 +165,7 @@ export function ChatToolCall({ toolCall }: ChatToolCallProps) {
         <div className="border-t border-current/20 p-3 space-y-3">
           {/* Arguments */}
           <div>
-            <div className="text-xs text-zinc-500 mb-1">Arguments</div>
+            <div className="text-xs text-[var(--color-text-muted)] mb-1">Arguments</div>
             <pre className="text-xs font-mono bg-black/20 rounded p-2 overflow-x-auto max-h-32 overflow-y-auto">
               {formatArgs(toolCall.args)}
             </pre>
@@ -174,7 +174,7 @@ export function ChatToolCall({ toolCall }: ChatToolCallProps) {
           {/* Result */}
           {toolCall.result !== undefined && (
             <div>
-              <div className="text-xs text-zinc-500 mb-1">Result</div>
+              <div className="text-xs text-[var(--color-text-muted)] mb-1">Result</div>
               <pre className="text-xs font-mono bg-black/20 rounded p-2 overflow-x-auto max-h-48 overflow-y-auto">
                 {formatResult(toolCall.result)}
               </pre>

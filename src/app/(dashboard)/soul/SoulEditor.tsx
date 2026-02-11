@@ -63,8 +63,8 @@ export function SoulEditor({ initialContent, isCustom, defaultSoul }: SoulEditor
   };
 
   return (
-    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+    <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold text-white">SOUL.md</h2>
           {hasChanges && (
@@ -82,7 +82,7 @@ export function SoulEditor({ initialContent, isCustom, defaultSoul }: SoulEditor
           {isCustom && (
             <button
               onClick={handleReset}
-              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+              className="px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:text-white bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
             >
               Reset to Default
             </button>
@@ -90,7 +90,7 @@ export function SoulEditor({ initialContent, isCustom, defaultSoul }: SoulEditor
           <button
             onClick={handleSave}
             disabled={saving || !hasChanges}
-            className="px-4 py-1.5 text-sm bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-1.5 text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? "Saving..." : "Save Changes"}
           </button>
@@ -106,7 +106,7 @@ export function SoulEditor({ initialContent, isCustom, defaultSoul }: SoulEditor
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        className="w-full h-[600px] p-4 bg-transparent text-zinc-300 font-mono text-sm resize-none focus:outline-none"
+        className="w-full h-[600px] p-4 bg-transparent text-[var(--color-text-primary)] font-mono text-sm resize-none focus:outline-none"
         placeholder="# Overseer Soul Document
 
 ## Identity

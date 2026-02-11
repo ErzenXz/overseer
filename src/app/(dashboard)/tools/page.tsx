@@ -8,8 +8,8 @@ export default function ToolsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Tools</h1>
-        <p className="text-zinc-400 mt-1">Available tools for your AI agent</p>
+        <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">Tools</h1>
+        <p className="text-[var(--color-text-secondary)] mt-1">Available tools for your AI agent</p>
       </div>
 
       <div className="space-y-8">
@@ -22,21 +22,21 @@ export default function ToolsPage() {
                 return (
                   <div
                     key={toolName}
-                    className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4"
+                    className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-4"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-medium text-white">{toolName}</h3>
                       {stats && (
-                        <span className="text-xs px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded">
+                        <span className="text-xs px-2 py-0.5 bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] rounded">
                           {stats.count} uses
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-zinc-400">
+                    <p className="text-sm text-[var(--color-text-secondary)]">
                       {toolDescriptions[toolName] || "No description"}
                     </p>
                     {stats && (
-                      <div className="flex items-center gap-4 mt-3 text-xs text-zinc-500">
+                      <div className="flex items-center gap-4 mt-3 text-xs text-[var(--color-text-muted)]">
                         <span>Success rate: {stats.success_rate}%</span>
                       </div>
                     )}

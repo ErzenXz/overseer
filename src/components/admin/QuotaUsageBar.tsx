@@ -44,7 +44,7 @@ export function QuotaUsageBar({ used, limit, label, color = "blue" }: QuotaUsage
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-zinc-400">{label}</span>
+        <span className="text-[var(--color-text-secondary)]">{label}</span>
         <span className={`font-medium ${colors.text}`}>
           {used.toLocaleString()} / {limit.toLocaleString()}
           {isOverLimit && (

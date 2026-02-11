@@ -57,17 +57,17 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
         return (
           <div
             key={iface.id}
-            className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6"
+            className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6"
           >
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-4">
                 <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  className={`w-12 h-12 rounded-lg flex items-center justify-center ${
                     iface.is_active
                       ? iface.type === "telegram"
                         ? "bg-blue-500/20 text-blue-400"
-                        : "bg-indigo-500/20 text-indigo-400"
-                      : "bg-zinc-800 text-zinc-500"
+                        : "bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
+                      : "bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)]"
                   }`}
                 >
                   {interfaceIcons[iface.type] || (
@@ -79,7 +79,7 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-white">{iface.name}</h3>
-                    <span className="text-xs px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded capitalize">
+                    <span className="text-xs px-2 py-0.5 bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] rounded capitalize">
                       {iface.type}
                     </span>
                     {iface.is_active ? (
@@ -87,12 +87,12 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
                         Active
                       </span>
                     ) : (
-                      <span className="text-xs px-2 py-0.5 bg-zinc-700 text-zinc-400 rounded">
+                      <span className="text-xs px-2 py-0.5 bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] rounded">
                         Disabled
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-zinc-400 mt-1">
+                  <p className="text-sm text-[var(--color-text-secondary)] mt-1">
                     Token: {hasToken ? "••••••••" : "Not configured"}
                   </p>
                 </div>
@@ -111,7 +111,7 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
                 </button>
                 <a
                   href={`/interfaces/${iface.id}/edit`}
-                  className="px-3 py-1.5 text-sm text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:text-white bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
                 >
                   Edit
                 </a>

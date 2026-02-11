@@ -41,62 +41,62 @@ export function SettingsForm({ settings }: SettingsFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+    <form onSubmit={handleSubmit} className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-white">Agent Settings</h2>
+        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)]">Agent Settings</h2>
         {saved && <span className="text-sm text-green-400">Saved!</span>}
       </div>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-2">Max Steps</label>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Max Steps</label>
           <input
             type="number"
             value={formData["agent.max_steps"]}
             onChange={(e) => setFormData((prev) => ({ ...prev, "agent.max_steps": e.target.value }))}
-            className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
           />
-          <p className="text-xs text-zinc-500 mt-1">Maximum number of tool-calling steps per request</p>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">Maximum number of tool-calling steps per request</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-2">Max Retries</label>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Max Retries</label>
           <input
             type="number"
             value={formData["agent.max_retries"]}
             onChange={(e) => setFormData((prev) => ({ ...prev, "agent.max_retries": e.target.value }))}
-            className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
           />
-          <p className="text-xs text-zinc-500 mt-1">Number of retries for failed API calls</p>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">Number of retries for failed API calls</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-2">Agent Timeout (ms)</label>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Agent Timeout (ms)</label>
           <input
             type="number"
             value={formData["agent.timeout_ms"]}
             onChange={(e) => setFormData((prev) => ({ ...prev, "agent.timeout_ms": e.target.value }))}
-            className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-2">Shell Command Timeout (ms)</label>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Shell Command Timeout (ms)</label>
           <input
             type="number"
             value={formData["tools.shell_timeout_ms"]}
             onChange={(e) => setFormData((prev) => ({ ...prev, "tools.shell_timeout_ms": e.target.value }))}
-            className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-2">Max File Size (MB)</label>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Max File Size (MB)</label>
           <input
             type="number"
             value={formData["tools.max_file_size_mb"]}
             onChange={(e) => setFormData((prev) => ({ ...prev, "tools.max_file_size_mb": e.target.value }))}
-            className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
           />
         </div>
 
@@ -111,9 +111,9 @@ export function SettingsForm({ settings }: SettingsFormProps) {
                 "tools.require_confirmation": e.target.checked ? "true" : "false",
               }))
             }
-            className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500"
+            className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-surface-overlay)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
           />
-          <label htmlFor="require_confirmation" className="text-sm text-zinc-300">
+          <label htmlFor="require_confirmation" className="text-sm text-[var(--color-text-primary)]">
             Require confirmation for destructive commands
           </label>
         </div>
@@ -122,7 +122,7 @@ export function SettingsForm({ settings }: SettingsFormProps) {
       <button
         type="submit"
         disabled={saving}
-        className="mt-6 w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+        className="mt-6 w-full py-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded-lg transition-colors disabled:opacity-50"
       >
         {saving ? "Saving..." : "Save Settings"}
       </button>

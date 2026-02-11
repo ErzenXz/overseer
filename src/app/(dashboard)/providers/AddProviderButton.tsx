@@ -66,8 +66,8 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
   const buttonClass =
     variant === "primary"
-      ? "px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all"
-      : "flex items-center gap-2 px-4 py-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition-colors";
+      ? "px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-all"
+      : "flex items-center gap-2 px-4 py-2 bg-[var(--color-accent-dim)] text-[var(--color-accent)] hover:bg-[var(--color-accent-dim)] rounded transition-colors";
 
   return (
     <>
@@ -80,12 +80,12 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-zinc-800">
-              <h2 className="text-xl font-semibold text-white">Add Provider</h2>
+          <div className="w-full max-w-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-[var(--color-border)]">
+              <h2 className="text-xl font-semibold text-white font-[var(--font-mono)]">Add Provider</h2>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                className="p-2 text-[var(--color-text-secondary)] hover:text-white rounded hover:bg-[var(--color-border)] transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -95,17 +95,17 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
                   {error}
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Provider</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Provider</label>
                 <select
                   value={formData.name}
                   onChange={(e) => handleProviderChange(e.target.value as ProviderName)}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   {Object.entries(PROVIDER_INFO).map(([key, info]) => (
                     <option key={key} value={key}>
@@ -116,11 +116,11 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Model</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Model</label>
                 <select
                   value={formData.model}
                   onChange={(e) => setFormData((prev) => ({ ...prev, model: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   {PROVIDER_INFO[formData.name].models.map((model) => (
                     <option key={model} value={model}>
@@ -132,12 +132,12 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
               {PROVIDER_INFO[formData.name].requiresKey && (
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2">API Key</label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">API Key</label>
                   <input
                     type="password"
                     value={formData.api_key}
                     onChange={(e) => setFormData((prev) => ({ ...prev, api_key: e.target.value }))}
-                    className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                     placeholder="sk-..."
                     required
                   />
@@ -146,12 +146,12 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
               {formData.name === "ollama" && (
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2">Base URL</label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Base URL</label>
                   <input
                     type="text"
                     value={formData.base_url}
                     onChange={(e) => setFormData((prev) => ({ ...prev, base_url: e.target.value }))}
-                    className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                     placeholder="http://localhost:11434/v1"
                   />
                 </div>
@@ -159,16 +159,16 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2">Max Tokens</label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Max Tokens</label>
                   <input
                     type="number"
                     value={formData.max_tokens}
                     onChange={(e) => setFormData((prev) => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
-                    className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2">Temperature</label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Temperature</label>
                   <input
                     type="number"
                     step="0.1"
@@ -176,7 +176,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                     max="2"
                     value={formData.temperature}
                     onChange={(e) => setFormData((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                    className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   />
                 </div>
               </div>
@@ -187,9 +187,9 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                   id="is_default"
                   checked={formData.is_default}
                   onChange={(e) => setFormData((prev) => ({ ...prev, is_default: e.target.checked }))}
-                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500"
+                  className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-surface-overlay)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
                 />
-                <label htmlFor="is_default" className="text-sm text-zinc-300">
+                <label htmlFor="is_default" className="text-sm text-[var(--color-text-primary)]">
                   Set as default provider
                 </label>
               </div>
@@ -198,14 +198,14 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className="px-4 py-2 text-zinc-400 hover:text-white transition-colors"
+                  className="px-4 py-2 text-[var(--color-text-secondary)] hover:text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+                  className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-colors disabled:opacity-50"
                 >
                   {loading ? "Adding..." : "Add Provider"}
                 </button>

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Overseer Admin",
-  description: "AI Agent VPS Control Panel",
+  title: "Overseer",
+  description: "AI Agent Control Panel",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-zinc-950 text-zinc-100 min-h-screen antialiased">
+      <body className="bg-[var(--color-surface)] text-[var(--color-text-primary)] min-h-screen antialiased font-[var(--font-sans)] noise-bg">
         {children}
       </body>
     </html>

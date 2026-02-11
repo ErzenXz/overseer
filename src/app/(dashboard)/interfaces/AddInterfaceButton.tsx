@@ -58,8 +58,8 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
 
   const buttonClass =
     variant === "primary"
-      ? "px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all"
-      : "flex items-center gap-2 px-4 py-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition-colors";
+      ? "px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-all"
+      : "flex items-center gap-2 px-4 py-2 bg-[var(--color-accent-dim)] text-[var(--color-accent)] hover:bg-[var(--color-accent-dim)] rounded-lg transition-colors";
 
   return (
     <>
@@ -72,12 +72,12 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-zinc-800">
-              <h2 className="text-xl font-semibold text-white">Add Chat Interface</h2>
+          <div className="w-full max-w-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-[var(--color-border)]">
+              <h2 className="text-xl font-semibold text-white font-[var(--font-mono)]">Add Chat Interface</h2>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                className="p-2 text-[var(--color-text-secondary)] hover:text-white rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -93,11 +93,11 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
               )}
 
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Platform</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Platform</label>
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData((prev) => ({ ...prev, type: e.target.value as "telegram" | "discord" }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   <option value="telegram">Telegram</option>
                   <option value="discord" disabled>Discord (Coming Soon)</option>
@@ -105,42 +105,42 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Name</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Name</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   placeholder="My Bot"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Bot Token</label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Bot Token</label>
                 <input
                   type="password"
                   value={formData.bot_token}
                   onChange={(e) => setFormData((prev) => ({ ...prev, bot_token: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
                   required
                 />
-                <p className="text-xs text-zinc-500 mt-1">Get this from @BotFather on Telegram</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">Get this from @BotFather on Telegram</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
                   Allowed Users (Optional)
                 </label>
                 <input
                   type="text"
                   value={formData.allowed_users}
                   onChange={(e) => setFormData((prev) => ({ ...prev, allowed_users: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                   placeholder="123456789, 987654321"
                 />
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">
                   Comma-separated Telegram user IDs. Leave empty to allow all.
                 </p>
               </div>
@@ -149,14 +149,14 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className="px-4 py-2 text-zinc-400 hover:text-white transition-colors"
+                  className="px-4 py-2 text-[var(--color-text-secondary)] hover:text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+                  className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-colors disabled:opacity-50"
                 >
                   {loading ? "Adding..." : "Add Interface"}
                 </button>

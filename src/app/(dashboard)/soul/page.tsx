@@ -9,8 +9,8 @@ export default function SoulPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Soul Document</h1>
-        <p className="text-zinc-400 mt-1">
+        <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">Soul Document</h1>
+        <p className="text-[var(--color-text-secondary)] mt-1">
           Define your AI agent's personality, values, and behavior
         </p>
       </div>
@@ -22,9 +22,9 @@ export default function SoulPage() {
 
         <div className="space-y-6">
           {/* Info Card */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">About SOUL.md</h2>
-            <div className="space-y-3 text-sm text-zinc-400">
+          <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
+            <h2 className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-4">About SOUL.md</h2>
+            <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
               <p>
                 The SOUL.md document defines your AI agent's core identity, values, and behavior guidelines.
               </p>
@@ -35,7 +35,7 @@ export default function SoulPage() {
                 href="https://soul.dev"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+                className="inline-flex items-center gap-1 text-[var(--color-accent)] hover:text-[var(--color-accent-light)]"
               >
                 Learn more about SOUL.md
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -46,64 +46,64 @@ export default function SoulPage() {
           </div>
 
           {/* Sections Guide */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Recommended Sections</h2>
+          <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
+            <h2 className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-4">Recommended Sections</h2>
             <ul className="space-y-3 text-sm">
               <li className="flex items-start gap-2">
-                <span className="text-indigo-400">•</span>
+                <span className="text-[var(--color-accent)]">•</span>
                 <div>
-                  <span className="text-zinc-300">Identity</span>
-                  <p className="text-zinc-500">Who is the agent?</p>
+                  <span className="text-[var(--color-text-primary)]">Identity</span>
+                  <p className="text-[var(--color-text-muted)]">Who is the agent?</p>
                 </div>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-indigo-400">•</span>
+                <span className="text-[var(--color-accent)]">•</span>
                 <div>
-                  <span className="text-zinc-300">Core Values</span>
-                  <p className="text-zinc-500">What principles guide behavior?</p>
+                  <span className="text-[var(--color-text-primary)]">Core Values</span>
+                  <p className="text-[var(--color-text-muted)]">What principles guide behavior?</p>
                 </div>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-indigo-400">•</span>
+                <span className="text-[var(--color-accent)]">•</span>
                 <div>
-                  <span className="text-zinc-300">Capabilities</span>
-                  <p className="text-zinc-500">What can the agent do?</p>
+                  <span className="text-[var(--color-text-primary)]">Capabilities</span>
+                  <p className="text-[var(--color-text-muted)]">What can the agent do?</p>
                 </div>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-indigo-400">•</span>
+                <span className="text-[var(--color-accent)]">•</span>
                 <div>
-                  <span className="text-zinc-300">Boundaries</span>
-                  <p className="text-zinc-500">What should it avoid?</p>
+                  <span className="text-[var(--color-text-primary)]">Boundaries</span>
+                  <p className="text-[var(--color-text-muted)]">What should it avoid?</p>
                 </div>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-indigo-400">•</span>
+                <span className="text-[var(--color-accent)]">•</span>
                 <div>
-                  <span className="text-zinc-300">Communication Style</span>
-                  <p className="text-zinc-500">How should it respond?</p>
+                  <span className="text-[var(--color-text-primary)]">Communication Style</span>
+                  <p className="text-[var(--color-text-muted)]">How should it respond?</p>
                 </div>
               </li>
             </ul>
           </div>
 
           {/* Status */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Status</h2>
+          <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
+            <h2 className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-4">Status</h2>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Source</span>
-                <span className={isCustom ? "text-green-400" : "text-zinc-300"}>
+                <span className="text-[var(--color-text-secondary)]">Source</span>
+                <span className={isCustom ? "text-green-400" : "text-[var(--color-text-primary)]"}>
                   {isCustom ? "Custom" : "Default"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Characters</span>
-                <span className="text-zinc-300">{soul.length.toLocaleString()}</span>
+                <span className="text-[var(--color-text-secondary)]">Characters</span>
+                <span className="text-[var(--color-text-primary)]">{soul.length.toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Lines</span>
-                <span className="text-zinc-300">{soul.split("\n").length}</span>
+                <span className="text-[var(--color-text-secondary)]">Lines</span>
+                <span className="text-[var(--color-text-primary)]">{soul.split("\n").length}</span>
               </div>
             </div>
           </div>

@@ -56,7 +56,7 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
   const displayName = session.external_user_id || session.external_chat_id || "Unknown";
 
   return (
-    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 hover:border-zinc-700 transition-colors">
+    <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 hover:border-[var(--color-border-light)] transition-colors">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className={`w-3 h-3 rounded-full ${statusColors[status] || statusColors.ended}`} />
@@ -67,7 +67,7 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
                 {status}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
+            <div className="flex items-center gap-2 mt-1 text-xs text-[var(--color-text-muted)]">
               <span className="flex items-center gap-1">
                 {interfaceIcons[session.interface_type] || interfaceIcons.web}
                 {session.interface_type}
@@ -89,21 +89,21 @@ export function SessionCard({ session, onTerminate }: SessionCardProps) {
       </div>
 
       <div className="space-y-2">
-        <div className="grid grid-cols-4 gap-4 pt-3 border-t border-zinc-800">
+        <div className="grid grid-cols-4 gap-4 pt-3 border-t border-[var(--color-border)]">
           <div>
-            <p className="text-xs text-zinc-500">Duration</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Duration</p>
             <p className="text-sm font-medium text-white mt-1">{formatDuration()}</p>
           </div>
           <div>
-            <p className="text-xs text-zinc-500">Steps</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Steps</p>
             <p className="text-sm font-medium text-white mt-1">{session.message_count}</p>
           </div>
           <div>
-            <p className="text-xs text-zinc-500">Tokens</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Tokens</p>
             <p className="text-sm font-medium text-white mt-1">{session.total_tokens.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-zinc-500">Cost</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Cost</p>
             <p className="text-sm font-medium text-white mt-1">$0.0000</p>
           </div>
         </div>

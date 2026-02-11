@@ -19,16 +19,16 @@ export default async function ConversationDetailPage({
   return (
     <div>
       <div className="mb-8">
-        <Link href="/conversations" className="text-sm text-zinc-400 hover:text-white mb-4 inline-flex items-center gap-1">
+        <Link href="/conversations" className="text-sm text-[var(--color-text-secondary)] hover:text-white mb-4 inline-flex items-center gap-1">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           Back to Conversations
         </Link>
-        <h1 className="text-2xl font-bold text-white mt-2">
+        <h1 className="text-xl font-semibold text-white font-[var(--font-mono)] mt-2">
           {conversation.external_username || `User ${conversation.external_user_id}`}
         </h1>
-        <div className="flex items-center gap-4 mt-2 text-sm text-zinc-400">
+        <div className="flex items-center gap-4 mt-2 text-sm text-[var(--color-text-secondary)]">
           <span className="capitalize">{conversation.interface_type}</span>
           <span>•</span>
           <span>{conversation.message_count} messages</span>
@@ -37,13 +37,13 @@ export default async function ConversationDetailPage({
         </div>
       </div>
 
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-zinc-800">
-          <h2 className="font-semibold text-white">Messages</h2>
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+        <div className="p-4 border-b border-[var(--color-border)]">
+          <h2 className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Messages</h2>
         </div>
         <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
           {messages.length === 0 ? (
-            <p className="text-zinc-500 text-center py-8">No messages in this conversation</p>
+            <p className="text-[var(--color-text-muted)] text-center py-8">No messages in this conversation</p>
           ) : (
             messages.map((message) => (
               <div
@@ -51,12 +51,12 @@ export default async function ConversationDetailPage({
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-xl px-4 py-3 ${
+                  className={`max-w-[80%] rounded-lg px-4 py-3 ${
                     message.role === "user"
-                      ? "bg-indigo-500/20 text-indigo-100"
+                      ? "bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
                       : message.role === "assistant"
-                      ? "bg-zinc-800 text-zinc-200"
-                      : "bg-zinc-800/50 text-zinc-400 text-sm"
+                      ? "bg-[var(--color-surface-overlay)] text-[var(--color-text-primary)]"
+                      : "bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] text-sm"
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1">

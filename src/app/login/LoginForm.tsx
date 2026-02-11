@@ -40,15 +40,15 @@ export function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/20 text-[var(--color-danger)] px-4 py-3 rounded text-sm">
           {error}
         </div>
       )}
 
       <div>
-        <label htmlFor="username" className="block text-sm font-medium text-zinc-300 mb-2">
+        <label htmlFor="username" className="block text-[11px] font-[var(--font-mono)] uppercase tracking-[0.08em] text-[var(--color-text-muted)] mb-2">
           Username
         </label>
         <input
@@ -56,15 +56,15 @@ export function LoginForm() {
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-zinc-500"
-          placeholder="Enter your username"
+          className="w-full px-3 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)] text-white placeholder-[var(--color-text-muted)] text-sm"
+          placeholder="Enter username"
           required
           autoComplete="username"
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-zinc-300 mb-2">
+        <label htmlFor="password" className="block text-[11px] font-[var(--font-mono)] uppercase tracking-[0.08em] text-[var(--color-text-muted)] mb-2">
           Password
         </label>
         <input
@@ -72,8 +72,8 @@ export function LoginForm() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-zinc-500"
-          placeholder="Enter your password"
+          className="w-full px-3 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)] text-white placeholder-[var(--color-text-muted)] text-sm"
+          placeholder="Enter password"
           required
           autoComplete="current-password"
         />
@@ -82,11 +82,11 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3 px-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:from-indigo-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+        className="w-full py-2.5 px-4 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
       >
         {loading ? (
           <span className="flex items-center justify-center">
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-black" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>

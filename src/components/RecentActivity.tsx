@@ -14,33 +14,33 @@ interface RecentActivityProps {
 export function RecentActivity({ items }: RecentActivityProps) {
   if (items.length === 0) {
     return (
-      <div className="text-center py-8 text-zinc-500">
+      <div className="text-center py-8 text-[var(--color-text-muted)]">
         No recent activity
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {items.map((item) => (
         <div
           key={item.id}
-          className="flex items-start gap-4 p-4 bg-zinc-800/30 rounded-lg"
+          className="flex items-start gap-3 p-3 bg-[var(--color-surface-overlay)] rounded-lg"
         >
           <div
-            className={`w-2 h-2 rounded-full mt-2 ${
+            className={`w-1.5 h-1.5 rounded-full mt-2 ${
               item.status === "success"
-                ? "bg-green-500"
+                ? "bg-[var(--color-success)]"
                 : item.status === "error"
-                ? "bg-red-500"
-                : "bg-zinc-500"
+                ? "bg-[var(--color-danger)]"
+                : "bg-[var(--color-text-muted)]"
             }`}
           />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white">{item.title}</p>
-            <p className="text-xs text-zinc-400 truncate">{item.description}</p>
+            <p className="text-sm font-medium text-[var(--color-text-primary)]">{item.title}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] truncate">{item.description}</p>
           </div>
-          <span className="text-xs text-zinc-500 whitespace-nowrap">
+          <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap font-[var(--font-mono)]">
             {item.timestamp}
           </span>
         </div>

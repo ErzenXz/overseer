@@ -19,8 +19,8 @@ export default function SessionsPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">Session Management</h1>
-          <p className="text-zinc-400 mt-1">Monitor and manage active agent sessions across all interfaces</p>
+          <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">Session Management</h1>
+          <p className="text-[var(--color-text-secondary)] mt-1">Monitor and manage active agent sessions across all interfaces</p>
         </div>
         <div className="flex gap-3">
           <button className="flex items-center gap-2 px-4 py-2 text-sm text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-lg transition-colors">
@@ -48,7 +48,7 @@ export default function SessionsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           }
-          color="green"
+          color="success"
         />
         <StatsCard
           title="Idle Sessions"
@@ -58,7 +58,7 @@ export default function SessionsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           }
-          color="blue"
+          color="info"
         />
         <StatsCard
           title="Today's Sessions"
@@ -68,7 +68,7 @@ export default function SessionsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           }
-          color="purple"
+          color="accent"
         />
         <StatsCard
           title="Total Tokens Used"
@@ -79,33 +79,33 @@ export default function SessionsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
             </svg>
           }
-          color="orange"
+          color="warning"
         />
       </div>
 
       {/* Session Status Overview */}
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
-        <h2 className="text-lg font-semibold text-white mb-4">Session Status Overview</h2>
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
+        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Session Status Overview</h2>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="text-center p-4 bg-zinc-800/30 rounded-lg">
+          <div className="text-center p-4 bg-[var(--color-surface-overlay)] rounded-lg">
             <div className="text-3xl font-bold text-green-400">{stats.active}</div>
-            <div className="text-sm text-zinc-400 mt-1">Active</div>
+            <div className="text-sm text-[var(--color-text-secondary)] mt-1">Active</div>
           </div>
-          <div className="text-center p-4 bg-zinc-800/30 rounded-lg">
+          <div className="text-center p-4 bg-[var(--color-surface-overlay)] rounded-lg">
             <div className="text-3xl font-bold text-yellow-400">{stats.busy}</div>
-            <div className="text-sm text-zinc-400 mt-1">Busy</div>
+            <div className="text-sm text-[var(--color-text-secondary)] mt-1">Busy</div>
           </div>
-          <div className="text-center p-4 bg-zinc-800/30 rounded-lg">
+          <div className="text-center p-4 bg-[var(--color-surface-overlay)] rounded-lg">
             <div className="text-3xl font-bold text-blue-400">{stats.idle}</div>
-            <div className="text-sm text-zinc-400 mt-1">Idle</div>
+            <div className="text-sm text-[var(--color-text-secondary)] mt-1">Idle</div>
           </div>
-          <div className="text-center p-4 bg-zinc-800/30 rounded-lg">
+          <div className="text-center p-4 bg-[var(--color-surface-overlay)] rounded-lg">
             <div className="text-3xl font-bold text-red-400">{stats.error}</div>
-            <div className="text-sm text-zinc-400 mt-1">Error</div>
+            <div className="text-sm text-[var(--color-text-secondary)] mt-1">Error</div>
           </div>
-          <div className="text-center p-4 bg-zinc-800/30 rounded-lg">
-            <div className="text-3xl font-bold text-zinc-400">{stats.total}</div>
-            <div className="text-sm text-zinc-400 mt-1">Total</div>
+          <div className="text-center p-4 bg-[var(--color-surface-overlay)] rounded-lg">
+            <div className="text-3xl font-bold text-[var(--color-text-secondary)]">{stats.total}</div>
+            <div className="text-sm text-[var(--color-text-secondary)] mt-1">Total</div>
           </div>
         </div>
       </div>
@@ -116,7 +116,7 @@ export default function SessionsPage() {
           {Object.entries(sessionsByInterface).map(([interfaceType, sessions]: [string, AgentSession[]]) => (
             <div key={interfaceType}>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white capitalize">
+                <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] capitalize">
                   {interfaceType} Sessions ({sessions.length})
                 </h2>
                 <button className="px-3 py-1.5 text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors">
@@ -132,26 +132,26 @@ export default function SessionsPage() {
           ))}
         </div>
       ) : (
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-12 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-zinc-800 flex items-center justify-center">
-            <svg className="w-8 h-8 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-12 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-overlay)] flex items-center justify-center">
+            <svg className="w-8 h-8 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
           <h3 className="text-lg font-medium text-white mb-2">No active sessions</h3>
-          <p className="text-zinc-400">Sessions will appear here when agents start processing requests</p>
+          <p className="text-[var(--color-text-secondary)]">Sessions will appear here when agents start processing requests</p>
         </div>
       )}
 
       {/* Session History */}
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mt-8">
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mt-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-white">Recent Session History</h2>
-          <a href="/sessions/history" className="text-sm text-indigo-400 hover:text-indigo-300">
+          <h2 className="text-lg font-semibold text-white font-[var(--font-mono)]">Recent Session History</h2>
+          <a href="/sessions/history" className="text-sm text-[var(--color-accent)] hover:text-[var(--color-accent-light)]">
             View all history →
           </a>
         </div>
-        <div className="text-sm text-zinc-500 text-center py-8">
+        <div className="text-sm text-[var(--color-text-muted)] text-center py-8">
           Session history feature coming soon
         </div>
       </div>

@@ -24,11 +24,11 @@ export default function UsersPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">User Management</h1>
-          <p className="text-zinc-400 mt-1">Manage user accounts, roles, and permissions</p>
+          <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">User Management</h1>
+          <p className="text-[var(--color-text-secondary)] mt-1">Manage user accounts, roles, and permissions</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium rounded-lg transition-colors">
+          <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] border border-[var(--color-border)] text-sm font-medium rounded transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
@@ -36,7 +36,7 @@ export default function UsersPage() {
           </button>
           <a
             href="/users/add"
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -56,7 +56,7 @@ export default function UsersPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
           }
-          color="indigo"
+          color="accent"
         />
         <StatsCard
           title="Admins"
@@ -66,7 +66,7 @@ export default function UsersPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
           }
-          color="red"
+          color="danger"
         />
         <StatsCard
           title="Developers"
@@ -76,7 +76,7 @@ export default function UsersPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           }
-          color="green"
+          color="success"
         />
         <StatsCard
           title="Operators"
@@ -86,7 +86,7 @@ export default function UsersPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.97a1 1 0 00.95.69h4.173c.969 0 1.371 1.24.588 1.81l-3.377 2.455a1 1 0 00-.364 1.118l1.287 3.97c.3.92-.755 1.688-1.54 1.118l-3.377-2.456a1 1 0 00-1.176 0l-3.377 2.456c-.784.57-1.838-.197-1.539-1.118l1.287-3.97a1 1 0 00-.364-1.118L2.98 9.397c-.783-.57-.38-1.81.588-1.81h4.173a1 1 0 00.95-.69l1.286-3.97z" />
             </svg>
           }
-          color="orange"
+          color="warning"
         />
         <StatsCard
           title="Viewers"
@@ -97,17 +97,17 @@ export default function UsersPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
           }
-          color="blue"
+          color="info"
         />
       </div>
 
       {/* Role Descriptions */}
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
-        <h2 className="text-lg font-semibold text-white mb-4">Role Permissions</h2>
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
+        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Role Permissions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-zinc-800/50 rounded-lg border-l-4 border-red-500">
+          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border-l-4 border-red-500">
             <h3 className="font-medium text-white mb-2">Admin</h3>
-            <ul className="text-xs text-zinc-400 space-y-1">
+            <ul className="text-xs text-[var(--color-text-secondary)] space-y-1">
               <li>✓ Full system access</li>
               <li>✓ Manage users and roles</li>
               <li>✓ Configure providers and interfaces</li>
@@ -115,9 +115,9 @@ export default function UsersPage() {
               <li>✓ Modify system settings</li>
             </ul>
           </div>
-          <div className="p-4 bg-zinc-800/50 rounded-lg border-l-4 border-green-500">
+          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border-l-4 border-green-500">
             <h3 className="font-medium text-white mb-2">User</h3>
-            <ul className="text-xs text-zinc-400 space-y-1">
+            <ul className="text-xs text-[var(--color-text-secondary)] space-y-1">
               <li>✓ Use the AI agent</li>
               <li>✓ View own conversations</li>
               <li>✓ Manage own sessions</li>
@@ -125,9 +125,9 @@ export default function UsersPage() {
               <li>✗ Cannot modify system config</li>
             </ul>
           </div>
-          <div className="p-4 bg-zinc-800/50 rounded-lg border-l-4 border-blue-500">
+          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border-l-4 border-blue-500">
             <h3 className="font-medium text-white mb-2">Viewer</h3>
-            <ul className="text-xs text-zinc-400 space-y-1">
+            <ul className="text-xs text-[var(--color-text-secondary)] space-y-1">
               <li>✓ Read-only dashboard access</li>
               <li>✓ View logs and stats</li>
               <li>✗ Cannot start conversations</li>
@@ -140,17 +140,17 @@ export default function UsersPage() {
 
       {/* Users Grid */}
       {users.length === 0 ? (
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-12 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-zinc-800 flex items-center justify-center">
-            <svg className="w-8 h-8 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-12 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-overlay)] flex items-center justify-center">
+            <svg className="w-8 h-8 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
           </div>
           <h3 className="text-lg font-medium text-white mb-2">No users found</h3>
-          <p className="text-zinc-400 mb-6">Create your first user account to get started</p>
+          <p className="text-[var(--color-text-secondary)] mb-6">Create your first user account to get started</p>
           <a
             href="/users/add"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -166,7 +166,7 @@ export default function UsersPage() {
                 <UserCard user={user} />
                 
                 {/* Quota Usage */}
-                <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
                   <h3 className="text-sm font-semibold text-white mb-4">Quota Usage</h3>
                   <div className="space-y-4">
                     <QuotaUsageBar

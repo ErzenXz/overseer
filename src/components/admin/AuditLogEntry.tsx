@@ -49,7 +49,7 @@ export function AuditLogEntry({ log, onView }: AuditLogEntryProps) {
   const metadata = log.metadata ? JSON.parse(log.metadata) : null;
 
   return (
-    <div className="flex items-start gap-4 p-4 bg-zinc-900/30 hover:bg-zinc-900/50 rounded-lg transition-colors group">
+    <div className="flex items-start gap-4 p-4 bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-overlay)] rounded-lg transition-colors group">
       <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${levelColors[log.level] || levelColors.info}`}>
         {levelIcons[log.level] || levelIcons.info}
       </div>
@@ -60,22 +60,22 @@ export function AuditLogEntry({ log, onView }: AuditLogEntryProps) {
             <span className={`text-xs px-2 py-0.5 rounded font-medium ${levelColors[log.level] || levelColors.info}`}>
               {log.level.toUpperCase()}
             </span>
-            <span className="text-xs text-zinc-500">{log.category}</span>
+            <span className="text-xs text-[var(--color-text-muted)]">{log.category}</span>
           </div>
-          <span className="text-xs text-zinc-500 flex-shrink-0">{formatTime(log.created_at)}</span>
+          <span className="text-xs text-[var(--color-text-muted)] flex-shrink-0">{formatTime(log.created_at)}</span>
         </div>
 
-        <p className="text-sm text-zinc-300 mb-2">{log.message}</p>
+        <p className="text-sm text-[var(--color-text-primary)] mb-2">{log.message}</p>
 
         {metadata && (
           <details className="text-xs">
-            <summary className="text-zinc-500 cursor-pointer hover:text-zinc-400 inline-flex items-center gap-1">
+            <summary className="text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text-secondary)] inline-flex items-center gap-1">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               View metadata
             </summary>
-            <pre className="mt-2 p-2 bg-zinc-900 rounded text-zinc-400 overflow-x-auto">
+            <pre className="mt-2 p-2 bg-[var(--color-surface)] rounded text-[var(--color-text-secondary)] overflow-x-auto">
               {JSON.stringify(metadata, null, 2)}
             </pre>
           </details>
@@ -85,7 +85,7 @@ export function AuditLogEntry({ log, onView }: AuditLogEntryProps) {
       {onView && (
         <button
           onClick={onView}
-          className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-xs text-zinc-400 hover:text-white"
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:text-white"
           aria-label="View details"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

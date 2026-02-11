@@ -96,6 +96,14 @@ function initializeSchema() {
     console.log("Database schema initialized");
     console.log(`Database location: ${DB_PATH}`);
   }
+
+  // Also load agent-related schema (sub_agents, mcp_servers, skills, etc.)
+  const agentSchemaPath = join(__dirname, "schema-agents.sql");
+  if (existsSync(agentSchemaPath)) {
+    const agentSchema = readFileSync(agentSchemaPath, "utf-8");
+    db.exec(agentSchema);
+    console.log("Agent schema initialized");
+  }
 }
 
 /**

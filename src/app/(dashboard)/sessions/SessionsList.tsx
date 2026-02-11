@@ -13,7 +13,7 @@ const statusColors: Record<string, string> = {
   idle: "bg-blue-500",
   busy: "bg-yellow-500",
   error: "bg-red-500",
-  ended: "bg-zinc-500",
+  ended: "bg-[var(--color-text-muted)]",
 };
 
 const statusBadgeColors: Record<string, string> = {
@@ -21,7 +21,7 @@ const statusBadgeColors: Record<string, string> = {
   idle: "bg-blue-500/10 text-blue-400",
   busy: "bg-yellow-500/10 text-yellow-400",
   error: "bg-red-500/10 text-red-400",
-  ended: "bg-zinc-500/10 text-zinc-400",
+  ended: "bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)]",
 };
 
 export function SessionsList({ sessions }: SessionsListProps) {
@@ -60,15 +60,15 @@ export function SessionsList({ sessions }: SessionsListProps) {
   return (
     <div>
       {/* Filter Tabs */}
-      <div className="flex gap-2 p-4 border-b border-zinc-800">
+      <div className="flex gap-2 p-4 border-b border-[var(--color-border)]">
         {["all", "active", "ended"].map((status) => (
           <button
             key={status}
             onClick={() => setFilter(status)}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            className={`px-3 py-1.5 text-sm rounded transition-colors ${
               filter === status
-                ? "bg-indigo-500/10 text-indigo-400"
-                : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                ? "bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
+                : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-overlay)]"
             }`}
           >
             {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -80,7 +80,7 @@ export function SessionsList({ sessions }: SessionsListProps) {
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="text-left text-sm text-zinc-400 border-b border-zinc-800">
+            <tr className="text-left text-sm text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
               <th className="px-6 py-4 font-medium">Session</th>
               <th className="px-6 py-4 font-medium">Status</th>
               <th className="px-6 py-4 font-medium">Interface</th>
@@ -92,16 +92,16 @@ export function SessionsList({ sessions }: SessionsListProps) {
               <th className="px-6 py-4 font-medium">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800">
+          <tbody className="divide-y divide-[var(--color-border)]">
             {filteredSessions.map((session) => {
               const status = session.is_active ? "active" : "ended";
               const displayName = session.external_user_id || session.external_chat_id || "-";
               return (
-              <tr key={session.id} className="hover:bg-zinc-800/30 transition-colors">
+              <tr key={session.id} className="hover:bg-[var(--color-surface-overlay)] transition-colors">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full ${statusColors[status]}`} />
-                    <code className="text-xs text-zinc-300 font-mono">
+                    <code className="text-xs text-[var(--color-text-primary)] font-[var(--font-mono)]">
                       {String(session.id).padStart(6, "0")}
                     </code>
                   </div>
@@ -111,25 +111,25 @@ export function SessionsList({ sessions }: SessionsListProps) {
                     {status}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-sm text-zinc-300">
+                <td className="px-6 py-4 text-sm text-[var(--color-text-primary)]">
                   {session.interface_type}
                 </td>
                 <td className="px-6 py-4">
-                  <span className="text-sm text-zinc-300">
+                  <span className="text-sm text-[var(--color-text-primary)]">
                     {displayName}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-sm text-zinc-400">
+                <td className="px-6 py-4 text-sm text-[var(--color-text-secondary)]">
                   {formatDuration(session.created_at)}
                 </td>
-                <td className="px-6 py-4 text-sm text-zinc-400">
+                <td className="px-6 py-4 text-sm text-[var(--color-text-secondary)]">
                   {session.message_count}
                 </td>
-                <td className="px-6 py-4 text-sm text-zinc-400">
+                <td className="px-6 py-4 text-sm text-[var(--color-text-secondary)]">
                   {session.total_tokens.toLocaleString()}
                 </td>
                 <td className="px-6 py-4">
-                  <span className="text-sm text-zinc-400 truncate max-w-[200px] block">
+                  <span className="text-sm text-[var(--color-text-secondary)] truncate max-w-[200px] block">
                     {"-"}
                   </span>
                 </td>
@@ -138,7 +138,7 @@ export function SessionsList({ sessions }: SessionsListProps) {
                     <button
                       onClick={() => handleKillSession(session.id)}
                       disabled={killingId === session.id || status === "ended"}
-                      className="px-3 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors disabled:opacity-50"
+                      className="px-3 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors disabled:opacity-50"
                     >
                       {killingId === session.id ? "..." : "Kill"}
                     </button>
@@ -152,7 +152,7 @@ export function SessionsList({ sessions }: SessionsListProps) {
       </div>
 
       {filteredSessions.length === 0 && (
-        <div className="p-8 text-center text-zinc-500">
+        <div className="p-8 text-center text-[var(--color-text-muted)]">
           No sessions match the current filter
         </div>
       )}

@@ -124,7 +124,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
     const codeMatch = remaining.match(/^`([^`]+)`/);
     if (codeMatch) {
       elements.push(
-        <code key={key++} className="px-1.5 py-0.5 bg-zinc-800 rounded text-sm font-mono text-indigo-300">
+        <code key={key++} className="px-1.5 py-0.5 bg-[var(--color-surface-overlay)] rounded text-sm font-mono text-[var(--color-accent)]">
           {codeMatch[1]}
         </code>
       );
@@ -157,7 +157,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
           href={linkMatch[2]}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-indigo-400 hover:underline"
+          className="text-[var(--color-accent)] hover:underline"
         >
           {linkMatch[1]}
         </a>
@@ -191,20 +191,20 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   };
 
   return (
-    <div className="relative group my-3 rounded-lg overflow-hidden bg-zinc-900 border border-zinc-700">
+    <div className="relative group my-3 rounded-lg overflow-hidden bg-[var(--color-surface-raised)] border border-[var(--color-border)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-zinc-700">
-        <span className="text-xs text-zinc-400 font-mono">{language || "text"}</span>
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-overlay)] border-b border-[var(--color-border)]">
+        <span className="text-xs text-[var(--color-text-secondary)] font-mono">{language || "text"}</span>
         <button
           onClick={copyCode}
-          className="text-xs text-zinc-400 hover:text-white transition-colors"
+          className="text-xs text-[var(--color-text-secondary)] hover:text-white transition-colors"
         >
           Copy
         </button>
       </div>
       {/* Code */}
       <pre className="p-4 overflow-x-auto">
-        <code className="text-sm font-mono text-zinc-300">{code}</code>
+        <code className="text-sm font-mono text-[var(--color-text-primary)]">{code}</code>
       </pre>
     </div>
   );
@@ -251,8 +251,8 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
       <div
         className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
           isUser
-            ? "bg-indigo-500"
-            : "bg-gradient-to-br from-purple-500 to-pink-500"
+            ? "bg-[var(--color-accent)]"
+            : "bg-[var(--color-accent)]"
         }`}
       >
         {isUser ? (
@@ -270,10 +270,10 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
       <div className={`flex-1 ${isUser ? "text-right" : ""} max-w-[80%]`}>
         {/* Message bubble */}
         <div
-          className={`inline-block text-left px-4 py-3 rounded-2xl ${
+          className={`inline-block text-left px-4 py-3 rounded-lg ${
             isUser
-              ? "bg-indigo-500 text-white"
-              : "bg-zinc-800 text-zinc-100"
+              ? "bg-[var(--color-accent)] text-black"
+              : "bg-[var(--color-surface-overlay)] text-[var(--color-text-primary)]"
           }`}
         >
           {/* Thinking indicator for active thinking */}
@@ -294,7 +294,7 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
             <div className="prose prose-invert prose-sm max-w-none">
               {parsedContent}
               {message.isStreaming && (
-                <span className="inline-block w-2 h-4 bg-zinc-400 animate-pulse ml-0.5" />
+                <span className="inline-block w-2 h-4 bg-[var(--color-text-secondary)] animate-pulse ml-0.5" />
               )}
             </div>
           )}
@@ -311,7 +311,7 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
 
         {/* Metadata */}
         <div
-          className={`mt-1 flex items-center gap-2 text-xs text-zinc-500 ${
+          className={`mt-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)] ${
             isUser ? "justify-end" : ""
           }`}
         >
