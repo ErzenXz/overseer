@@ -1,8 +1,8 @@
-# MyBot - Self-Hosted AI Agent Platform
+# Overseer - Self-Hosted AI Agent Platform
 
 <div align="center">
 
-![MyBot Banner](https://via.placeholder.com/800x200/1e293b/ffffff?text=MyBot+-+Your+Intelligent+VPS+Assistant)
+![Overseer Banner](https://via.placeholder.com/800x200/1e293b/ffffff?text=Overseer+-+Your+Intelligent+VPS+Assistant)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org)
@@ -12,20 +12,22 @@
 
 **A powerful, self-hosted AI agent that gives you complete control over your server through natural language**
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Documentation](#-documentation) • [Demo](#-demo)
+> Note: This project is newly renamed and hasn't been promoted yet, so the star history is effectively flat for now.
+
+[Quick Start](https://github.com/ErzenXz/overseer#-quick-start) • [Features](#-features) • [Documentation](#-documentation) • [Demo](#-demo) • [Repo](https://github.com/ErzenXz/overseer)
 
 </div>
 
 ---
 
-## 🌟 Why MyBot?
+## 🌟 Why Overseer?
 
-MyBot is not just another chatbot. It's a **production-ready AI agent platform** that turns your server into an intelligent assistant. Chat via Telegram or Discord, manage everything through a beautiful web dashboard, and extend capabilities with skills and MCP servers.
+Overseer is not just another chatbot. It's a **production-ready AI agent platform** that turns your server into an intelligent assistant. Chat via Telegram or Discord, manage everything through a beautiful web dashboard, and extend capabilities with skills and MCP servers.
 
-### ✨ What Makes MyBot Different?
+### ✨ What Makes Overseer Different?
 
 - **🎯 True Agentic Behavior**: Uses Vercel AI SDK's Tool Loop for complex, multi-step reasoning
-- **🔧 35+ Built-in Tools**: File management, Git operations, system monitoring, and more
+- **🔧 Minimal Built-in Tools**: Shell execution and core file utilities for safe, flexible automation
 - **🧩 Extensible Architecture**: Add skills, connect MCP servers, spawn sub-agents
 - **🔐 Enterprise Security**: AES-256 encryption, user authentication, command confirmation
 - **🌍 Cross-Platform**: Works on Windows, Linux, and macOS out of the box
@@ -45,50 +47,40 @@ MyBot is not just another chatbot. It's a **production-ready AI agent platform**
 | **Web Admin** | ✅ Ready | Real-time chat, conversation history, tool browser |
 | **API** | ✅ Ready | RESTful API for custom integrations |
 
-### 🛠️ Built-in Tools (35+ and growing)
+### 🛠️ Built-in Tools (Minimal & focused)
 
 <details>
-<summary><b>📂 File Operations (10 tools)</b></summary>
+<summary><b>📂 File Operations</b></summary>
 
-- Read, write, create, delete files
-- List directories with rich metadata
-- Copy, move, rename operations
-- Symbolic links and permissions
+- Read and write files
+- List directories
 - Cross-platform path handling
 
 </details>
 
 <details>
-<summary><b>📦 Git Operations (10 tools)</b></summary>
+<summary><b>📦 Shell Execution</b></summary>
 
-- Status, log, diff, branch management
-- Stage, commit, push, pull
-- Clone repositories
-- Stash management
-- Full Git workflow automation
+- Run shell commands safely
+- Optional confirmed execution mode
 
 </details>
 
 <details>
-<summary><b>🖥️ System Tools (9 tools)</b></summary>
+<summary><b>🖥️ System & Admin Tasks</b></summary>
 
-- CPU, memory, disk monitoring
-- Process management (list, kill)
-- Network diagnostics (ping, curl)
-- Service management (start, stop, restart)
-- Environment variables
-- Cross-platform commands
+- CPU, memory, disk monitoring (via shell)
+- Process management (via shell)
+- Network diagnostics (via shell)
+- Service management (via shell)
 
 </details>
 
 <details>
-<summary><b>🔍 Search & Analysis (6 tools)</b></summary>
+<summary><b>🔍 Search & Analysis</b></summary>
 
 - Find files by pattern
-- Search in files (grep/Select-String)
-- Replace in files
-- Count lines and words
-- View file head/tail
+- Search in files
 - Regular expression support
 
 </details>
@@ -136,10 +128,10 @@ Install pre-built skills or create custom ones:
 Connect to MCP servers for unlimited tool expansion:
 ```bash
 # Connect to filesystem MCP server
-mybot mcp connect npx -y @modelcontextprotocol/server-filesystem /path
+overseer mcp connect npx -y @modelcontextprotocol/server-filesystem /path
 
 # Connect to GitHub MCP server
-mybot mcp connect npx -y @modelcontextprotocol/server-github
+overseer mcp connect npx -y @modelcontextprotocol/server-github
 
 # Connect to custom MCP servers via stdio or SSE
 ```
@@ -206,7 +198,7 @@ Never: Execute destructive commands without confirmation
 | **[Quick Start Guide](#-quick-start)** | Get started in 5 minutes |
 | **[User Guide](docs/USER_GUIDE.md)** | Complete usage guide |
 | **[Deployment Guide](docs/DEPLOYMENT.md)** | Production deployment |
-| **[Developer Guide](docs/DEVELOPMENT.md)** | Build and extend MyBot |
+| **[Developer Guide](docs/DEVELOPMENT.md)** | Build and extend Overseer |
 | **[API Documentation](docs/API.md)** | REST API reference |
 | **[Architecture](docs/ARCHITECTURE.md)** | System design & internals |
 | **[Security Guide](docs/SECURITY.md)** | Security best practices |
@@ -229,30 +221,30 @@ Never: Execute destructive commands without confirmation
 #### Option 1: One-Line Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/mybot/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | bash
 ```
 
 #### Option 2: Manual Install
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/mybot.git
-cd mybot
+git clone https://github.com/ErzenXz/overseer.git
+cd overseer
 
 # 2. Install dependencies
-npm install
+pnpm install
 
 # 3. Configure environment
 cp .env.example .env
 nano .env  # Edit with your settings
 
 # 4. Initialize database
-npm run db:init
+pnpm run db:init
 
 # 5. Start services
-npm run dev          # Web admin (http://localhost:3000)
-npm run bot          # Telegram bot (in another terminal)
-npm run discord      # Discord bot (optional, in another terminal)
+pnpm run dev          # Web admin (http://localhost:3000)
+pnpm run bot          # Telegram bot (in another terminal)
+pnpm run discord      # Discord bot (optional, in another terminal)
 ```
 
 ### Configuration
@@ -342,10 +334,10 @@ Bot: 🔍 Checking git status...
 
 ## 🆚 Comparison with Alternatives
 
-| Feature | MyBot | OpenClaw | AutoGPT | LangChain Bots |
+| Feature | Overseer | OpenClaw | AutoGPT | LangChain Bots |
 |---------|-------|----------|---------|----------------|
 | **Self-Hosted** | ✅ | ✅ | ✅ | ⚠️ Depends |
-| **VPS Tools** | 35+ built-in | Limited | Plugin-based | Custom |
+| **VPS Tools** | Focused set | Limited | Plugin-based | Custom |
 | **Multi-Platform Chat** | Telegram + Discord | CLI only | Web UI | Varies |
 | **Web Admin** | ✅ Full-featured | ❌ | ⚠️ Basic | ❌ |
 | **Skills System** | ✅ Marketplace | ❌ | ✅ Plugins | ⚠️ Custom |
@@ -370,7 +362,7 @@ graph TB
     subgraph "Core Agent"
         AGENT[AI Agent<br/>Vercel AI SDK]
         SOUL[SOUL.md<br/>Personality]
-        TOOLS[Built-in Tools<br/>35+ tools]
+        TOOLS[Built-in Tools<br/>Minimal set]
     end
     
     subgraph "Extensions"
@@ -423,13 +415,13 @@ graph TB
 ### Project Structure
 
 ```
-mybot/
+overseer/
 ├── src/
 │   ├── agent/              # AI agent core
 │   │   ├── agent.ts        # Main agent with Vercel AI SDK
 │   │   ├── providers.ts    # LLM provider registry (20+)
 │   │   ├── soul.ts         # Personality system
-│   │   ├── tools/          # Built-in tools (35+)
+│   │   ├── tools/          # Built-in tools (minimal)
 │   │   ├── skills/         # Skills system
 │   │   ├── mcp/            # MCP client
 │   │   └── subagents/      # Sub-agent manager
@@ -483,8 +475,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ### Ways to Contribute
 
-- 🐛 **Report Bugs**: [Open an issue](https://github.com/yourusername/mybot/issues)
-- 💡 **Request Features**: [Start a discussion](https://github.com/yourusername/mybot/discussions)
+- 🐛 **Report Bugs**: [Open an issue](https://github.com/ErzenXz/overseer/issues)
+- 💡 **Request Features**: [Start a discussion](https://github.com/ErzenXz/overseer/discussions)
 - 🔧 **Submit PRs**: Fix bugs or add features
 - 📚 **Improve Docs**: Help make documentation better
 - 🧩 **Create Skills**: Build and share custom skills
@@ -500,7 +492,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-MyBot is built on the shoulders of giants:
+Overseer is built on the shoulders of giants:
 
 - [Vercel AI SDK](https://sdk.vercel.ai/) - AI framework and tool loop
 - [Next.js](https://nextjs.org/) - React framework for web admin
@@ -514,23 +506,23 @@ MyBot is built on the shoulders of giants:
 ## 🔗 Links
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/mybot/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/mybot/discussions)
-- **Twitter**: [@mybot](https://twitter.com/mybot)
-- **Discord Community**: [Join Server](https://discord.gg/mybot)
+- **Issues**: [GitHub Issues](https://github.com/ErzenXz/overseer/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/ErzenXz/overseer/discussions)
+- **Twitter**: [@overseer](https://twitter.com/overseer)
+- **Discord Community**: [Join Server](https://discord.gg/overseer)
 
 ---
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/mybot&type=Date)](https://star-history.com/#yourusername/mybot&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=ErzenXz/overseer&type=Date)](https://star-history.com/#ErzenXz/overseer&Date)
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by the MyBot community**
+**Made with ❤️ by the Overseer community**
 
-[⬆ Back to Top](#mybot---self-hosted-ai-agent-platform)
+[⬆ Back to Top](#overseer---self-hosted-ai-agent-platform)
 
 </div>
