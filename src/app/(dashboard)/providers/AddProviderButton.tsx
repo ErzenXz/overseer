@@ -32,7 +32,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
       ...prev,
       name,
       display_name: info.displayName,
-      model: info.models[0],
+      model: info.models[0].id,
       base_url: name === "ollama" ? "http://localhost:11434/v1" : "",
     }));
   };
@@ -123,8 +123,8 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   {PROVIDER_INFO[formData.name].models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
+                    <option key={model.id} value={model.id}>
+                      {model.name}
                     </option>
                   ))}
                 </select>

@@ -139,13 +139,23 @@ const readFileSchema = z.object({
 type ReadFileInput = z.infer<typeof readFileSchema>;
 
 export const readFile = tool<any, any>({
-  description: `Read the contents of a file. Use this to view file contents.
-Works on: Windows, Linux, macOS
-Note:
-- Sensitive files (.env, credentials, keys) will be blocked for security
-- Large files will be truncated
-- Binary files are not supported
-- Handles both Unix (/) and Windows (\\) path formats`,
+  description: `Read the contents of a file with optional line-range selection.
+
+WHEN TO USE:
+- Use readFile to inspect configuration, source code, logs, or any text file.
+- Prefer readFile over shell commands (cat, head, tail) — it handles cross-platform paths, enforces security, and returns structured metadata (line counts, truncation info).
+- Use startLine/endLine to read specific sections of large files (e.g., a function starting at line 120).
+
+CAPABILITIES:
+- Supports Unix (/home/user/file) and Windows (C:\\Users\\file) path formats, plus ~ expansion.
+- Returns line count, file size, and whether the output was truncated.
+- Reads up to ${MAX_READ_LINES} lines per call by default; use startLine/endLine to paginate through larger files.
+- Max file size: ${MAX_FILE_SIZE / 1024 / 1024}MB.
+
+LIMITATIONS:
+- Sensitive files (.env, credentials, private keys, SSH configs) are blocked for security.
+- Binary files are not supported — use shell commands for those.
+- Files exceeding the size limit will be rejected; use shell tools (head, tail) for very large binary logs.`,
   inputSchema: readFileSchema,
   execute: async ({ path, startLine = 1, endLine, encoding = "utf-8" }: ReadFileInput) => {
     const startTime = Date.now();
@@ -277,9 +287,21 @@ const writeFileSchema = z.object({
 type WriteFileInput = z.infer<typeof writeFileSchema>;
 
 export const writeFile = tool<any, any>({
-  description: `Write content to a file. Creates the file if it doesn't exist, or overwrites if it does.
-Works on: Windows, Linux, macOS
-Use this to create or modify files.`,
+  description: `Write or append content to a file. Creates the file (and parent directories) if they don't exist.
+
+WHEN TO USE:
+- Use writeFile to create new files, overwrite existing files, or append to them (set append: true).
+- Prefer writeFile over shell echo/redirect — it handles cross-platform paths, creates parent directories, and enforces security.
+
+BEST PRACTICES:
+- Before overwriting an important file, consider reading it first with readFile to confirm its current contents.
+- Use append: true to add to log files, config entries, or build output without losing existing content.
+- Set createDirectories: true (default) to auto-create nested parent directories.
+
+LIMITATIONS:
+- Sensitive files (.env, credentials, private keys) are blocked — handle credentials manually.
+- Writing binary content is not supported; use shell tools for binary operations.
+- Works on: Windows, Linux, macOS with cross-platform path handling.`,
   inputSchema: writeFileSchema,
   execute: async ({ path, content, createDirectories = true, append = false }: WriteFileInput) => {
     const startTime = Date.now();
@@ -368,8 +390,20 @@ const listDirectorySchema = z.object({
 type ListDirectoryInput = z.infer<typeof listDirectorySchema>;
 
 export const listDirectory = tool<any, any>({
-  description: `List contents of a directory. Shows files and subdirectories with details.
-Works on: Windows, Linux, macOS`,
+  description: `List contents of a directory with file metadata (size, modified date, permissions, type).
+
+WHEN TO USE:
+- Use listDirectory to explore project structure, find files, or verify directory contents.
+- Prefer listDirectory over shell commands (ls, dir, find) for structured output with metadata.
+- For deep file searches or glob patterns, use shell commands (find, fd) instead — listDirectory only recurses 2 levels deep.
+
+OPTIONS:
+- Set showHidden: true to include dotfiles (.git, .env, .config, etc.).
+- Set recursive: true to see nested contents (max 2 levels deep).
+- Results are sorted: directories first, then files alphabetically.
+
+RETURNS: An array of entries with name, type (file/directory/symlink), size, modified date, and permissions.
+Works on: Windows, Linux, macOS.`,
   inputSchema: listDirectorySchema,
   execute: async ({ path, showHidden = false, recursive = false }: ListDirectoryInput) => {
     const startTime = Date.now();

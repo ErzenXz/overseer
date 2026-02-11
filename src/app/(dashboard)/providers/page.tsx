@@ -44,10 +44,10 @@ export default function ProvidersPage() {
               <div className="flex flex-wrap gap-1">
                 {info.models.slice(0, 3).map((model) => (
                   <span
-                    key={model}
+                    key={model.id}
                     className="text-xs px-2 py-0.5 bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] rounded"
                   >
-                    {model}
+                    {model.name}
                   </span>
                 ))}
                 {info.models.length > 3 && (

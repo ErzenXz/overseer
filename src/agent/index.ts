@@ -15,7 +15,9 @@ export {
   getActiveModels,
   testProvider,
   PROVIDER_INFO,
+  getModelInfo,
   type ProviderName,
+  type ModelInfo,
 } from "./providers";
 
 // Tools

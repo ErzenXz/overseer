@@ -6,7 +6,7 @@
 
 import { tool } from "ai";
 import { z } from "zod";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { toolExecutionsModel } from "../../database/index";
 import { createLogger } from "../../lib/logger";
@@ -17,12 +17,100 @@ const logger = createLogger("tools:shell");
 const TIMEOUT_MS = parseInt(process.env.SHELL_TIMEOUT_MS || "60000", 10); // 60s default
 const MAX_OUTPUT_LENGTH = 100000; // 100KB max output
 
+/**
+ * Execute a command, optionally piping stdinInput via spawn.
+ */
+async function executeCommandNoConfirm(
+  command: string,
+  cwd: string,
+  timeout: number,
+  stdinInput?: string
+): Promise<{ stdout: string; stderr: string }> {
+  // If stdin input is provided, use spawn to pipe it
+  if (stdinInput !== undefined) {
+    return new Promise((resolve, reject) => {
+      const shellCmd = process.env.SHELL || "/bin/bash";
+      const shellArgs = ["-c", command];
+      const spawnEnv = { ...process.env, TERM: "dumb", DEBIAN_FRONTEND: "noninteractive" };
+
+      const child = spawn(shellCmd, shellArgs, {
+        cwd,
+        env: spawnEnv,
+      });
+
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+
+      child.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      // Write stdin and close
+      if (stdinInput) {
+        child.stdin.write(stdinInput);
+      }
+      child.stdin.end();
+
+      child.on("error", reject);
+
+      child.on("close", (code: number | null) => {
+        if (timedOut) return;
+        if (code === 0 || stdout || stderr) {
+          resolve({ stdout, stderr });
+        } else {
+          reject(new Error(`Process exited with code ${code}`));
+        }
+      });
+
+      setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGTERM");
+        reject(new Error(`Command timed out after ${timeout / 1000} seconds`));
+      }, timeout);
+    });
+  }
+
+  // Default: use exec
+  return execAsync(command, {
+    cwd,
+    timeout,
+    maxBuffer: 50 * 1024 * 1024, // 50MB buffer
+    env: { ...process.env, TERM: "dumb", CI: "true", DEBIAN_FRONTEND: "noninteractive" } as NodeJS.ProcessEnv,
+  });
+}
+
 export const executeShellCommand = tool<any, any>({
-  description: `Execute ANY shell command on the VPS immediately without confirmation.
-IMPORTANT: This tool executes commands IMMEDIATELY without asking for confirmation.
-You have full root-level access to the system.
-Use this for: file operations, git, npm, system commands, package management, etc.
-Timeout: ${TIMEOUT_MS / 1000} seconds`,
+  description: `Execute ANY shell command on the VPS immediately without confirmation or dangerous-command checks.
+
+WARNING: This tool executes commands IMMEDIATELY — including destructive ones (rm -rf, drop database, etc.) — without asking for confirmation. Use responsibly.
+
+WHEN TO USE:
+- Use for all shell operations: git, npm, system commands, package management, builds, deployments, Docker, etc.
+- This is the primary tool for interacting with the VPS. You have full system access.
+- Timeout: ${TIMEOUT_MS / 1000} seconds (set a higher custom timeout for builds/downloads).
+- Max output: ${MAX_OUTPUT_LENGTH / 1000}KB.
+
+COMMON PATTERNS:
+- Package management: "apt-get install -y nginx", "npm install", "pip install -r requirements.txt"
+- Service management: "systemctl restart nginx", "pm2 restart all"
+- Git: "git pull origin main", "git log --oneline -10"
+- Docker: "docker-compose up -d", "docker ps", "docker logs <container>"
+- Monitoring: "htop -n 1", "df -h", "free -m", "journalctl -u myapp --since '1h ago'"
+- Networking: "curl -I https://example.com", "ss -tlnp", "dig example.com"
+
+ENVIRONMENT:
+- Commands run with CI=true and DEBIAN_FRONTEND=noninteractive to suppress interactive prompts.
+- ALWAYS prefer non-interactive flags: --yes, -y, --default, --no-input, --non-interactive.
+
+INTERACTIVE COMMANDS:
+- If a command requires user input and has no non-interactive flag, provide answers via the "stdin" parameter as newline-separated values.
+- Example: stdin: "my-project\\nTypeScript\\n"
+- The stdin input is written to the command's stdin and then stdin is closed.`,
   inputSchema: z.object({
     command: z.string().describe("The shell command to execute immediately"),
     workingDirectory: z
@@ -37,24 +125,31 @@ Timeout: ${TIMEOUT_MS / 1000} seconds`,
       .string()
       .optional()
       .describe("Brief explanation of what this command does (for logging)"),
+    stdin: z.string().optional().describe(
+      "Input to pipe to the command's stdin. Use this for interactive commands that prompt for input. " +
+      "Provide answers separated by newlines (\\n). " +
+      "Example: for a CLI that asks name then language, use 'my-project\\nTypeScript\\n'. " +
+      "PREFER using non-interactive flags (--yes, -y, --default) when available instead of stdin."
+    ),
   }),
-  execute: async ({ command, workingDirectory, timeout, explanation }: { command: string; workingDirectory?: string; timeout?: number; explanation?: string }) => {
+  execute: async ({ command, workingDirectory, timeout, explanation, stdin }: { command: string; workingDirectory?: string; timeout?: number; explanation?: string; stdin?: string }) => {
     const startTime = Date.now();
     const cwd = workingDirectory || process.cwd();
 
     logger.info("Executing shell command", { 
       command, 
       cwd, 
-      explanation: explanation || "No explanation provided" 
+      explanation: explanation || "No explanation provided",
+      hasStdin: !!stdin,
     });
 
     try {
-      const { stdout, stderr } = await execAsync(command, {
+      const { stdout, stderr } = await executeCommandNoConfirm(
+        command,
         cwd,
-        timeout: timeout || TIMEOUT_MS,
-        maxBuffer: 50 * 1024 * 1024, // 50MB buffer
-        env: { ...process.env, TERM: "dumb" } as NodeJS.ProcessEnv,
-      });
+        timeout || TIMEOUT_MS,
+        stdin
+      );
 
       let output = stdout || "";
       if (stderr && !stdout) {
@@ -128,17 +223,34 @@ Timeout: ${TIMEOUT_MS / 1000} seconds`,
 });
 
 export const executeMultipleCommands = tool<any, any>({
-  description: `Execute multiple shell commands in sequence.
-Use this to run several commands in order, like setting up an environment or running build steps.`,
+  description: `Execute multiple shell commands in sequence, optionally stopping on the first failure.
+
+WHEN TO USE:
+- Use for multi-step workflows: environment setup, build pipelines, deployment sequences.
+- Each command runs in its own shell invocation but can share a working directory.
+- Set stopOnError: false to continue executing remaining commands even if one fails (useful for cleanup scripts).
+
+EXAMPLES:
+- Build pipeline: ["npm ci", "npm run lint", "npm run test", "npm run build"]
+- Deployment: ["git pull origin main", "npm ci --production", "pm2 restart all"]
+- Setup: ["apt-get update", "apt-get install -y nginx certbot", "systemctl enable nginx"]
+
+INTERACTIVE COMMANDS:
+- Each command can include its own "stdin" field for interactive prompts.
+- ALWAYS prefer non-interactive flags (--yes, -y, --default) when available.`,
   inputSchema: z.object({
     commands: z.array(z.object({
       command: z.string().describe("The command to execute"),
       workingDirectory: z.string().optional().describe("Working directory (optional)"),
+      stdin: z.string().optional().describe(
+        "Input to pipe to the command's stdin. Use for interactive commands. " +
+        "Provide answers separated by newlines (\\n)."
+      ),
     })).describe("Array of commands to execute in sequence"),
     workingDirectory: z.string().optional().describe("Default working directory for all commands"),
     stopOnError: z.boolean().default(true).describe("Stop execution if a command fails"),
   }),
-  execute: async ({ commands, workingDirectory, stopOnError }: { commands: Array<{ command: string; workingDirectory?: string }>; workingDirectory?: string; stopOnError: boolean }) => {
+  execute: async ({ commands, workingDirectory, stopOnError }: { commands: Array<{ command: string; workingDirectory?: string; stdin?: string }>; workingDirectory?: string; stopOnError: boolean }) => {
     const startTime = Date.now();
     const results: Array<{
       command: string;
@@ -155,12 +267,12 @@ Use this to run several commands in order, like setting up an environment or run
       const cwd = cmd.workingDirectory || workingDirectory || process.cwd();
 
       try {
-        const { stdout, stderr } = await execAsync(cmd.command, {
+        const { stdout, stderr } = await executeCommandNoConfirm(
+          cmd.command,
           cwd,
-          timeout: TIMEOUT_MS,
-          maxBuffer: 50 * 1024 * 1024,
-          env: { ...process.env, TERM: "dumb" } as NodeJS.ProcessEnv,
-        });
+          TIMEOUT_MS,
+          cmd.stdin
+        );
 
         let output = stdout || "";
         if (stderr) {

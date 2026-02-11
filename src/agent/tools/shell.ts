@@ -80,17 +80,65 @@ const TIMEOUT_MS = parseInt(process.env.SHELL_TIMEOUT_MS || "30000", 10);
 const MAX_OUTPUT_LENGTH = 50000; // 50KB max output
 
 /**
- * Execute a command with proper platform handling
+ * Execute a command with proper platform handling.
+ * When stdinInput is provided, uses spawn to pipe input to the command's stdin.
  */
 async function executeCommand(
   command: string,
   cwd: string,
-  timeout: number
+  timeout: number,
+  stdinInput?: string
 ): Promise<{ stdout: string; stderr: string }> {
-  const platform = getPlatform();
-  
-  // Normalize working directory path
   const normalizedCwd = normalizePath(cwd);
+
+  // If stdin input is provided, use spawn to pipe it
+  if (stdinInput !== undefined) {
+    return new Promise((resolve, reject) => {
+      const shellCmd = isWindows() ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
+      const shellArgs = isWindows() ? ["-Command", command] : ["-c", command];
+      const spawnEnv = { ...process.env, ...getPlatformEnv(), TERM: "dumb", DEBIAN_FRONTEND: "noninteractive" };
+
+      const child = spawn(shellCmd, shellArgs, {
+        cwd: normalizedCwd,
+        env: spawnEnv,
+      });
+
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+
+      child.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      // Write stdin and close
+      if (stdinInput) {
+        child.stdin.write(stdinInput);
+      }
+      child.stdin.end();
+
+      child.on("error", reject);
+
+      child.on("close", (code: number | null) => {
+        if (timedOut) return;
+        if (code === 0 || stdout || stderr) {
+          resolve({ stdout, stderr });
+        } else {
+          reject(new Error(`Process exited with code ${code}`));
+        }
+      });
+
+      setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGTERM");
+        reject(new Error(`Command timed out after ${timeout / 1000} seconds`));
+      }, timeout);
+    });
+  }
 
   if (isWindows()) {
     // Use PowerShell on Windows
@@ -144,17 +192,34 @@ async function executeCommand(
 }
 
 export const executeShellCommand = tool<any, any>({
-  description: `Execute a shell command on the system. 
-Platform: ${getPlatform().toUpperCase()}
-Shell: ${isWindows() ? "PowerShell" : "Bash/Zsh"}
+  description: `Execute a shell command on the system and return its output.
+Platform: ${getPlatform().toUpperCase()} | Shell: ${isWindows() ? "PowerShell" : "Bash/Zsh"}
 
-IMPORTANT:
-- Commands are executed using ${isWindows() ? "PowerShell" : "the default shell (bash/zsh)"}
-- Commands run as the current user (not root/admin)
-- Dangerous commands (rm -rf, Remove-Item -Recurse, etc.) will be flagged
-- Long-running commands will timeout after ${TIMEOUT_MS / 1000} seconds
-- Use this for: file operations, git, npm, system info, etc.
-- For cross-platform compatibility, commands may be automatically mapped between Unix and Windows equivalents`,
+WHEN TO USE:
+- Use for git operations, package management (npm, pip, apt), build tools, system info, searching (grep, find, rg), and any CLI workflow.
+- Prefer the dedicated readFile/writeFile/listDirectory tools for basic file operations — they provide structured output and cross-platform safety.
+- Use this tool when you need: piping, redirection, process management, network commands, or anything the file tools can't do.
+
+EXECUTION DETAILS:
+- Commands run as the current user (not root/admin) using ${isWindows() ? "PowerShell" : "the default shell (bash/zsh)"}.
+- Dangerous commands (rm -rf /, format C:, drop database, etc.) are detected and blocked — use executeShellCommandConfirmed if the user explicitly approves.
+- Timeout: ${TIMEOUT_MS / 1000} seconds. Set a custom timeout for long-running operations (builds, downloads).
+- Max output: ${MAX_OUTPUT_LENGTH / 1000}KB — output beyond this is truncated.
+- Cross-platform: set autoMap: true to automatically translate Unix commands to Windows equivalents (e.g., ls → Get-ChildItem).
+
+COMMON PATTERNS:
+- Package install: "npm install express" or "pip install requests"
+- Git operations: "git status", "git log --oneline -20"
+- Search: "grep -rn 'TODO' src/" or "find . -name '*.ts' -type f"
+- System info: "df -h", "free -m", "uname -a"
+- Process management: "ps aux | grep node", "lsof -i :3000"
+- Docker: "docker ps", "docker-compose up -d"
+
+INTERACTIVE COMMANDS:
+- ALWAYS prefer non-interactive flags when available: --yes, -y, --default, --no-input, CI=true.
+- If no non-interactive flag exists, provide answers via the "stdin" parameter as newline-separated values.
+- Example: for a CLI that asks project name then language, use stdin: "my-project\\nTypeScript\\n"
+- The stdin input is written to the command's stdin and then stdin is closed.`,
   inputSchema: z.object({
     command: z.string().describe("The shell command to execute"),
     workingDirectory: z
@@ -169,8 +234,14 @@ IMPORTANT:
       .boolean()
       .optional()
       .describe("Automatically map Unix commands to Windows equivalents (default: false)"),
+    stdin: z.string().optional().describe(
+      "Input to pipe to the command's stdin. Use this for interactive commands that prompt for input. " +
+      "Provide answers separated by newlines (\\n). " +
+      "Example: for a CLI that asks name then language, use 'my-project\\nTypeScript\\n'. " +
+      "PREFER using non-interactive flags (--yes, -y, --default) when available instead of stdin."
+    ),
   }),
-  execute: async ({ command, workingDirectory, timeout, autoMap = false }: { command: string; workingDirectory?: string; timeout?: number; autoMap?: boolean }) => {
+  execute: async ({ command, workingDirectory, timeout, autoMap = false, stdin }: { command: string; workingDirectory?: string; timeout?: number; autoMap?: boolean; stdin?: string }) => {
     const startTime = Date.now();
     const homeDir = isWindows()
       ? process.env.USERPROFILE || `${process.env.HOMEDRIVE ?? ""}${process.env.HOMEPATH ?? ""}`
@@ -188,6 +259,7 @@ IMPORTANT:
       cwd, 
       platform: getPlatform(),
       originalCommand: autoMap ? command : undefined,
+      hasStdin: !!stdin,
     });
 
     // Check for dangerous commands
@@ -217,7 +289,8 @@ IMPORTANT:
       const { stdout, stderr } = await executeCommand(
         finalCommand,
         cwd,
-        timeout || TIMEOUT_MS
+        timeout || TIMEOUT_MS,
+        stdin
       );
 
       let output = stdout || "";
@@ -296,9 +369,15 @@ IMPORTANT:
 });
 
 export const executeShellCommandConfirmed = tool<any, any>({
-  description: `Execute a dangerous/destructive shell command after user confirmation.
-Only use this when the user has explicitly confirmed they want to run a dangerous command.
-Platform: ${getPlatform().toUpperCase()}`,
+  description: `Execute a dangerous/destructive shell command AFTER the user has explicitly confirmed.
+Platform: ${getPlatform().toUpperCase()}
+
+WHEN TO USE:
+- Only use this when executeShellCommand blocked a command as dangerous AND the user has explicitly confirmed they want to proceed.
+- You MUST include the user's confirmation message in the userConfirmation parameter.
+- This tool has double the normal timeout (${(TIMEOUT_MS * 2) / 1000}s) since destructive operations may take longer.
+
+NEVER use this tool preemptively — always attempt the command with executeShellCommand first and let the danger detection decide.`,
   inputSchema: z.object({
     command: z.string().describe("The dangerous shell command to execute"),
     workingDirectory: z
@@ -399,7 +478,9 @@ Platform: ${getPlatform().toUpperCase()}`,
  * Get shell information for the current platform
  */
 export const getShellInfo = tool<any, any>({
-  description: `Get information about the current shell and platform.`,
+  description: `Get information about the current shell environment and platform.
+Returns: platform (linux/darwin/win32), shell path, home directory, temp directory, and whether the system is Windows or Unix.
+Use this when you need to determine the correct command syntax or paths for the current OS before running shell commands.`,
   inputSchema: z.object({}),
   execute: async () => {
     const platform = getPlatform();

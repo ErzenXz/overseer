@@ -6,6 +6,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGroq } from "@ai-sdk/groq";
 import { createCohere } from "@ai-sdk/cohere";
 import { createMistral } from "@ai-sdk/mistral";
 import { createXai } from "@ai-sdk/xai";
@@ -19,11 +20,27 @@ import type { LanguageModel } from "ai";
 import { providersModel } from "../database/index";
 import { decrypt } from "../lib/crypto";
 import { createLogger } from "../lib/logger";
-import { PROVIDER_INFO, type ProviderName } from "./provider-info";
+import {
+  PROVIDER_INFO,
+  type ProviderName,
+  type ModelInfo,
+  getModelInfo,
+  findModelInfo,
+  isReasoningModel,
+  modelSupportsThinking,
+} from "./provider-info";
 
 const logger = createLogger("providers");
 
-export { PROVIDER_INFO, type ProviderName } from "./provider-info";
+export {
+  PROVIDER_INFO,
+  type ProviderName,
+  type ModelInfo,
+  getModelInfo,
+  findModelInfo,
+  isReasoningModel,
+  modelSupportsThinking,
+} from "./provider-info";
 
 interface ProviderConfig {
   name: ProviderName;
@@ -74,11 +91,11 @@ export function createModel(config: ProviderConfig): LanguageModel {
     }
 
     case "groq": {
-      const groq = createOpenAI({
+      const groq = createGroq({
         apiKey: config.apiKey,
-        baseURL: config.baseUrl || "https://api.groq.com/openai/v1",
+        baseURL: config.baseUrl,
       });
-      return groq(config.model);
+      return groq(config.model) as unknown as LanguageModel;
     }
 
     case "ollama": {
@@ -189,22 +206,22 @@ function detectProviderFromEnv(): ProviderConfig | null {
     {
       key: "OPENAI_API_KEY",
       name: "openai",
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
     },
     {
       key: "ANTHROPIC_API_KEY",
       name: "anthropic",
-      model: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest",
+      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
     },
     {
       key: "GOOGLE_API_KEY",
       name: "google",
-      model: process.env.GOOGLE_MODEL || "gemini-1.5-flash",
+      model: process.env.GOOGLE_MODEL || "gemini-2.5-flash",
     },
     {
       key: "GOOGLE_GENERATIVE_AI_API_KEY",
       name: "google",
-      model: process.env.GOOGLE_MODEL || "gemini-1.5-flash",
+      model: process.env.GOOGLE_MODEL || "gemini-2.5-flash",
     },
     {
       key: "GROQ_API_KEY",
@@ -220,7 +237,7 @@ function detectProviderFromEnv(): ProviderConfig | null {
     {
       key: "COHERE_API_KEY",
       name: "cohere",
-      model: process.env.COHERE_MODEL || "command-r-plus",
+      model: process.env.COHERE_MODEL || "command-a-03-2025",
     },
     {
       key: "MISTRAL_API_KEY",
@@ -230,7 +247,7 @@ function detectProviderFromEnv(): ProviderConfig | null {
     {
       key: "XAI_API_KEY",
       name: "xai",
-      model: process.env.XAI_MODEL || "grok-2-latest",
+      model: process.env.XAI_MODEL || "grok-3-mini",
     },
     {
       key: "PERPLEXITY_API_KEY",
@@ -240,17 +257,17 @@ function detectProviderFromEnv(): ProviderConfig | null {
     {
       key: "FIREWORKS_API_KEY",
       name: "fireworks",
-      model: process.env.FIREWORKS_MODEL || "accounts/fireworks/models/llama-v3p1-70b-instruct",
+      model: process.env.FIREWORKS_MODEL || "accounts/fireworks/models/deepseek-v3",
     },
     {
       key: "TOGETHER_API_KEY",
       name: "togetherai",
-      model: process.env.TOGETHER_MODEL || "meta-llama/Llama-3.1-70B-Instruct-Turbo",
+      model: process.env.TOGETHER_MODEL || "deepseek-ai/DeepSeek-V3",
     },
     {
       key: "DEEPINFRA_API_KEY",
       name: "deepinfra",
-      model: process.env.DEEPINFRA_MODEL || "meta-llama/Meta-Llama-3.1-70B-Instruct",
+      model: process.env.DEEPINFRA_MODEL || "deepseek-ai/DeepSeek-V3-0324",
     },
     {
       key: "DEEPSEEK_API_KEY",
@@ -260,7 +277,7 @@ function detectProviderFromEnv(): ProviderConfig | null {
     {
       key: "AWS_ACCESS_KEY_ID",
       name: "amazon-bedrock",
-      model: process.env.BEDROCK_MODEL || "anthropic.claude-3-sonnet-20240229-v1:0",
+      model: process.env.BEDROCK_MODEL || "anthropic.claude-sonnet-4-20250514-v1:0",
     },
   ];
 

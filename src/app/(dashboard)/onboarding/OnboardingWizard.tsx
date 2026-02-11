@@ -74,7 +74,7 @@ export function OnboardingWizard() {
       ...prev,
       name,
       display_name: info.displayName,
-      model: info.models[0],
+      model: info.models[0].id,
       base_url: name === "ollama" ? "http://localhost:11434/v1" : "",
       api_key: "",
     }));
@@ -259,8 +259,8 @@ export function OnboardingWizard() {
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   {PROVIDER_INFO[providerForm.name].models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
+                    <option key={model.id} value={model.id}>
+                      {model.name}
                     </option>
                   ))}
                 </select>

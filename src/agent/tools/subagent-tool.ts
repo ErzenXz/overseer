@@ -32,18 +32,33 @@ const SUB_AGENT_TYPES: SubAgentType[] = [
 ];
 
 export const spawnSubAgent = tool<any, any>({
-  description: `Spawn a specialized sub-agent to handle complex tasks. Sub-agents are specialized in specific domains:
-- code: Code generation, modification, and review
-- file: File system operations (read, write, copy, move, search)
-- git: Version control operations (commits, branches, merges)
-- system: System administration (processes, services, packages)
-- web: Web operations and API calls
-- docker: Container management
-- db: Database operations
-- security: Security and firewall operations
-- network: Network diagnostics
+  description: `Spawn a specialized sub-agent to handle a focused task autonomously. The sub-agent runs with its own LLM context and full tool access.
 
-Use this when a task requires specialized expertise or when you want to delegate work.`,
+AVAILABLE TYPES:
+- code: Code generation, modification, review, refactoring, and debugging.
+- file: File system operations — bulk copy, move, rename, search, and organization.
+- git: Version control — commits, branches, merges, rebases, conflict resolution.
+- system: System administration — processes, services, packages, cron, users.
+- web: Web scraping, API calls, curl/wget operations, endpoint testing.
+- docker: Container management — build, run, compose, images, volumes, networks.
+- db: Database operations — queries, migrations, backups, schema inspection.
+- security: Security auditing, firewall rules, SSL certs, user permissions.
+- network: Network diagnostics — ping, traceroute, DNS, port scanning, connectivity.
+
+WHEN TO USE:
+- Use for tasks that require focused domain expertise or multi-step operations.
+- Use when you want to delegate work so the main conversation stays responsive.
+- Good for: "set up a Docker compose stack", "review and refactor this module", "check all open ports".
+
+TASK FORMULATION TIPS:
+- Be specific and self-contained: include all relevant file paths, branch names, or service names in the task description.
+- Add context for ambiguous tasks: use the "context" parameter to pass relevant background info.
+- BAD: "fix the bug" — too vague, the sub-agent has no conversation history.
+- GOOD: "In /app/src/auth/login.ts, the validateToken function on line 45 returns undefined when the token is expired instead of throwing an AuthError. Fix it to throw AuthError('TOKEN_EXPIRED')."
+
+EXECUTION MODES:
+- wait_for_result: true (default) — blocks until the sub-agent finishes and returns the result. Use for tasks you need the output of.
+- wait_for_result: false — returns immediately with a sub_agent_id. Use for long-running background tasks, then check status with checkSubAgentStatus.`,
   inputSchema: z.object({
     type: z
       .enum(["code", "file", "git", "system", "web", "docker", "db", "security", "network"])
@@ -139,7 +154,16 @@ Use this when a task requires specialized expertise or when you want to delegate
 });
 
 export const checkSubAgentStatus = tool<any, any>({
-  description: "Check the status of a previously spawned sub-agent",
+  description: `Check the status of a previously spawned sub-agent by its ID.
+
+WHEN TO USE:
+- After spawning a sub-agent with wait_for_result: false, use this to poll for completion.
+- Returns the sub-agent's current status (working/completed/error), result, step count, and token usage.
+
+POLLING PATTERN:
+- Call this periodically (e.g., every 5-10 seconds) while the sub-agent status is "working".
+- Once status is "completed" or "error", the sub-agent is done — read the result or error field.
+- Do NOT poll more than 30 times — if the sub-agent hasn't finished, it may be stuck.`,
   inputSchema: z.object({
     sub_agent_id: z.string().describe("The ID of the sub-agent to check"),
   }),

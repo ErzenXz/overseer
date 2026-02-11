@@ -1,9 +1,16 @@
-import { generateText, streamText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
+import {
+  generateText,
+  streamText,
+  stepCountIs,
+  type LanguageModel,
+  type ModelMessage,
+} from "ai";
 import { loadSoul } from "./soul";
-import { getDefaultModel, getActiveModels } from "./providers";
+import { getDefaultModel, getActiveModels, findModelInfo } from "./providers";
 import { allTools, getAllAvailableTools, getToolCounts } from "./tools/index";
 import { messagesModel, conversationsModel, logsModel } from "../database/index";
 import { createLogger } from "../lib/logger";
+import type { ModelInfo, ProviderName } from "./provider-info";
 
 // Type alias for messages (using ModelMessage from AI SDK)
 type CoreMessage = ModelMessage;
@@ -18,6 +25,187 @@ const logger = createLogger("agent");
 const MAX_STEPS = parseInt(process.env.AGENT_MAX_STEPS || "25", 10);
 const MAX_RETRIES = parseInt(process.env.AGENT_MAX_RETRIES || "3", 10);
 const TIMEOUT_MS = parseInt(process.env.AGENT_TIMEOUT_MS || "120000", 10);
+
+// ---------------------------------------------------------------------------
+// Dynamic model settings based on provider-info capabilities
+// ---------------------------------------------------------------------------
+
+// Provider options type: matches AI SDK's SharedV3ProviderOptions (Record<string, JSONObject>)
+// JSONObject = { [key: string]: JSONValue | undefined }, JSONValue = null | string | number | boolean | JSONObject | JSONArray
+type JSONValue = null | string | number | boolean | { [key: string]: JSONValue | undefined } | JSONValue[];
+type JSONObject = { [key: string]: JSONValue | undefined };
+type ProviderOptions = Record<string, JSONObject>;
+
+interface ModelSettings {
+  providerOptions?: ProviderOptions;
+  maxOutputTokens?: number;
+  temperature?: number;
+}
+
+/**
+ * Extract the model ID from a LanguageModel object.
+ * The AI SDK v6 LanguageModel has a `modelId` property.
+ */
+function extractModelId(model: LanguageModel): string {
+  return (model as { modelId?: string }).modelId || "unknown";
+}
+
+/**
+ * Build dynamic providerOptions, maxOutputTokens, and temperature
+ * based on the model's capabilities from provider-info.
+ *
+ * This enables:
+ * - Extended thinking for Anthropic, Google, xAI, DeepSeek, and Mistral models
+ * - Reasoning effort for OpenAI o-series models
+ * - Correct maxOutputTokens per model
+ * - Skipping temperature for reasoning models that disallow it
+ */
+function getModelSettings(model: LanguageModel): ModelSettings {
+  const modelId = extractModelId(model);
+  const info = findModelInfo(modelId);
+
+  if (!info) {
+    logger.debug("No model info found, using defaults", { modelId });
+    return {};
+  }
+
+  const { provider, model: modelInfo } = info;
+  const settings: ModelSettings = {};
+
+  // --- maxOutputTokens: use the model's known max ---
+  if (modelInfo.maxOutput) {
+    settings.maxOutputTokens = modelInfo.maxOutput;
+  }
+
+  // --- temperature: skip for reasoning models that disallow it ---
+  if (!modelInfo.allowsTemperature) {
+    // Don't set temperature at all — let the provider use its default
+    settings.temperature = undefined;
+  } else {
+    // Default temperature for non-reasoning models
+    settings.temperature = 0.7;
+  }
+
+  // --- providerOptions: enable thinking/reasoning per provider ---
+  if (modelInfo.supportsThinking) {
+    settings.providerOptions = buildThinkingOptions(provider, modelInfo);
+  }
+
+  logger.debug("Resolved model settings", {
+    modelId,
+    provider,
+    maxOutputTokens: settings.maxOutputTokens,
+    hasProviderOptions: !!settings.providerOptions,
+    allowsTemperature: modelInfo.allowsTemperature,
+  });
+
+  return settings;
+}
+
+/**
+ * Build provider-specific options to enable extended thinking / reasoning.
+ */
+function buildThinkingOptions(
+  provider: ProviderName,
+  modelInfo: ModelInfo
+): ProviderOptions | undefined {
+  switch (provider) {
+    // Anthropic: extended thinking with budget
+    case "anthropic":
+      return {
+        anthropic: {
+          thinking: {
+            type: "enabled",
+            budgetTokens: Math.min(
+              Math.floor(modelInfo.maxOutput * 0.6),
+              16_000
+            ),
+          },
+        },
+      };
+
+    // OpenAI o-series: reasoning effort
+    case "openai":
+    case "azure":
+      if (modelInfo.reasoning) {
+        return {
+          openai: {
+            reasoningEffort: "medium",
+          },
+        };
+      }
+      return undefined;
+
+    // Google Gemini 2.5: thinking config
+    case "google":
+      if (modelInfo.supportsThinking) {
+        return {
+          google: {
+            thinkingConfig: {
+              thinkingBudget: Math.min(
+                Math.floor(modelInfo.maxOutput * 0.5),
+                16_000
+              ),
+            },
+          },
+        };
+      }
+      return undefined;
+
+    // xAI Grok: thinking (uses openai-compatible format)
+    case "xai":
+      if (modelInfo.supportsThinking) {
+        return {
+          xai: {
+            reasoningEffort: "medium",
+          },
+        };
+      }
+      return undefined;
+
+    // DeepSeek Reasoner: uses provider-specific thinking
+    case "deepseek":
+      if (modelInfo.supportsThinking) {
+        return {
+          deepseek: {
+            thinking: { type: "enabled" },
+          },
+        };
+      }
+      return undefined;
+
+    // Mistral Magistral: reasoning models
+    case "mistral":
+      if (modelInfo.supportsThinking) {
+        return {
+          mistral: {
+            thinking: { type: "enabled" },
+          },
+        };
+      }
+      return undefined;
+
+    // Bedrock: uses anthropic-style thinking for Claude models
+    case "amazon-bedrock":
+      if (modelInfo.id.includes("anthropic") && modelInfo.supportsThinking) {
+        return {
+          "amazon-bedrock": {
+            thinking: {
+              type: "enabled",
+              budgetTokens: Math.min(
+                Math.floor(modelInfo.maxOutput * 0.6),
+                16_000
+              ),
+            },
+          },
+        };
+      }
+      return undefined;
+
+    default:
+      return undefined;
+  }
+}
 
 export interface AgentOptions {
   conversationId?: number;
@@ -232,12 +420,18 @@ export async function runAgent(
     try {
       const startTime = Date.now();
 
+      // Get dynamic settings based on the model's capabilities
+      const modelSettings = getModelSettings(model);
+
       const result = await generateText({
         model,
         system: buildSystemPrompt(prompt),
         messages,
         tools: combinedTools,
         stopWhen: stepCountIs(maxSteps),
+        ...(modelSettings.maxOutputTokens && { maxOutputTokens: modelSettings.maxOutputTokens }),
+        ...(modelSettings.temperature !== undefined && { temperature: modelSettings.temperature }),
+        ...(modelSettings.providerOptions && { providerOptions: modelSettings.providerOptions }),
         onStepFinish: ({ toolCalls, toolResults }) => {
           if (toolCalls) {
             for (const tc of toolCalls) {
@@ -385,13 +579,19 @@ export async function runAgentStream(
     toolCount: Object.keys(combinedTools).length,
   });
 
+  // Get dynamic settings based on the model's capabilities
+  const modelSettings = getModelSettings(model);
+
   const result = streamText({
     model,
     system: buildSystemPrompt(prompt),
     messages,
     tools: combinedTools,
     stopWhen: stepCountIs(maxSteps),
-        onStepFinish: ({ toolCalls, toolResults }) => {
+    ...(modelSettings.maxOutputTokens && { maxOutputTokens: modelSettings.maxOutputTokens }),
+    ...(modelSettings.temperature !== undefined && { temperature: modelSettings.temperature }),
+    ...(modelSettings.providerOptions && { providerOptions: modelSettings.providerOptions }),
+    onStepFinish: ({ toolCalls, toolResults }) => {
       if (toolCalls) {
         for (const tc of toolCalls) {
           const args = 'args' in tc ? tc.args : undefined;
@@ -429,10 +629,15 @@ export async function simpleChat(prompt: string): Promise<string> {
   }
 
   try {
+    const modelSettings = getModelSettings(model);
+
     const result = await generateText({
       model,
       system: loadSoul(),
       prompt,
+      ...(modelSettings.maxOutputTokens && { maxOutputTokens: modelSettings.maxOutputTokens }),
+      ...(modelSettings.temperature !== undefined && { temperature: modelSettings.temperature }),
+      ...(modelSettings.providerOptions && { providerOptions: modelSettings.providerOptions }),
     });
 
     return result.text;
