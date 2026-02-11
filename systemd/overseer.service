@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/overseer
+WorkingDirectory=/opt/overseer/.next/standalone
 ExecStart=/usr/bin/node /opt/overseer/.next/standalone/server.js
 Restart=on-failure
 RestartSec=10

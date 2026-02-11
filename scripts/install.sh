@@ -888,7 +888,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${OVERSEER_USER}
-WorkingDirectory=${OVERSEER_DIR}
+WorkingDirectory=${OVERSEER_DIR}/.next/standalone
 ExecStart=${node_path} ${OVERSEER_DIR}/.next/standalone/server.js
 Restart=on-failure
 RestartSec=10
