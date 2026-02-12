@@ -48,6 +48,9 @@ OVERSEER_TLS_EMAIL="${OVERSEER_TLS_EMAIL:-}"
 OVERSEER_ENABLE_TLS="${OVERSEER_ENABLE_TLS:-false}"
 OVERSEER_ADMIN_USERNAME="${OVERSEER_ADMIN_USERNAME:-admin}"
 OVERSEER_ADMIN_PASSWORD="${OVERSEER_ADMIN_PASSWORD:-}"
+OVERSEER_ENABLE_AUTO_SECURITY_UPDATES="${OVERSEER_ENABLE_AUTO_SECURITY_UPDATES:-true}"
+OVERSEER_ENABLE_AUTO_APP_UPDATES="${OVERSEER_ENABLE_AUTO_APP_UPDATES:-true}"
+OVERSEER_AUTO_UPDATE_SCHEDULE="${OVERSEER_AUTO_UPDATE_SCHEDULE:-daily}"
 
 # Will be set dynamically
 OVERSEER_PORT=""
@@ -413,6 +416,160 @@ JAIL_EOF
     sudo_cmd systemctl enable fail2ban 2>/dev/null || true
     sudo_cmd systemctl restart fail2ban 2>/dev/null || true
     print_success "fail2ban is active"
+}
+
+# =========================================
+# Automatic OS Security Updates
+# =========================================
+
+configure_auto_security_updates() {
+    if [ "${OVERSEER_ENABLE_AUTO_SECURITY_UPDATES}" != "true" ]; then
+        print_info "Automatic OS security updates disabled by configuration"
+        return 0
+    fi
+
+    if [[ "$OS" == "macos" ]] || [[ "${OS:-}" == "wsl" ]]; then
+        return 0
+    fi
+
+    print_step "Configuring automatic OS security updates..."
+
+    case "$PKG_MANAGER" in
+        apt)
+            sudo_cmd apt-get install -y unattended-upgrades apt-listchanges >/dev/null 2>&1 || {
+                print_warning "Could not install unattended-upgrades"
+                return 0
+            }
+
+            sudo_cmd tee /etc/apt/apt.conf.d/20auto-upgrades > /dev/null << 'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+
+            sudo_cmd tee /etc/apt/apt.conf.d/52overseer-unattended-upgrades > /dev/null << 'EOF'
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+EOF
+
+            sudo_cmd systemctl enable unattended-upgrades >/dev/null 2>&1 || true
+            sudo_cmd systemctl restart unattended-upgrades >/dev/null 2>&1 || true
+            print_success "unattended-upgrades configured"
+            ;;
+        dnf)
+            sudo_cmd dnf install -y dnf-automatic >/dev/null 2>&1 || {
+                print_warning "Could not install dnf-automatic"
+                return 0
+            }
+            sudo_cmd sed -i 's/^apply_updates = .*/apply_updates = yes/' /etc/dnf/automatic.conf 2>/dev/null || true
+            sudo_cmd sed -i 's/^upgrade_type = .*/upgrade_type = security/' /etc/dnf/automatic.conf 2>/dev/null || true
+            sudo_cmd systemctl enable dnf-automatic.timer >/dev/null 2>&1 || true
+            sudo_cmd systemctl restart dnf-automatic.timer >/dev/null 2>&1 || true
+            print_success "dnf-automatic security updates configured"
+            ;;
+        yum)
+            sudo_cmd yum install -y yum-cron >/dev/null 2>&1 || {
+                print_warning "Could not install yum-cron"
+                return 0
+            }
+            sudo_cmd sed -i 's/^apply_updates = .*/apply_updates = yes/' /etc/yum/yum-cron.conf 2>/dev/null || true
+            sudo_cmd systemctl enable yum-cron >/dev/null 2>&1 || true
+            sudo_cmd systemctl restart yum-cron >/dev/null 2>&1 || true
+            print_success "yum-cron auto updates configured"
+            ;;
+        *)
+            print_warning "Auto security updates not supported for package manager: ${PKG_MANAGER}"
+            ;;
+    esac
+}
+
+# =========================================
+# Automatic Overseer Application Updates
+# =========================================
+
+configure_auto_app_updates() {
+    if [ "${OVERSEER_ENABLE_AUTO_APP_UPDATES}" != "true" ]; then
+        print_info "Automatic Overseer app updates disabled by configuration"
+        return 0
+    fi
+
+    if [[ "$OS" == "macos" ]] || [[ "${OS:-}" == "wsl" ]]; then
+        return 0
+    fi
+
+    if ! command_exists systemctl; then
+        print_warning "systemctl not available; skipping app update timer"
+        return 0
+    fi
+
+    print_step "Configuring automatic Overseer app updates..."
+
+    local update_script="/usr/local/bin/overseer-auto-update"
+    local pnpm_path=$(which pnpm 2>/dev/null || echo "")
+    local npm_path=$(which npm)
+
+    sudo_cmd tee "$update_script" > /dev/null << EOF
+#!/bin/bash
+set -euo pipefail
+cd "${OVERSEER_DIR}"
+
+git fetch origin "${OVERSEER_VERSION}" >/dev/null 2>&1
+LOCAL=\$(git rev-parse HEAD)
+REMOTE=\$(git rev-parse "origin/${OVERSEER_VERSION}")
+
+if [ "\$LOCAL" = "\$REMOTE" ]; then
+  exit 0
+fi
+
+git reset --hard "origin/${OVERSEER_VERSION}" >/dev/null 2>&1
+if [ -n "${pnpm_path}" ]; then
+  "${pnpm_path}" install --no-frozen-lockfile >/dev/null 2>&1
+  "${pnpm_path}" run build >/dev/null 2>&1
+else
+  "${npm_path}" install >/dev/null 2>&1
+  "${npm_path}" run build >/dev/null 2>&1
+fi
+
+systemctl restart overseer >/dev/null 2>&1 || true
+systemctl restart overseer-telegram >/dev/null 2>&1 || true
+systemctl restart overseer-discord >/dev/null 2>&1 || true
+systemctl restart overseer-whatsapp >/dev/null 2>&1 || true
+EOF
+
+    sudo_cmd chmod +x "$update_script"
+
+    sudo_cmd tee /etc/systemd/system/overseer-auto-update.service > /dev/null << EOF
+[Unit]
+Description=Automatic Overseer application update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${OVERSEER_USER}
+ExecStart=${update_script}
+EOF
+
+    sudo_cmd tee /etc/systemd/system/overseer-auto-update.timer > /dev/null << EOF
+[Unit]
+Description=Run Overseer automatic update ${OVERSEER_AUTO_UPDATE_SCHEDULE}
+
+[Timer]
+OnCalendar=${OVERSEER_AUTO_UPDATE_SCHEDULE}
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    sudo_cmd systemctl daemon-reload
+    sudo_cmd systemctl enable overseer-auto-update.timer >/dev/null 2>&1 || true
+    sudo_cmd systemctl restart overseer-auto-update.timer >/dev/null 2>&1 || true
+
+    print_success "Automatic Overseer updates configured (${OVERSEER_AUTO_UPDATE_SCHEDULE})"
 }
 
 # =========================================
@@ -1314,6 +1471,7 @@ main() {
     # Security hardening
     install_fail2ban
     configure_ufw_safe
+    configure_auto_security_updates
 
     # Create services
     if [[ "$OS" == "macos" ]]; then
@@ -1325,6 +1483,7 @@ main() {
     # Optional cloud-mode reverse proxy + TLS
     setup_nginx_proxy
     setup_letsencrypt_tls
+    configure_auto_app_updates
 
     create_management_script
     print_final_success

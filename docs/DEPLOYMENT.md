@@ -77,6 +77,12 @@ When these variables are provided, the installer will:
 - optionally request Let's Encrypt certificates via HTTP-01 (`OVERSEER_ENABLE_TLS=true`)
 - preserve SSH and existing firewall safety behavior
 
+Optional hardening installer flags:
+
+- `OVERSEER_ENABLE_AUTO_SECURITY_UPDATES=true` (default)
+- `OVERSEER_ENABLE_AUTO_APP_UPDATES=true` (default)
+- `OVERSEER_AUTO_UPDATE_SCHEDULE=daily` (systemd `OnCalendar` expression)
+
 ---
 
 ## VPS Deployment
