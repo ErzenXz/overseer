@@ -20,6 +20,7 @@ interface CatalogProvider {
 interface ProviderRuntimeConfig {
   providerId?: string;
   models_dev_provider_id?: string;
+  thinking_level?: "low" | "medium" | "high";
 }
 
 interface ProvidersListProps {
@@ -195,13 +196,20 @@ export function ProvidersList({ providers }: ProvidersListProps) {
                         <>
                           <span>Context: <span className="text-[var(--color-text-secondary)]">{formatTokenCount(modelInfo.contextWindow)}</span></span>
                           <span>Max Output: <span className="text-[var(--color-text-secondary)]">{formatTokenCount(modelInfo.maxOutput)}</span></span>
+                          {(modelInfo.supportsThinking || modelInfo.reasoning) && runtimeConfig.thinking_level && (
+                            <span>
+                              Thinking: <span className="text-amber-400 uppercase">{runtimeConfig.thinking_level}</span>
+                            </span>
+                          )}
                           {modelInfo.knowledgeCutoff && (
                             <span>Cutoff: <span className="text-[var(--color-text-secondary)]">{modelInfo.knowledgeCutoff}</span></span>
                           )}
                         </>
                       ) : (
                         <>
-                          <span>Max Tokens: {provider.max_tokens}</span>
+                          <span>
+                            Max Tokens: {provider.max_tokens ?? "model default"}
+                          </span>
                           <span>Temperature: {provider.temperature}</span>
                         </>
                       )}
@@ -219,6 +227,12 @@ export function ProvidersList({ providers }: ProvidersListProps) {
                   >
                     {isTestingThis ? "Testing..." : "Test"}
                   </button>
+                  <a
+                    href={`/providers/${provider.id}/edit`}
+                    className="px-3 py-1.5 text-xs bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded transition-colors"
+                  >
+                    Edit
+                  </a>
                   {!provider.is_default && (
                     <button
                       onClick={() => handleSetDefault(provider.id)}

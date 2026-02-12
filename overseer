@@ -143,8 +143,48 @@ PrivateTmp=true
 WantedBy=multi-user.target
 SVCEOF
 
+    sudo tee /etc/systemd/system/overseer-telegram.service > /dev/null << TGSVC
+[Unit]
+Description=Overseer AI Agent - Telegram Bot
+After=network.target overseer.service
+PartOf=overseer.service
+
+[Service]
+Type=simple
+User=${user}
+WorkingDirectory=${dir}
+ExecStart=${npx_path} tsx ${dir}/src/bot/index.ts
+Restart=on-failure
+RestartSec=15
+Environment=NODE_ENV=production
+EnvironmentFile=${dir}/.env
+
+[Install]
+WantedBy=multi-user.target
+TGSVC
+
+    sudo tee /etc/systemd/system/overseer-discord.service > /dev/null << DCSVC
+[Unit]
+Description=Overseer AI Agent - Discord Bot
+After=network.target overseer.service
+PartOf=overseer.service
+
+[Service]
+Type=simple
+User=${user}
+WorkingDirectory=${dir}
+ExecStart=${npx_path} tsx ${dir}/src/bot/discord.ts
+Restart=on-failure
+RestartSec=15
+Environment=NODE_ENV=production
+EnvironmentFile=${dir}/.env
+
+[Install]
+WantedBy=multi-user.target
+DCSVC
+
     sudo systemctl daemon-reload
-    echo -e "    ${GREEN}+${NC} Service file updated (next start on port ${port})"
+    echo -e "    ${GREEN}+${NC} Service files updated (web + bots, port ${port})"
 }
 
 # ---- Commands ----
@@ -152,9 +192,10 @@ SVCEOF
 cmd_start() {
     echo -e "${GREEN}Starting Overseer services...${NC}"
     if is_linux && command -v systemctl &>/dev/null; then
+        regenerate_systemd_service
         sudo systemctl start overseer
-        [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && sudo systemctl start overseer-telegram 2>/dev/null || true
-        [ -n "${DISCORD_BOT_TOKEN:-}" ] && sudo systemctl start overseer-discord 2>/dev/null || true
+        sudo systemctl start overseer-telegram 2>/dev/null || true
+        sudo systemctl start overseer-discord 2>/dev/null || true
         [ "${WHATSAPP_ENABLED:-}" = "true" ] && sudo systemctl start overseer-whatsapp 2>/dev/null || true
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         launchctl load ~/Library/LaunchAgents/com.overseer.web.plist 2>/dev/null || true
@@ -186,7 +227,10 @@ cmd_status() {
     echo ""
     if is_linux && command -v systemctl &>/dev/null; then
         for svc in overseer overseer-telegram overseer-discord overseer-whatsapp; do
-            local status=$(systemctl is-active $svc 2>/dev/null || echo "inactive")
+            local status="inactive"
+            if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                status="active"
+            fi
             local icon="[x]"
             [ "$status" = "active" ] && icon="[+]"
             echo "  $icon $svc: $status"

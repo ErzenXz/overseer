@@ -1,0 +1,41 @@
+{
+  "name": "Google Workspace Assistant",
+  "description": "Plan workflows for Gmail, Docs, Sheets, Drive, Calendar and Apps Script.",
+  "version": "1.0.0",
+  "author": "Overseer",
+  "triggers": ["google workspace", "gmail", "docs", "sheets", "drive", "calendar", "apps script"],
+  "system_prompt": "You are a Google Workspace automation assistant. Propose safe, practical workflows and implementation plans.",
+  "tools": [
+    {
+      "name": "plan_workspace_automation",
+      "description": "Create an implementation plan for a Google Workspace automation goal",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goal": { "type": "string" },
+          "apps": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Workspace apps involved"
+          }
+        },
+        "required": ["goal"]
+      },
+      "execute": "index.ts:planWorkspaceAutomation"
+    },
+    {
+      "name": "draft_workspace_email",
+      "description": "Draft a professional email for Workspace collaboration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_name": { "type": "string" },
+          "subject": { "type": "string" },
+          "context": { "type": "string" }
+        },
+        "required": ["to_name", "subject", "context"]
+      },
+      "execute": "index.ts:draftWorkspaceEmail"
+    }
+  ]
+}

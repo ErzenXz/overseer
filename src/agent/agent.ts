@@ -17,6 +17,7 @@ import {
   conversationsModel,
   logsModel,
 } from "../database/index";
+import { providersModel } from "../database/index";
 import { createLogger } from "../lib/logger";
 import type { ModelInfo, ProviderName } from "./provider-info";
 import { agentCache } from "@/lib/agent-cache";
@@ -65,6 +66,32 @@ interface ModelSettings {
   temperature?: number;
 }
 
+function getConfiguredThinkingLevel(
+  modelId: string,
+): "low" | "medium" | "high" {
+  const activeProviders = providersModel.findActive();
+  const matchedProvider = activeProviders.find((p) => p.model === modelId);
+
+  if (!matchedProvider?.config) return "medium";
+
+  try {
+    const parsed = JSON.parse(matchedProvider.config) as {
+      thinking_level?: "low" | "medium" | "high";
+    };
+    if (
+      parsed.thinking_level === "low" ||
+      parsed.thinking_level === "medium" ||
+      parsed.thinking_level === "high"
+    ) {
+      return parsed.thinking_level;
+    }
+  } catch {
+    // ignore invalid config and fall back to medium
+  }
+
+  return "medium";
+}
+
 /**
  * Extract the model ID from a LanguageModel object.
  * The AI SDK v6 LanguageModel has a `modelId` property.
@@ -93,6 +120,7 @@ function getModelSettings(model: LanguageModel): ModelSettings {
   }
 
   const { provider, model: modelInfo } = info;
+  const thinkingLevel = getConfiguredThinkingLevel(modelInfo.id);
   const settings: ModelSettings = {};
 
   // --- maxOutputTokens: use the model's known max ---
@@ -111,7 +139,11 @@ function getModelSettings(model: LanguageModel): ModelSettings {
 
   // --- providerOptions: enable thinking/reasoning per provider ---
   if (modelInfo.supportsThinking) {
-    settings.providerOptions = buildThinkingOptions(provider, modelInfo);
+    settings.providerOptions = buildThinkingOptions(
+      provider,
+      modelInfo,
+      thinkingLevel,
+    );
   }
 
   logger.debug("Resolved model settings", {
@@ -120,6 +152,7 @@ function getModelSettings(model: LanguageModel): ModelSettings {
     maxOutputTokens: settings.maxOutputTokens,
     hasProviderOptions: !!settings.providerOptions,
     allowsTemperature: modelInfo.allowsTemperature,
+    thinkingLevel,
   });
 
   return settings;
@@ -131,7 +164,28 @@ function getModelSettings(model: LanguageModel): ModelSettings {
 function buildThinkingOptions(
   provider: ProviderName,
   modelInfo: ModelInfo,
+  thinkingLevel: "low" | "medium" | "high",
 ): ProviderOptions | undefined {
+  const effortByLevel: Record<
+    "low" | "medium" | "high",
+    "low" | "medium" | "high"
+  > = {
+    low: "low",
+    medium: "medium",
+    high: "high",
+  };
+
+  const budgetRatio: Record<"low" | "medium" | "high", number> = {
+    low: 0.25,
+    medium: 0.45,
+    high: 0.7,
+  };
+
+  const budgetTokens = Math.min(
+    Math.floor(modelInfo.maxOutput * budgetRatio[thinkingLevel]),
+    16_000,
+  );
+
   switch (provider) {
     // Anthropic: extended thinking with budget
     case "anthropic":
@@ -139,10 +193,7 @@ function buildThinkingOptions(
         anthropic: {
           thinking: {
             type: "enabled",
-            budgetTokens: Math.min(
-              Math.floor(modelInfo.maxOutput * 0.6),
-              16_000,
-            ),
+            budgetTokens,
           },
         },
       };
@@ -153,7 +204,7 @@ function buildThinkingOptions(
       if (modelInfo.reasoning) {
         return {
           openai: {
-            reasoningEffort: "medium",
+            reasoningEffort: effortByLevel[thinkingLevel],
           },
         };
       }
@@ -165,10 +216,7 @@ function buildThinkingOptions(
         return {
           google: {
             thinkingConfig: {
-              thinkingBudget: Math.min(
-                Math.floor(modelInfo.maxOutput * 0.5),
-                16_000,
-              ),
+              thinkingBudget: budgetTokens,
             },
           },
         };
@@ -180,7 +228,7 @@ function buildThinkingOptions(
       if (modelInfo.supportsThinking) {
         return {
           xai: {
-            reasoningEffort: "medium",
+            reasoningEffort: effortByLevel[thinkingLevel],
           },
         };
       }
@@ -215,10 +263,7 @@ function buildThinkingOptions(
           "amazon-bedrock": {
             thinking: {
               type: "enabled",
-              budgetTokens: Math.min(
-                Math.floor(modelInfo.maxOutput * 0.6),
-                16_000,
-              ),
+              budgetTokens,
             },
           },
         };
@@ -332,17 +377,9 @@ Based on the user's query, the following specialized skills are activated:
   const subAgentsSection = `
 ## Sub-Agents
 
-You can spawn specialized sub-agents for complex tasks using the spawnSubAgent tool:
-- **auto**: Generic task routing (automatically selects the best sub-agent type)
-- **code**: Code generation, modification, and review
-- **file**: File system operations specialist
-- **git**: Version control operations (via shell)
-- **system**: System administration (via shell)
-- **web**: Web scraping and API calls (via shell)
-- **docker**: Container management
-- **db**: Database operations
-- **security**: Security and firewall
-- **network**: Network diagnostics
+You can spawn delegated sub-agents for complex tasks using the spawnSubAgent tool:
+- **auto**: Routes to the generic delegated worker
+- **generic**: General delegated worker with the same tool ecosystem as the main agent
 
 Use sub-agents when a task requires focused expertise or when you want to delegate work.
 Prefer autonomous delegation with wait_for_result=false so you can continue responding to new user requests while sub-agents run.

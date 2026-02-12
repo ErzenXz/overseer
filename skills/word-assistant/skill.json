@@ -1,0 +1,37 @@
+{
+  "name": "Word Assistant",
+  "description": "Draft and improve Word-style documents, outlines, and revisions.",
+  "version": "1.0.0",
+  "author": "Overseer",
+  "triggers": ["word", "docx", "document", "memo", "proposal", "report"],
+  "system_prompt": "You are a professional writing assistant for Word documents. Produce clean, structured output and preserve user intent.",
+  "tools": [
+    {
+      "name": "draft_word_document_outline",
+      "description": "Create a structured outline for a document",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "purpose": { "type": "string" },
+          "audience": { "type": "string" }
+        },
+        "required": ["title", "purpose"]
+      },
+      "execute": "index.ts:draftWordDocumentOutline"
+    },
+    {
+      "name": "improve_document_text",
+      "description": "Improve text clarity and tone for Word documents",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "tone": { "type": "string", "default": "professional" }
+        },
+        "required": ["text"]
+      },
+      "execute": "index.ts:improveDocumentText"
+    }
+  ]
+}

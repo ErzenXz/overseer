@@ -55,62 +55,9 @@ interface SubAgentsClientProps {
 }
 
 const subAgentConfigs: Record<string, { name: string; description: string; tools?: string[] }> = {
-  code: {
-    name: "Code Agent",
-    description: "Specializes in code generation, modification, and review",
-    tools: ["readFile", "writeFile", "listDirectory", "executeShellCommand"],
-  },
-  file: {
-    name: "File Agent",
-    description: "Specializes in file system operations",
-    tools: ["readFile", "writeFile", "listDirectory", "executeShellCommand"],
-  },
-  git: {
-    name: "Git Agent",
-    description: "Specializes in version control operations",
-    tools: ["executeShellCommand"],
-  },
-  system: {
-    name: "System Agent",
-    description: "Specializes in system administration",
-    tools: ["executeShellCommand"],
-  },
-  web: {
-    name: "Web Agent",
-    description: "Specializes in web operations and API calls",
-    tools: ["executeShellCommand"],
-  },
-  docker: {
-    name: "Docker Agent",
-    description: "Specializes in container management",
-    tools: ["executeShellCommand"],
-  },
-  db: {
-    name: "Database Agent",
-    description: "Specializes in database operations",
-    tools: ["executeShellCommand", "readFile"],
-  },
-  security: {
-    name: "Security Agent",
-    description: "Specializes in security operations",
-    tools: ["executeShellCommand", "readFile", "listDirectory"],
-  },
-  network: {
-    name: "Network Agent",
-    description: "Specializes in network diagnostics",
-    tools: ["executeShellCommand"],
-  },
-  planner: {
-    name: "Planner Agent",
-    description: "Specializes in task decomposition and planning",
-  },
-  evaluator: {
-    name: "Evaluator Agent",
-    description: "Specializes in quality evaluation and review",
-  },
-  coordinator: {
-    name: "Coordinator Agent",
-    description: "Specializes in multi-agent coordination",
+  generic: {
+    name: "Generic Sub-Agent",
+    description: "General delegated worker with the same tools as the main agent",
   },
 };
 
@@ -458,18 +405,7 @@ export default function SubAgentsClient({ stats, allTypes }: SubAgentsClientProp
           {allTypes.map((type) => {
             const config = getSubAgentConfig(type);
             const typeIcons: Record<string, string> = {
-              code: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4",
-              file: "M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z",
-              git: "M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22",
-              system: "M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01",
-              web: "M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9",
-              docker: "M20 11c.304 0 .596.02.883.059A9.003 9.003 0 0012 3C6.477 3 2 7.477 2 13c0 4.991 3.657 9.128 8.438 9.879V19a2 2 0 01-2-2v-4a2 2 0 012-2h8",
-              db: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4",
-              security: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
-              network: "M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z",
-              planner: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
-              evaluator: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-              coordinator: "M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 17a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 17a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z",
+              generic: "M12 4v16m8-8H4",
             };
 
             return (

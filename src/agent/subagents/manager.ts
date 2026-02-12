@@ -14,6 +14,7 @@ import { generateText, stepCountIs, type LanguageModel, type Tool } from "ai";
 const logger = createLogger("sub-agents");
 
 export type SubAgentType =
+  | "generic" // General-purpose delegated worker
   | "code" // Code generation and modification
   | "file" // File operations specialist
   | "git" // Git operations specialist
@@ -95,6 +96,17 @@ const SUB_AGENT_CONFIGS: Record<
     priority?: number;
   }
 > = {
+  generic: {
+    name: "Generic Sub-Agent",
+    description:
+      "General-purpose delegated worker with the same tool access as the main agent",
+    system_prompt: `You are a generic delegated sub-agent.
+- You receive one concrete task from the main agent.
+- You have access to the same tool ecosystem as the main agent.
+- Complete the task thoroughly, safely, and efficiently.
+- Return a concise but complete result for the main agent to synthesize.`,
+    priority: 8,
+  },
   code: {
     name: "Code Agent",
     description: "Specializes in code generation, modification, and review",
@@ -405,99 +417,12 @@ export function detectPerformanceDegradation(type: SubAgentType): {
  * Smart routing: Select best agent for a task
  */
 export function selectAgentForTask(taskDescription: string): SubAgentType {
-  const keywords: Record<SubAgentType, string[]> = {
-    code: [
-      "code",
-      "function",
-      "class",
-      "implement",
-      "refactor",
-      "bug",
-      "syntax",
-    ],
-    file: [
-      "file",
-      "directory",
-      "read",
-      "write",
-      "copy",
-      "move",
-      "delete",
-      "search",
-    ],
-    git: [
-      "git",
-      "commit",
-      "branch",
-      "merge",
-      "pull",
-      "push",
-      "repository",
-      "version",
-    ],
-    system: ["install", "service", "process", "system", "restart", "configure"],
-    web: ["http", "api", "request", "fetch", "curl", "scrape", "endpoint"],
-    docker: ["docker", "container", "image", "compose", "dockerfile"],
-    db: ["database", "query", "sql", "table", "migration", "backup"],
-    security: [
-      "security",
-      "permission",
-      "firewall",
-      "certificate",
-      "ssl",
-      "vulnerability",
-    ],
-    network: ["network", "ping", "connectivity", "dns", "port", "connection"],
-    planner: ["plan", "steps", "organize", "decompose", "strategy", "complex"],
-    evaluator: ["review", "check", "evaluate", "quality", "validate", "assess"],
-    coordinator: [
-      "coordinate",
-      "multiple",
-      "parallel",
-      "orchestrate",
-      "manage",
-    ],
-  };
-
-  const lowerTask = taskDescription.toLowerCase();
-  const scores = new Map<SubAgentType, number>();
-
-  // Score each agent type based on keyword matches
-  for (const [type, words] of Object.entries(keywords)) {
-    let score = 0;
-    for (const word of words) {
-      if (lowerTask.includes(word)) {
-        score++;
-      }
-    }
-
-    // Factor in health metrics
-    const health = healthMetrics.get(type as SubAgentType);
-    if (health && health.totalExecutions > 0) {
-      score *= health.successRate;
-    }
-
-    scores.set(type as SubAgentType, score);
-  }
-
-  // Find agent with highest score
-  let bestAgent: SubAgentType = "code";
-  let bestScore = 0;
-
-  for (const [type, score] of scores.entries()) {
-    if (score > bestScore) {
-      bestScore = score;
-      bestAgent = type;
-    }
-  }
-
   logger.debug("Agent selected for task", {
     task: taskDescription.substring(0, 50),
-    selected: bestAgent,
-    score: bestScore,
+    selected: "generic",
   });
 
-  return bestAgent;
+  return "generic";
 }
 
 /**
@@ -685,12 +610,14 @@ export async function executeTask(
 
       // Filter tools for this sub-agent
       const subAgentTools: Record<string, Tool> = {};
-      if (config.tools) {
+      if (config.tools && config.tools.length > 0) {
         for (const toolName of config.tools) {
           if (availableTools[toolName]) {
             subAgentTools[toolName] = availableTools[toolName];
           }
         }
+      } else {
+        Object.assign(subAgentTools, availableTools);
       }
 
       const result = await generateText({
@@ -1090,7 +1017,7 @@ export function getSubAgentConfig(type: SubAgentType) {
  * Get all sub-agent types
  */
 export function getAllSubAgentTypes(): SubAgentType[] {
-  return Object.keys(SUB_AGENT_CONFIGS) as SubAgentType[];
+  return ["generic"];
 }
 
 /**

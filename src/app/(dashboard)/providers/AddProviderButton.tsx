@@ -41,10 +41,12 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
     api_key: "",
     base_url: "",
     model: "",
-    max_tokens: 4096,
+    max_tokens: null as number | null,
     temperature: 0.7,
     is_default: false,
     priority: 0,
+    use_model_default_tokens: true,
+    thinking_level: "medium" as "low" | "medium" | "high",
   });
 
   const selectedProvider = useMemo(
@@ -74,7 +76,9 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
               display_name: first.displayName,
               model: firstModel?.id || "",
               base_url: first.apiBaseUrl || "",
-              max_tokens: firstModel?.maxOutput || prev.max_tokens,
+              max_tokens: prev.use_model_default_tokens
+                ? null
+                : (firstModel?.maxOutput ?? prev.max_tokens),
               temperature: firstModel?.allowsTemperature === false ? 0 : prev.temperature,
             }));
           }
@@ -116,7 +120,9 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
       model: firstModel?.id || "",
       base_url: info.apiBaseUrl || "",
       // Auto-set sensible defaults based on model capabilities
-      max_tokens: firstModel?.maxOutput || prev.max_tokens,
+      max_tokens: prev.use_model_default_tokens
+        ? null
+        : (firstModel?.maxOutput ?? prev.max_tokens),
       temperature: firstModel?.allowsTemperature === false ? 0 : 0.7,
     }));
   };
@@ -129,7 +135,9 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
       ...prev,
       model: modelId,
       // Auto-set max_tokens and temperature from model capabilities
-      max_tokens: model?.maxOutput ?? prev.max_tokens,
+      max_tokens: prev.use_model_default_tokens
+        ? null
+        : (model?.maxOutput ?? prev.max_tokens),
       temperature: model?.allowsTemperature === false ? 0 : prev.temperature,
     }));
   };
@@ -145,6 +153,10 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
             models_dev_provider_id: selectedProvider.id,
             provider_npm: selectedProvider.npm,
             runtime_adapter: selectedProvider.runtimeAdapter,
+            thinking_level:
+              selectedModelInfo?.supportsThinking || selectedModelInfo?.reasoning
+                ? formData.thinking_level
+                : undefined,
           }
         : undefined;
 
@@ -278,6 +290,28 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                       Reasoning model — temperature is locked to 0 and max output is set to {formatTokenCount(selectedModelInfo.maxOutput)} tokens.
                     </p>
                   )}
+
+                  {(selectedModelInfo.supportsThinking || selectedModelInfo.reasoning) && (
+                    <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2.5">
+                      <label className="block text-xs font-medium text-amber-300 mb-1">
+                        Thinking level
+                      </label>
+                      <select
+                        value={formData.thinking_level}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            thinking_level: e.target.value as "low" | "medium" | "high",
+                          }))
+                        }
+                        className="w-full px-3 py-2 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                      >
+                        <option value="low">Low (faster)</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High (deeper reasoning)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -311,18 +345,43 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
-                    Max Tokens
+                    Max Tokens (optional)
                     {selectedModelInfo && (
                       <span className="ml-1 text-[10px] text-[var(--color-text-muted)] font-normal">
                         (max {formatTokenCount(selectedModelInfo.maxOutput)})
                       </span>
                     )}
                   </label>
+                  <label className="inline-flex items-center gap-2 mb-2 text-xs text-[var(--color-text-secondary)]">
+                    <input
+                      type="checkbox"
+                      checked={formData.use_model_default_tokens}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          use_model_default_tokens: e.target.checked,
+                          max_tokens: e.target.checked
+                            ? null
+                            : (selectedModelInfo?.maxOutput ?? prev.max_tokens ?? 4096),
+                        }))
+                      }
+                      className="rounded"
+                    />
+                    Use model default limit
+                  </label>
                   <input
                     type="number"
-                    value={formData.max_tokens}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
+                    value={formData.max_tokens ?? ""}
+                    disabled={formData.use_model_default_tokens}
+                    onChange={(e) => {
+                      const parsed = Number.parseInt(e.target.value, 10);
+                      setFormData((prev) => ({
+                        ...prev,
+                        max_tokens: Number.isFinite(parsed) ? parsed : null,
+                      }));
+                    }}
                     className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                    placeholder="Leave empty to use model default"
                   />
                 </div>
                 <div>

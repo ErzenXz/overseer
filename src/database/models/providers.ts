@@ -10,8 +10,8 @@ export interface ProviderInput {
   is_active?: boolean;
   is_default?: boolean;
   priority?: number;
-  max_tokens?: number;
-  temperature?: number;
+  max_tokens?: number | null;
+  temperature?: number | null;
   config?: Record<string, unknown>;
 }
 
@@ -34,7 +34,7 @@ export const providersModel = {
   findActive(): Provider[] {
     return db
       .prepare(
-        "SELECT * FROM providers WHERE is_active = 1 ORDER BY priority DESC, created_at ASC"
+        "SELECT * FROM providers WHERE is_active = 1 ORDER BY priority DESC, created_at ASC",
       )
       .all() as Provider[];
   },
@@ -43,7 +43,7 @@ export const providersModel = {
   findDefault(): Provider | undefined {
     return db
       .prepare(
-        "SELECT * FROM providers WHERE is_default = 1 AND is_active = 1 LIMIT 1"
+        "SELECT * FROM providers WHERE is_default = 1 AND is_active = 1 LIMIT 1",
       )
       .get() as Provider | undefined;
   },
@@ -60,7 +60,7 @@ export const providersModel = {
     const result = db
       .prepare(
         `INSERT INTO providers (name, display_name, api_key_encrypted, base_url, model, is_active, is_default, priority, max_tokens, temperature, config)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.name,
@@ -70,10 +70,10 @@ export const providersModel = {
         input.model,
         input.is_active !== false ? 1 : 0,
         input.is_default ? 1 : 0,
-        input.priority || 0,
-        input.max_tokens || 4096,
-        input.temperature || 0.7,
-        input.config ? JSON.stringify(input.config) : null
+        input.priority ?? 0,
+        input.max_tokens ?? null,
+        input.temperature ?? 0.7,
+        input.config ? JSON.stringify(input.config) : null,
       );
 
     return this.findById(result.lastInsertRowid as number)!;
@@ -140,9 +140,9 @@ export const providersModel = {
     if (updates.length > 0) {
       updates.push("updated_at = CURRENT_TIMESTAMP");
       values.push(id);
-      db.prepare(
-        `UPDATE providers SET ${updates.join(", ")} WHERE id = ?`
-      ).run(...values);
+      db.prepare(`UPDATE providers SET ${updates.join(", ")} WHERE id = ?`).run(
+        ...values,
+      );
     }
 
     return this.findById(id);
@@ -165,7 +165,7 @@ export const providersModel = {
   setDefault(id: number): void {
     db.prepare("UPDATE providers SET is_default = 0").run();
     db.prepare(
-      "UPDATE providers SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      "UPDATE providers SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     ).run(id);
   },
 };

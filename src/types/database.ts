@@ -27,7 +27,7 @@ export interface Provider {
   is_active: number;
   is_default: number;
   priority: number;
-  max_tokens: number;
+  max_tokens: number | null;
   temperature: number;
   config: string | null;
   created_at: string;

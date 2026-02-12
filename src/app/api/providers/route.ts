@@ -35,10 +35,10 @@ export async function POST(request: NextRequest) {
       base_url: body.base_url,
       model: body.model,
       is_active: body.is_active !== false,
-      is_default: body.is_default || false,
-      priority: body.priority || 0,
-      max_tokens: body.max_tokens || 4096,
-      temperature: body.temperature || 0.7,
+      is_default: body.is_default ?? false,
+      priority: body.priority ?? 0,
+      max_tokens: body.max_tokens ?? null,
+      temperature: body.temperature ?? 0.7,
       config: body.config,
     });
 

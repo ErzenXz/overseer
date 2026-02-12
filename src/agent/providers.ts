@@ -407,7 +407,7 @@ export function getDefaultModel(): LanguageModel | null {
       apiKey,
       baseUrl: provider.base_url || undefined,
       model: provider.model,
-      maxTokens: provider.max_tokens,
+      maxTokens: provider.max_tokens ?? undefined,
       temperature: provider.temperature,
       providerNpm:
         typeof providerConfig.provider_npm === "string"
@@ -445,7 +445,7 @@ export function getModelById(providerId: number): LanguageModel | null {
       apiKey,
       baseUrl: provider.base_url || undefined,
       model: provider.model,
-      maxTokens: provider.max_tokens,
+      maxTokens: provider.max_tokens ?? undefined,
       temperature: provider.temperature,
       providerNpm:
         typeof providerConfig.provider_npm === "string"
@@ -484,7 +484,7 @@ export function getActiveModels(): {
         apiKey,
         baseUrl: provider.base_url || undefined,
         model: provider.model,
-        maxTokens: provider.max_tokens,
+        maxTokens: provider.max_tokens ?? undefined,
         temperature: provider.temperature,
         providerNpm:
           typeof providerConfig.provider_npm === "string"
@@ -523,7 +523,7 @@ export function getActiveModelEntries(maxModels = 5): ActiveModelEntry[] {
         apiKey,
         baseUrl: provider.base_url || undefined,
         model: provider.model,
-        maxTokens: provider.max_tokens,
+        maxTokens: provider.max_tokens ?? undefined,
         temperature: provider.temperature,
         providerNpm:
           typeof providerConfig.provider_npm === "string"

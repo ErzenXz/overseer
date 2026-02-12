@@ -3,15 +3,18 @@
  * Modular, discoverable capabilities like Vercel's skills.sh
  */
 
-import { db } from "../../database/db";
+import { db, initializeSchema } from "../../database/db";
 import { createLogger } from "../../lib/logger";
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { pathToFileURL } from "url";
+import { scanSkillSecurity } from "./security";
 
 const logger = createLogger("skills");
+
+initializeSchema();
 
 // Built-in skills directory
 const BUILTIN_SKILLS_DIR = resolve(process.cwd(), "skills");
@@ -61,13 +64,66 @@ export interface SkillToolDefinition {
   execute: string; // Path to execution function or inline code
 }
 
+function toJsonString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function parseJsonValue<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+
+  try {
+    const first = JSON.parse(raw);
+    if (typeof first === "string") {
+      try {
+        return JSON.parse(first) as T;
+      } catch {
+        return fallback;
+      }
+    }
+    return first as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseStringArray(raw: string | null): string[] {
+  const parsed = parseJsonValue<unknown>(raw, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((item): item is string => typeof item === "string");
+}
+
+async function fetchGitHubTextFile(
+  owner: string,
+  repo: string,
+  filePath: string,
+): Promise<string | null> {
+  const branches = ["main", "master"];
+
+  for (const branch of branches) {
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}`;
+    try {
+      const response = await fetch(rawUrl);
+      if (response.ok) {
+        return await response.text();
+      }
+    } catch {
+      // Ignore and continue with next candidate
+    }
+  }
+
+  return null;
+}
+
 // Cache for loaded skills
 const skillToolsCache = new Map<string, Record<string, Tool>>();
 
 /**
  * Load a skill module dynamically
  */
-async function loadSkillModule(skillId: string): Promise<Record<string, Function>> {
+async function loadSkillModule(
+  skillId: string,
+): Promise<Record<string, Function>> {
   // Return from cache if available
   if (skillModulesCache.has(skillId)) {
     return skillModulesCache.get(skillId)!;
@@ -79,7 +135,7 @@ async function loadSkillModule(skillId: string): Promise<Record<string, Function
 
   try {
     let modulePath: string | null = null;
-    
+
     if (existsSync(indexTsPath)) {
       modulePath = indexTsPath;
     } else if (existsSync(indexJsPath)) {
@@ -108,20 +164,27 @@ async function loadSkillModule(skillId: string): Promise<Record<string, Function
 async function executeSkillFunction(
   skillId: string,
   functionName: string,
-  args: Record<string, any>
+  args: Record<string, any>,
 ): Promise<any> {
   try {
     const skillModule = await loadSkillModule(skillId);
-    
-    if (skillModule[functionName] && typeof skillModule[functionName] === "function") {
+
+    if (
+      skillModule[functionName] &&
+      typeof skillModule[functionName] === "function"
+    ) {
       const result = await skillModule[functionName](args);
       return result;
     }
-    
+
     logger.warn("Skill function not found", { skillId, functionName });
     return { error: `Function ${functionName} not found in skill ${skillId}` };
   } catch (error) {
-    logger.error("Failed to execute skill function", { skillId, functionName, error });
+    logger.error("Failed to execute skill function", {
+      skillId,
+      functionName,
+      error,
+    });
     return { error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
@@ -131,22 +194,82 @@ async function executeSkillFunction(
  */
 export function loadBuiltinSkills(): SkillDefinition[] {
   const skills: SkillDefinition[] = [];
-  
+
   if (!existsSync(BUILTIN_SKILLS_DIR)) {
-    logger.warn("Built-in skills directory not found", { path: BUILTIN_SKILLS_DIR });
+    logger.warn("Built-in skills directory not found", {
+      path: BUILTIN_SKILLS_DIR,
+    });
     return skills;
   }
-  
+
   try {
     const entries = readdirSync(BUILTIN_SKILLS_DIR, { withFileTypes: true });
-    
+
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const skillPath = join(BUILTIN_SKILLS_DIR, entry.name, "skill.json");
-        
+
         if (existsSync(skillPath)) {
           try {
             const skillData = JSON.parse(readFileSync(skillPath, "utf-8"));
+            const indexTsPath = join(
+              BUILTIN_SKILLS_DIR,
+              entry.name,
+              "index.ts",
+            );
+            const indexJsPath = join(
+              BUILTIN_SKILLS_DIR,
+              entry.name,
+              "index.js",
+            );
+            const readmePath = join(
+              BUILTIN_SKILLS_DIR,
+              entry.name,
+              "README.md",
+            );
+
+            const indexSource = existsSync(indexTsPath)
+              ? readFileSync(indexTsPath, "utf-8")
+              : existsSync(indexJsPath)
+                ? readFileSync(indexJsPath, "utf-8")
+                : "";
+            const readmeSource = existsSync(readmePath)
+              ? readFileSync(readmePath, "utf-8")
+              : "";
+
+            const security = scanSkillSecurity({
+              skillId: entry.name,
+              name: String(skillData.name || entry.name),
+              description:
+                typeof skillData.description === "string"
+                  ? skillData.description
+                  : null,
+              systemPrompt:
+                typeof skillData.system_prompt === "string"
+                  ? skillData.system_prompt
+                  : null,
+              tools: skillData.tools,
+              indexSource,
+              readmeSource,
+            });
+
+            if (!security.allowed) {
+              logger.warn(
+                "Built-in skill flagged by security scan; allowing but marked for review",
+                {
+                  skillId: entry.name,
+                  issues: security.issues,
+                },
+              );
+            }
+
+            if (security.issues.length > 0) {
+              logger.warn("Built-in skill has security warnings", {
+                skillId: entry.name,
+                issues: security.issues,
+              });
+            }
+
             skills.push({
               id: entry.name,
               ...skillData,
@@ -160,7 +283,7 @@ export function loadBuiltinSkills(): SkillDefinition[] {
   } catch (error) {
     logger.error("Failed to read skills directory", { error });
   }
-  
+
   return skills;
 }
 
@@ -169,26 +292,30 @@ export function loadBuiltinSkills(): SkillDefinition[] {
  */
 export function syncBuiltinSkills(): void {
   const builtinSkills = loadBuiltinSkills();
-  
+
   for (const skill of builtinSkills) {
     const existing = findBySkillId(skill.id);
-    
+
     if (!existing) {
       // Create new skill
-        createSkill({
-          skill_id: skill.id,
-          name: skill.name,
-          description: skill.description,
-          version: skill.version,
-          author: skill.author,
-          source: "builtin",
-          triggers: JSON.stringify(skill.triggers || []),
-          system_prompt: skill.system_prompt,
-          tools: JSON.stringify(skill.tools || []),
-          config_schema: skill.config_schema ? JSON.stringify(skill.config_schema) : null,
-          config: skill.default_config ? JSON.stringify(skill.default_config) : null,
-          is_builtin: 1,
-        });
+      createSkill({
+        skill_id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        version: skill.version,
+        author: skill.author,
+        source: "builtin",
+        triggers: JSON.stringify(skill.triggers || []),
+        system_prompt: skill.system_prompt,
+        tools: JSON.stringify(skill.tools || []),
+        config_schema: skill.config_schema
+          ? JSON.stringify(skill.config_schema)
+          : null,
+        config: skill.default_config
+          ? JSON.stringify(skill.default_config)
+          : null,
+        is_builtin: 1,
+      });
     } else if (existing.is_builtin) {
       // Update existing built-in skill
       updateSkill(existing.id, {
@@ -201,21 +328,23 @@ export function syncBuiltinSkills(): void {
       });
     }
   }
-  
+
   logger.info("Synced built-in skills", { count: builtinSkills.length });
 }
 
 /**
  * Create a new skill
  */
-export function createSkill(skill: Partial<Skill> & { skill_id: string; name: string }): Skill {
+export function createSkill(
+  skill: Partial<Skill> & { skill_id: string; name: string },
+): Skill {
   const stmt = db.prepare(`
     INSERT INTO skills (
       skill_id, name, description, version, author, source, source_url,
       triggers, system_prompt, tools, config_schema, config, is_builtin
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  
+
   const result = stmt.run(
     skill.skill_id,
     skill.name,
@@ -224,14 +353,14 @@ export function createSkill(skill: Partial<Skill> & { skill_id: string; name: st
     skill.author || null,
     skill.source || "local",
     skill.source_url || null,
-    skill.triggers ? JSON.stringify(skill.triggers) : null,
+    toJsonString(skill.triggers),
     skill.system_prompt || null,
-    skill.tools ? JSON.stringify(skill.tools) : null,
-    skill.config_schema ? JSON.stringify(skill.config_schema) : null,
-    skill.config ? JSON.stringify(skill.config) : null,
-    skill.is_builtin ? 1 : 0
+    toJsonString(skill.tools),
+    toJsonString(skill.config_schema),
+    toJsonString(skill.config),
+    skill.is_builtin ? 1 : 0,
   );
-  
+
   logger.info("Created skill", { skillId: skill.skill_id, name: skill.name });
   return findById(result.lastInsertRowid as number)!;
 }
@@ -264,7 +393,9 @@ export function getAllSkills(): Skill[] {
  * Get active skills
  */
 export function getActiveSkills(): Skill[] {
-  const stmt = db.prepare("SELECT * FROM skills WHERE is_active = 1 ORDER BY name");
+  const stmt = db.prepare(
+    "SELECT * FROM skills WHERE is_active = 1 ORDER BY name",
+  );
   return stmt.all() as Skill[];
 }
 
@@ -273,11 +404,11 @@ export function getActiveSkills(): Skill[] {
  */
 export function updateSkill(
   id: number,
-  updates: Partial<Omit<Skill, "id" | "created_at">>
+  updates: Partial<Omit<Skill, "id" | "created_at">>,
 ): void {
   const fields: string[] = ["updated_at = CURRENT_TIMESTAMP"];
   const values: any[] = [];
-  
+
   if (updates.name !== undefined) {
     fields.push("name = ?");
     values.push(updates.name);
@@ -292,7 +423,11 @@ export function updateSkill(
   }
   if (updates.triggers !== undefined) {
     fields.push("triggers = ?");
-    values.push(typeof updates.triggers === "string" ? updates.triggers : JSON.stringify(updates.triggers));
+    values.push(
+      typeof updates.triggers === "string"
+        ? updates.triggers
+        : JSON.stringify(updates.triggers),
+    );
   }
   if (updates.system_prompt !== undefined) {
     fields.push("system_prompt = ?");
@@ -300,23 +435,31 @@ export function updateSkill(
   }
   if (updates.tools !== undefined) {
     fields.push("tools = ?");
-    values.push(typeof updates.tools === "string" ? updates.tools : JSON.stringify(updates.tools));
+    values.push(
+      typeof updates.tools === "string"
+        ? updates.tools
+        : JSON.stringify(updates.tools),
+    );
   }
   if (updates.config !== undefined) {
     fields.push("config = ?");
-    values.push(typeof updates.config === "string" ? updates.config : JSON.stringify(updates.config));
+    values.push(
+      typeof updates.config === "string"
+        ? updates.config
+        : JSON.stringify(updates.config),
+    );
   }
   if (updates.is_active !== undefined) {
     fields.push("is_active = ?");
     values.push(updates.is_active ? 1 : 0);
   }
-  
+
   const stmt = db.prepare(`
     UPDATE skills 
     SET ${fields.join(", ")}
     WHERE id = ?
   `);
-  
+
   stmt.run(...values, id);
 }
 
@@ -328,7 +471,7 @@ export function deleteSkill(id: number): void {
   if (skill) {
     skillToolsCache.delete(skill.skill_id);
   }
-  
+
   const stmt = db.prepare("DELETE FROM skills WHERE id = ?");
   stmt.run(id);
 }
@@ -341,42 +484,50 @@ export function getSkillTools(skillId: string): Record<string, Tool> {
   if (skillToolsCache.has(skillId)) {
     return skillToolsCache.get(skillId)!;
   }
-  
+
   const skill = findBySkillId(skillId);
   if (!skill || !skill.tools) {
     return {};
   }
-  
+
   try {
-    const toolsDef = JSON.parse(skill.tools) as SkillToolDefinition[];
+    const toolsDef = parseJsonValue<SkillToolDefinition[]>(skill.tools, []);
+    if (!Array.isArray(toolsDef)) {
+      logger.warn("Skill tools payload is not an array", { skillId });
+      return {};
+    }
     const tools: Record<string, Tool> = {};
-    
+
     for (const toolDef of toolsDef) {
       // Parse the execute path to get function name
       // Format: "index.ts:functionName" or just "functionName"
       const executePath = toolDef.execute || toolDef.name;
-      const functionName = executePath.includes(":") 
-        ? executePath.split(":")[1] 
+      const functionName = executePath.includes(":")
+        ? executePath.split(":")[1]
         : executePath;
-      
+
       // Create tool that dynamically executes the skill function
       tools[toolDef.name] = tool<any, any>({
         description: toolDef.description,
         inputSchema: convertJsonSchemaToZod(toolDef.parameters),
         execute: async (args: Record<string, any>) => {
-          logger.info("Executing skill tool", { 
-            skill: skillId, 
-            tool: toolDef.name, 
+          logger.info("Executing skill tool", {
+            skill: skillId,
+            tool: toolDef.name,
             function: functionName,
-            args 
+            args,
           });
-          
+
           // Record usage
           recordUsage(skillId);
-          
+
           // Execute the actual skill function
-          const result = await executeSkillFunction(skillId, functionName, args);
-          
+          const result = await executeSkillFunction(
+            skillId,
+            functionName,
+            args,
+          );
+
           // Return formatted result
           if (typeof result === "object") {
             return JSON.stringify(result, null, 2);
@@ -385,7 +536,7 @@ export function getSkillTools(skillId: string): Record<string, Tool> {
         },
       });
     }
-    
+
     skillToolsCache.set(skillId, tools);
     return tools;
   } catch (error) {
@@ -400,7 +551,7 @@ export function getSkillTools(skillId: string): Record<string, Tool> {
 export function getAllActiveSkillTools(): Record<string, Tool> {
   const activeSkills = getActiveSkills();
   const allTools: Record<string, Tool> = {};
-  
+
   for (const skill of activeSkills) {
     const skillTools = getSkillTools(skill.skill_id);
     for (const [name, tool] of Object.entries(skillTools)) {
@@ -408,7 +559,7 @@ export function getAllActiveSkillTools(): Record<string, Tool> {
       allTools[`${skill.skill_id}_${name}`] = tool;
     }
   }
-  
+
   return allTools;
 }
 
@@ -418,23 +569,19 @@ export function getAllActiveSkillTools(): Record<string, Tool> {
 export function matchSkillTriggers(query: string): Skill[] {
   const activeSkills = getActiveSkills();
   const matching: Skill[] = [];
-  
+
   for (const skill of activeSkills) {
     if (skill.triggers) {
-      try {
-        const triggers = JSON.parse(skill.triggers) as string[];
-        for (const trigger of triggers) {
-          if (query.toLowerCase().includes(trigger.toLowerCase())) {
-            matching.push(skill);
-            break;
-          }
+      const triggers = parseStringArray(skill.triggers);
+      for (const trigger of triggers) {
+        if (query.toLowerCase().includes(trigger.toLowerCase())) {
+          matching.push(skill);
+          break;
         }
-      } catch (error) {
-        logger.error("Failed to parse skill triggers", { skill: skill.skill_id, error });
       }
     }
   }
-  
+
   return matching;
 }
 
@@ -457,14 +604,14 @@ function convertJsonSchemaToZod(schema: Record<string, any>): z.ZodTypeAny {
   if (!schema || schema.type !== "object") {
     return z.object({});
   }
-  
+
   const shape: Record<string, z.ZodTypeAny> = {};
-  
+
   if (schema.properties) {
     for (const [key, prop] of Object.entries(schema.properties)) {
       const propSchema = prop as any;
       let zodType: z.ZodTypeAny;
-      
+
       switch (propSchema.type) {
         case "string":
           zodType = z.string();
@@ -487,17 +634,17 @@ function convertJsonSchemaToZod(schema: Record<string, any>): z.ZodTypeAny {
         default:
           zodType = z.any();
       }
-      
+
       if (propSchema.description) {
         zodType = zodType.describe(propSchema.description);
       }
-      
+
       shape[key] = zodType;
     }
   }
-  
+
   let zodSchema = z.object(shape);
-  
+
   if (schema.required && Array.isArray(schema.required)) {
     const optionalShape: Record<string, z.ZodTypeAny> = {};
     for (const [key, val] of Object.entries(shape)) {
@@ -509,7 +656,7 @@ function convertJsonSchemaToZod(schema: Record<string, any>): z.ZodTypeAny {
     }
     zodSchema = z.object(optionalShape);
   }
-  
+
   return zodSchema;
 }
 
@@ -523,17 +670,56 @@ export async function importFromGitHub(url: string): Promise<Skill | null> {
     if (!match) {
       throw new Error("Invalid GitHub URL");
     }
-    
+
     const [, owner, repo] = match;
     const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/skill.json`;
-    
+
     const response = await fetch(rawUrl);
     if (!response.ok) {
       throw new Error(`Failed to fetch skill: ${response.statusText}`);
     }
-    
+
     const skillData = await response.json();
-    
+
+    const indexSource =
+      (await fetchGitHubTextFile(owner, repo, "index.ts")) ||
+      (await fetchGitHubTextFile(owner, repo, "index.js")) ||
+      "";
+    const readmeSource =
+      (await fetchGitHubTextFile(owner, repo, "README.md")) || "";
+
+    const security = scanSkillSecurity({
+      skillId: `${owner}_${repo}`,
+      name: String(skillData.name || `${owner}/${repo}`),
+      description:
+        typeof skillData.description === "string"
+          ? skillData.description
+          : null,
+      systemPrompt:
+        typeof skillData.system_prompt === "string"
+          ? skillData.system_prompt
+          : null,
+      tools: skillData.tools,
+      indexSource,
+      readmeSource,
+      repositoryUrl: url,
+    });
+
+    if (!security.allowed) {
+      logger.error("Blocked GitHub skill import due to security scan", {
+        url,
+        issues: security.issues,
+      });
+      return null;
+    }
+
+    if (security.issues.length > 0) {
+      logger.warn("GitHub skill import has security warnings", {
+        url,
+        issues: security.issues,
+      });
+    }
+
     return createSkill({
       skill_id: `${owner}_${repo}`,
       name: skillData.name,
@@ -569,7 +755,7 @@ export function getSkillInfo(skillId: string): {
 
   const loaded = skillModulesCache.has(skillId);
   let toolCount = 0;
-  
+
   if (skill.tools) {
     try {
       const tools = JSON.parse(skill.tools);
@@ -585,15 +771,18 @@ export function getSkillInfo(skillId: string): {
  */
 export async function preloadActiveSkills(): Promise<void> {
   const activeSkills = getActiveSkills();
-  
+
   for (const skill of activeSkills) {
     try {
       await loadSkillModule(skill.skill_id);
     } catch (error) {
-      logger.warn("Failed to preload skill", { skillId: skill.skill_id, error });
+      logger.warn("Failed to preload skill", {
+        skillId: skill.skill_id,
+        error,
+      });
     }
   }
-  
+
   logger.info("Preloaded active skills", { count: activeSkills.length });
 }
 
@@ -617,8 +806,8 @@ export function getSkillStats(): {
   totalUsage: number;
 } {
   const allSkills = getAllSkills();
-  const activeSkills = allSkills.filter(s => s.is_active);
-  const builtinSkills = allSkills.filter(s => s.is_builtin);
+  const activeSkills = allSkills.filter((s) => s.is_active);
+  const builtinSkills = allSkills.filter((s) => s.is_builtin);
   const totalUsage = allSkills.reduce((sum, s) => sum + s.use_count, 0);
 
   return {
@@ -642,21 +831,23 @@ export function listSkillsWithTools(): Array<{
   triggers: string[];
 }> {
   const skills = getAllSkills();
-  
-  return skills.map(skill => {
+
+  return skills.map((skill) => {
     let tools: string[] = [];
     let triggers: string[] = [];
-    
-    try {
-      if (skill.tools) {
-        const toolsDef = JSON.parse(skill.tools) as SkillToolDefinition[];
-        tools = toolsDef.map(t => t.name);
+
+    if (skill.tools) {
+      const toolsDef = parseJsonValue<SkillToolDefinition[]>(skill.tools, []);
+      if (Array.isArray(toolsDef)) {
+        tools = toolsDef
+          .map((t) => (t && typeof t.name === "string" ? t.name : ""))
+          .filter(Boolean);
       }
-      if (skill.triggers) {
-        triggers = JSON.parse(skill.triggers);
-      }
-    } catch {}
-    
+    }
+    if (skill.triggers) {
+      triggers = parseStringArray(skill.triggers);
+    }
+
     return {
       id: skill.skill_id,
       name: skill.name,

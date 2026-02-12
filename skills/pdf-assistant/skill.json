@@ -1,0 +1,36 @@
+{
+  "name": "PDF Assistant",
+  "description": "Summarize PDF text extracts, produce action checklists, and prepare review notes.",
+  "version": "1.0.0",
+  "author": "Overseer",
+  "triggers": ["pdf", "document", "summary", "extract", "report"],
+  "system_prompt": "You are a PDF document assistant. Work from extracted text provided by the user. Be precise, structured, and avoid hallucinating content that is not present.",
+  "tools": [
+    {
+      "name": "summarize_pdf_text",
+      "description": "Summarize extracted PDF text with optional focus area",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Extracted PDF text" },
+          "focus": { "type": "string", "description": "Optional focus area, e.g. risks, timeline, budget" }
+        },
+        "required": ["text"]
+      },
+      "execute": "index.ts:summarizePdfText"
+    },
+    {
+      "name": "extract_pdf_checklist",
+      "description": "Generate an action checklist from extracted PDF text",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Extracted PDF text" },
+          "max_items": { "type": "number", "default": 10 }
+        },
+        "required": ["text"]
+      },
+      "execute": "index.ts:extractPdfChecklist"
+    }
+  ]
+}

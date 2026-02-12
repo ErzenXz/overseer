@@ -20,22 +20,6 @@ import { v4 as uuidv4 } from "uuid";
 
 const logger = createLogger("tools:subagent");
 
-// Valid sub-agent types
-const SUB_AGENT_TYPES: SubAgentType[] = [
-  "code",
-  "file",
-  "git",
-  "system",
-  "web",
-  "docker",
-  "db",
-  "security",
-  "network",
-  "planner",
-  "evaluator",
-  "coordinator",
-];
-
 type RequestedSubAgentType = SubAgentType | "auto";
 
 export const spawnSubAgent = tool<any, any>({
@@ -47,18 +31,7 @@ CRITICAL MODEL NOTE:
 - Treat sub-agent output as high-signal delegated work that is returned to the main agent for final synthesis.
 
 AVAILABLE TYPES:
-- code: Code generation, modification, review, refactoring, and debugging.
-- file: File system operations — bulk copy, move, rename, search, and organization.
-- git: Version control — commits, branches, merges, rebases, conflict resolution.
-- system: System administration — processes, services, packages, cron, users.
-- web: Web scraping, API calls, curl/wget operations, endpoint testing.
-- docker: Container management — build, run, compose, images, volumes, networks.
-- db: Database operations — queries, migrations, backups, schema inspection.
-- security: Security auditing, firewall rules, SSL certs, user permissions.
-- network: Network diagnostics — ping, traceroute, DNS, port scanning, connectivity.
-- planner: Complex plan decomposition and dependency graph design.
-- evaluator: Quality scoring and validation of intermediate outputs.
-- coordinator: Multi-worker orchestration and result merging.
+- generic: General delegated worker with the same tools as the main agent.
 
 WHEN TO USE:
 - Use for tasks that require focused domain expertise or multi-step operations.
@@ -76,21 +49,7 @@ EXECUTION MODES:
 - wait_for_result: true — blocks until the sub-agent finishes and returns the result. Use only when you immediately need the output to continue.`,
   inputSchema: z.object({
     type: z
-      .enum([
-        "auto",
-        "code",
-        "file",
-        "git",
-        "system",
-        "web",
-        "docker",
-        "db",
-        "security",
-        "network",
-        "planner",
-        "evaluator",
-        "coordinator",
-      ])
+      .enum(["auto", "generic"])
       .describe(
         "The type of specialized sub-agent to spawn. Use 'auto' for generic task routing.",
       ),

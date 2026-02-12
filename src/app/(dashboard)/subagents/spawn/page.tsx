@@ -12,7 +12,7 @@ async function spawnSubAgentAction(formData: FormData) {
   "use server";
 
   const parentSessionId = String(formData.get("parent_session_id") ?? "manual-dashboard").trim();
-  const agentType = String(formData.get("agent_type") ?? "code").trim() as ReturnType<
+  const agentType = String(formData.get("agent_type") ?? "generic").trim() as ReturnType<
     typeof subAgentManager.getAllSubAgentTypes
   >[number];
   const name = String(formData.get("name") ?? "").trim();
@@ -54,7 +54,7 @@ export default async function SpawnSubAgentPage({
         <div>
           <h1 className="text-xl text-white font-(--font-mono)">Spawn Sub-Agent</h1>
           <p className="text-text-secondary mt-1 text-pretty">
-            Manually create a specialized sub-agent task for testing and orchestration workflows.
+            Manually create a generic delegated sub-agent task for testing and orchestration workflows.
           </p>
         </div>
         <Link

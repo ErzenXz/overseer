@@ -60,7 +60,19 @@ export function SkillsList({ skills }: SkillsListProps) {
   const parseTriggers = (triggers: string | null): string[] => {
     if (!triggers) return [];
     try {
-      return JSON.parse(triggers);
+      const first = JSON.parse(triggers) as unknown;
+      const second =
+        typeof first === "string"
+          ? (JSON.parse(first) as unknown)
+          : first;
+
+      if (!Array.isArray(second)) {
+        return [];
+      }
+
+      return second.filter(
+        (item): item is string => typeof item === "string",
+      );
     } catch {
       return [];
     }
