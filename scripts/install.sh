@@ -1298,6 +1298,17 @@ EOF
 
     # Enable main service
     sudo_cmd systemctl enable overseer 2>/dev/null || true
+    if ! sudo_cmd systemctl restart overseer; then
+        print_error "Failed to start overseer service"
+        sudo_cmd journalctl -u overseer -n 50 --no-pager || true
+        exit 1
+    fi
+
+    if ! sudo_cmd systemctl is-active --quiet overseer; then
+        print_error "overseer service is not active after install"
+        sudo_cmd journalctl -u overseer -n 50 --no-pager || true
+        exit 1
+    fi
 
     print_success "Systemd services created"
     print_info "Services: overseer, overseer-telegram, overseer-discord, overseer-whatsapp"
