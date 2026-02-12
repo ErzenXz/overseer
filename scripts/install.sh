@@ -43,6 +43,11 @@ OVERSEER_USER="${OVERSEER_USER:-$USER}"
 NODE_VERSION="20"
 MIN_MEMORY_MB=512
 MIN_DISK_GB=1
+OVERSEER_DOMAIN="${OVERSEER_DOMAIN:-}"
+OVERSEER_TLS_EMAIL="${OVERSEER_TLS_EMAIL:-}"
+OVERSEER_ENABLE_TLS="${OVERSEER_ENABLE_TLS:-false}"
+OVERSEER_ADMIN_USERNAME="${OVERSEER_ADMIN_USERNAME:-admin}"
+OVERSEER_ADMIN_PASSWORD="${OVERSEER_ADMIN_PASSWORD:-}"
 
 # Will be set dynamically
 OVERSEER_PORT=""
@@ -656,7 +661,11 @@ generate_secrets() {
 
     SESSION_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -A n -t x1 | tr -d ' \n')
     ENCRYPTION_KEY=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -A n -t x1 | tr -d ' \n')
-    ADMIN_PASSWORD=$(openssl rand -base64 24 2>/dev/null | tr -dc 'a-zA-Z0-9!@#' | head -c 20 || echo "Overseer$(date +%s | tail -c 8)")
+    if [ -n "${OVERSEER_ADMIN_PASSWORD}" ]; then
+        ADMIN_PASSWORD="${OVERSEER_ADMIN_PASSWORD}"
+    else
+        ADMIN_PASSWORD=$(openssl rand -base64 24 2>/dev/null | tr -dc 'a-zA-Z0-9!@#' | head -c 20 || echo "Overseer$(date +%s | tail -c 8)")
+    fi
 
     print_success "Secrets generated"
 }
@@ -693,10 +702,19 @@ configure_environment() {
 
     # Detect public IP for BASE_URL
     local public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "localhost")
-    local base_url="http://${public_ip}:${OVERSEER_PORT}"
+    local base_url
+    if [ -n "${OVERSEER_DOMAIN}" ]; then
+        if [ "${OVERSEER_ENABLE_TLS}" = "true" ]; then
+            base_url="https://${OVERSEER_DOMAIN}"
+        else
+            base_url="http://${OVERSEER_DOMAIN}"
+        fi
+    else
+        base_url="http://${public_ip}:${OVERSEER_PORT}"
+    fi
 
     # Interactive configuration (if stdin is a terminal)
-    local admin_username="admin"
+    local admin_username="${OVERSEER_ADMIN_USERNAME}"
     local openai_key=""
     local anthropic_key=""
     local telegram_token=""
@@ -709,8 +727,8 @@ configure_environment() {
         echo ""
 
         # Admin
-        read -p "  Admin username [admin]: " input_admin
-        admin_username=${input_admin:-admin}
+        read -p "  Admin username [${OVERSEER_ADMIN_USERNAME}]: " input_admin
+        admin_username=${input_admin:-${OVERSEER_ADMIN_USERNAME}}
 
         # LLM Provider
         echo ""
@@ -786,6 +804,118 @@ EOF
 
     chmod 600 ".env"
     print_success "Environment configured"
+}
+
+# =========================================
+# Optional Nginx + TLS setup (cloud mode)
+# =========================================
+
+setup_nginx_proxy() {
+    if [[ "$OS" == "macos" ]] || [[ "${OS:-}" == "wsl" ]]; then
+        return 0
+    fi
+
+    if [ -z "${OVERSEER_DOMAIN}" ]; then
+        return 0
+    fi
+
+    if ! command_exists nginx; then
+        print_substep "Installing nginx..."
+        case "$PKG_MANAGER" in
+            apt) sudo_cmd apt-get install -y nginx >/dev/null 2>&1 ;;
+            dnf) sudo_cmd dnf install -y nginx >/dev/null 2>&1 ;;
+            yum) sudo_cmd yum install -y nginx >/dev/null 2>&1 ;;
+            *) print_warning "Unsupported package manager for nginx auto-install"; return 0 ;;
+        esac
+    fi
+
+    print_step "Configuring nginx reverse proxy for ${OVERSEER_DOMAIN}..."
+
+    local nginx_conf="/etc/nginx/sites-available/overseer"
+    sudo_cmd tee "$nginx_conf" > /dev/null << EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${OVERSEER_DOMAIN};
+
+    location / {
+        proxy_pass http://127.0.0.1:${OVERSEER_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+    }
+}
+EOF
+
+    if [ -d "/etc/nginx/sites-enabled" ]; then
+        sudo_cmd ln -sf "$nginx_conf" /etc/nginx/sites-enabled/overseer
+        sudo_cmd rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+    fi
+
+    sudo_cmd nginx -t >/dev/null 2>&1 || {
+        print_warning "nginx config validation failed"
+        return 0
+    }
+
+    sudo_cmd systemctl enable nginx >/dev/null 2>&1 || true
+    sudo_cmd systemctl restart nginx >/dev/null 2>&1 || true
+
+    if command_exists ufw; then
+        sudo_cmd ufw allow 80/tcp comment "HTTP" 2>/dev/null || true
+        sudo_cmd ufw allow 443/tcp comment "HTTPS" 2>/dev/null || true
+    fi
+
+    print_success "nginx reverse proxy configured"
+}
+
+setup_letsencrypt_tls() {
+    if [ "${OVERSEER_ENABLE_TLS}" != "true" ] || [ -z "${OVERSEER_DOMAIN}" ]; then
+        return 0
+    fi
+
+    if [[ "$OS" == "macos" ]] || [[ "${OS:-}" == "wsl" ]]; then
+        return 0
+    fi
+
+    if [ -z "${OVERSEER_TLS_EMAIL}" ]; then
+        print_warning "OVERSEER_TLS_EMAIL not set - skipping certbot TLS setup"
+        return 0
+    fi
+
+    print_step "Configuring Let's Encrypt TLS for ${OVERSEER_DOMAIN}..."
+
+    case "$PKG_MANAGER" in
+        apt)
+            sudo_cmd apt-get install -y certbot python3-certbot-nginx >/dev/null 2>&1
+            ;;
+        dnf)
+            sudo_cmd dnf install -y certbot python3-certbot-nginx >/dev/null 2>&1 || true
+            ;;
+        yum)
+            sudo_cmd yum install -y certbot python3-certbot-nginx >/dev/null 2>&1 || true
+            ;;
+        *)
+            print_warning "Unsupported package manager for certbot auto-install"
+            return 0
+            ;;
+    esac
+
+    sudo_cmd certbot --nginx \
+        --non-interactive \
+        --agree-tos \
+        --redirect \
+        --email "${OVERSEER_TLS_EMAIL}" \
+        -d "${OVERSEER_DOMAIN}" >/dev/null 2>&1 || {
+        print_warning "certbot failed - verify DNS resolves to this VPS and retry manually"
+        return 0
+    }
+
+    print_success "TLS configured with Let's Encrypt"
 }
 
 # =========================================
@@ -1191,6 +1321,10 @@ main() {
     else
         create_systemd_services
     fi
+
+    # Optional cloud-mode reverse proxy + TLS
+    setup_nginx_proxy
+    setup_letsencrypt_tls
 
     create_management_script
     print_final_success

@@ -57,6 +57,26 @@ This script will:
 6. ✅ Configure firewall
 7. ✅ Start services
 
+### Managed Cloud (Non-Interactive Bootstrap)
+
+For orchestrated deployments (e.g. provisioned from a control plane), you can run the installer non-interactively with domain + TLS settings:
+
+```bash
+OVERSEER_DOMAIN=agent.example.com \
+OVERSEER_ENABLE_TLS=true \
+OVERSEER_TLS_EMAIL=ops@example.com \
+OVERSEER_ADMIN_USERNAME=admin \
+OVERSEER_ADMIN_PASSWORD='change-me-now' \
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | bash
+```
+
+When these variables are provided, the installer will:
+
+- configure the app `BASE_URL` using your domain
+- configure NGINX reverse proxy to the Overseer app port
+- optionally request Let's Encrypt certificates via HTTP-01 (`OVERSEER_ENABLE_TLS=true`)
+- preserve SSH and existing firewall safety behavior
+
 ---
 
 ## VPS Deployment
