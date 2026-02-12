@@ -8,6 +8,8 @@ import { SessionManager } from "../../../lib/session-manager";
 import { agentSessionsModel } from "../../../database/models/agent-sessions";
 import { getCurrentUser } from "../../../lib/auth";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/sessions
  * Get all active sessions or specific session by ID

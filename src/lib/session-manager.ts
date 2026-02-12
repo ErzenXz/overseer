@@ -532,8 +532,29 @@ export class SessionManager {
 
 // Run cleanup periodically
 let cleanupInterval: NodeJS.Timeout | null = null;
+let exitHandlersRegistered = false;
+
+function isBuildProcess(): boolean {
+  if (process.env.npm_lifecycle_event === "build") {
+    return true;
+  }
+  return process.argv.join(" ").includes("next build");
+}
+
+function registerExitHandlers(): void {
+  if (exitHandlersRegistered) return;
+  exitHandlersRegistered = true;
+
+  process.on("exit", () => {
+    stopSessionCleanup();
+  });
+}
 
 export function startSessionCleanup(): void {
+  if (isBuildProcess()) {
+    return;
+  }
+
   if (cleanupInterval) {
     logger.warn("Session cleanup already running");
     return;
@@ -546,6 +567,8 @@ export function startSessionCleanup(): void {
   cleanupInterval = setInterval(() => {
     SessionManager.cleanup();
   }, CLEANUP_INTERVAL_MS);
+
+  registerExitHandlers();
 
   // Initial cleanup
   SessionManager.cleanup();
@@ -561,8 +584,3 @@ export function stopSessionCleanup(): void {
 
 // Start cleanup on module load
 startSessionCleanup();
-
-// Cleanup on exit
-process.on("exit", () => {
-  stopSessionCleanup();
-});

@@ -88,6 +88,7 @@ function createDatabaseConnection(): Database.Database {
 
 // Create database connection
 const db = createDatabaseConnection();
+let schemaInitialized = false;
 
 /**
  * Ensure a table has all expected columns, adding any that are missing.
@@ -126,6 +127,10 @@ function migrateTableColumns(
 
 // Initialize schema
 function initializeSchema() {
+  if (schemaInitialized) {
+    return;
+  }
+
   const schemaPath = join(__dirname, "schema.sql");
   if (existsSync(schemaPath)) {
     const schema = readFileSync(schemaPath, "utf-8");
@@ -234,7 +239,12 @@ function initializeSchema() {
     { name: "created_at", definition: "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP" },
     { name: "updated_at", definition: "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP" },
   ]);
+
+  schemaInitialized = true;
 }
+
+// Ensure the web app always has schema available, including during build workers.
+initializeSchema();
 
 /**
  * Get the current database file path

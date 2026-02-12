@@ -1103,11 +1103,17 @@ init_database() {
     cd "$OVERSEER_DIR"
     mkdir -p data logs
 
-    # Run database initialization
+    # Run database initialization and fail fast on errors.
     if command_exists pnpm; then
-        pnpm run db:init 2>&1 | grep -E "(success|created|admin|initialized|error)" || true
+        if ! pnpm run db:init; then
+            print_error "Database initialization failed"
+            exit 1
+        fi
     else
-        npm run db:init 2>&1 | grep -E "(success|created|admin|initialized|error)" || true
+        if ! npm run db:init; then
+            print_error "Database initialization failed"
+            exit 1
+        fi
     fi
 
     print_success "Database initialized"
@@ -1125,9 +1131,15 @@ build_app() {
     print_substep "Cleaning previous build..."
     rm -rf .next
     if command_exists pnpm; then
-        pnpm run build 2>&1 | tail -10
+        if ! pnpm run build; then
+            print_error "Application build failed"
+            exit 1
+        fi
     else
-        npm run build 2>&1 | tail -10
+        if ! npm run build; then
+            print_error "Application build failed"
+            exit 1
+        fi
     fi
 
     # Verify build output exists
