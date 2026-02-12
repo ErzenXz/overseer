@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { getCurrentUser } from "@/lib/auth";
 import { runAgentStream } from "@/agent";
 import { conversationsModel, messagesModel } from "@/database";
 import { getModelById } from "@/agent/providers";
 import { createLogger } from "@/lib/logger";
+import { resumableStreams } from "@/lib/resumable-streams";
 
 const logger = createLogger("chat-api");
 
@@ -19,10 +21,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { message, conversationId: existingConversationId, providerId } = body;
+    const {
+      message,
+      conversationId: existingConversationId,
+      providerId,
+      planMode,
+      steering,
+      streamId: requestedStreamId,
+    } = body;
 
     if (!message || typeof message !== "string") {
-      return NextResponse.json({ error: "Message is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Message is required" },
+        { status: 400 },
+      );
     }
 
     // Get or create conversation
@@ -32,7 +44,10 @@ export async function POST(request: NextRequest) {
     if (conversationId) {
       conversation = conversationsModel.findById(conversationId);
       if (!conversation) {
-        return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "Conversation not found" },
+          { status: 404 },
+        );
       }
     } else {
       // Create new conversation for web chat
@@ -60,48 +75,69 @@ export async function POST(request: NextRequest) {
       conversationId,
       providerId,
       messageLength: message.length,
+      planMode: Boolean(planMode),
     });
+
+    const streamId = requestedStreamId || randomUUID();
+    resumableStreams.create(streamId, conversationId);
 
     // Create streaming response
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        const sendEvent = (event: unknown) => {
+          const seq = resumableStreams.appendEvent(streamId, event);
+          const payload = {
+            ...(event as Record<string, unknown>),
+            seq,
+            streamId,
+          };
+          const line = `data: ${JSON.stringify(payload)}\n\n`;
+          controller.enqueue(encoder.encode(line));
+        };
+
         try {
+          sendEvent({
+            type: "stream_initialized",
+            conversationId,
+          });
+
           // Send conversation ID if newly created
           if (!existingConversationId) {
-            const idEvent = `data: ${JSON.stringify({
+            sendEvent({
               type: "conversation_id",
               conversationId,
-            })}\n\n`;
-            controller.enqueue(encoder.encode(idEvent));
+            });
           }
 
           let fullText = "";
-          const toolCalls: { name: string; args: unknown; result?: unknown }[] = [];
+          const toolCalls: { name: string; args: unknown; result?: unknown }[] =
+            [];
 
           const result = await runAgentStream(message, {
             conversationId,
             model: model || undefined,
+            planMode: Boolean(planMode),
+            steering,
             onToolCall: (toolName, args) => {
-              const event = `data: ${JSON.stringify({
+              sendEvent({
                 type: "tool_call",
                 toolName,
                 args,
-              })}\n\n`;
-              controller.enqueue(encoder.encode(event));
+              });
               toolCalls.push({ name: toolName, args });
             },
             onToolResult: (toolName, result) => {
-              const event = `data: ${JSON.stringify({
+              sendEvent({
                 type: "tool_result",
                 toolName,
-                result: typeof result === "string" ? result.slice(0, 500) : result,
-              })}\n\n`;
-              controller.enqueue(encoder.encode(event));
+                result:
+                  typeof result === "string" ? result.slice(0, 500) : result,
+              });
 
               // Update tool call with result
               const tc = toolCalls.find(
-                (t) => t.name === toolName && t.result === undefined
+                (t) => t.name === toolName && t.result === undefined,
               );
               if (tc) {
                 tc.result = result;
@@ -112,11 +148,10 @@ export async function POST(request: NextRequest) {
           // Stream text
           for await (const chunk of result.textStream) {
             fullText += chunk;
-            const event = `data: ${JSON.stringify({
+            sendEvent({
               type: "text_delta",
               text: chunk,
-            })}\n\n`;
-            controller.enqueue(encoder.encode(event));
+            });
           }
 
           // Wait for final text
@@ -134,12 +169,13 @@ export async function POST(request: NextRequest) {
           });
 
           // Send done event
-          const doneEvent = `data: ${JSON.stringify({
+          sendEvent({
             type: "done",
             fullText: finalText,
             usage,
-          })}\n\n`;
-          controller.enqueue(encoder.encode(doneEvent));
+          });
+
+          resumableStreams.complete(streamId, "completed");
 
           controller.close();
         } catch (error) {
@@ -147,11 +183,11 @@ export async function POST(request: NextRequest) {
             error: error instanceof Error ? error.message : String(error),
           });
 
-          const errorEvent = `data: ${JSON.stringify({
+          sendEvent({
             type: "error",
             error: error instanceof Error ? error.message : "Unknown error",
-          })}\n\n`;
-          controller.enqueue(encoder.encode(errorEvent));
+          });
+          resumableStreams.complete(streamId, "error");
           controller.close();
         }
       },
@@ -171,47 +207,79 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 // Get active providers for model selection
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
+    const { searchParams } = new URL(request.url);
+    const streamId = searchParams.get("streamId");
+    const fromSeq = Number(searchParams.get("from") ?? "0");
+
+    if (streamId) {
+      const status = resumableStreams.getStatus(streamId);
+      if (!status) {
+        return NextResponse.json(
+          { error: "Stream not found" },
+          { status: 404 },
+        );
+      }
+
+      const events = resumableStreams.getFrom(
+        streamId,
+        Number.isFinite(fromSeq) ? fromSeq : 0,
+      );
+      return NextResponse.json({
+        streamId,
+        status: status.status,
+        updatedAt: status.updated_at,
+        events,
+      });
+    }
+
     const { providersModel } = await import("@/database");
     const { getModelInfo } = await import("@/agent/provider-info");
+    const { findDynamicModelInfo } =
+      await import("@/agent/dynamic-provider-catalog");
     const providers = providersModel.findActive();
 
     return NextResponse.json({
-      providers: providers.map((p) => {
-        const modelInfo = getModelInfo(p.name as Parameters<typeof getModelInfo>[0], p.model);
-        return {
-          id: p.id,
-          name: p.name,
-          displayName: p.display_name,
-          model: p.model,
-          isDefault: p.is_default,
-          // Model capability fields (undefined if model not found in registry)
-          supportsThinking: modelInfo?.supportsThinking ?? false,
-          supportsTools: modelInfo?.supportsTools ?? false,
-          supportsMultimodal: modelInfo?.supportsMultimodal ?? false,
-          reasoning: modelInfo?.reasoning ?? false,
-          costTier: modelInfo?.costTier ?? "medium",
-          contextWindow: modelInfo?.contextWindow ?? 0,
-          maxOutput: modelInfo?.maxOutput ?? 0,
-        };
-      }),
+      providers: await Promise.all(
+        providers.map(async (p) => {
+          const dynamicInfo = await findDynamicModelInfo(p.name, p.model);
+          const modelInfo =
+            dynamicInfo ??
+            getModelInfo(p.name as Parameters<typeof getModelInfo>[0], p.model);
+          return {
+            id: p.id,
+            name: p.name,
+            displayName: p.display_name,
+            model: p.model,
+            isDefault: p.is_default,
+            // Model capability fields (undefined if model not found in registry)
+            supportsThinking: modelInfo?.supportsThinking ?? false,
+            supportsTools: modelInfo?.supportsTools ?? false,
+            supportsMultimodal: modelInfo?.supportsMultimodal ?? false,
+            reasoning: modelInfo?.reasoning ?? false,
+            costTier: modelInfo?.costTier ?? "medium",
+            contextWindow: modelInfo?.contextWindow ?? 0,
+            maxOutput: modelInfo?.maxOutput ?? 0,
+          };
+        }),
+      ),
     });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -20,6 +20,7 @@ import type { LanguageModel } from "ai";
 import { providersModel } from "../database/index";
 import { decrypt } from "../lib/crypto";
 import { createLogger } from "../lib/logger";
+import { getDynamicProviderCatalog } from "./dynamic-provider-catalog";
 import {
   PROVIDER_INFO,
   type ProviderName,
@@ -43,12 +44,57 @@ export {
 } from "./provider-info";
 
 interface ProviderConfig {
-  name: ProviderName;
+  name: string;
   apiKey?: string;
   baseUrl?: string;
   model: string;
   maxTokens?: number;
   temperature?: number;
+  providerNpm?: string;
+}
+
+interface ActiveModelEntry {
+  providerId: number;
+  providerName: string;
+  modelId: string;
+  model: LanguageModel;
+  priority: number;
+}
+
+function normalizeProviderRuntimeName(
+  name: string,
+  providerNpm?: string,
+): string {
+  if (providerNpm === "@ai-sdk/openai") return "openai";
+  if (providerNpm === "@ai-sdk/anthropic") return "anthropic";
+  if (providerNpm === "@ai-sdk/google") return "google";
+  if (providerNpm === "@ai-sdk/azure") return "azure";
+  if (providerNpm === "@ai-sdk/groq") return "groq";
+  if (providerNpm === "@ai-sdk/cohere") return "cohere";
+  if (providerNpm === "@ai-sdk/mistral") return "mistral";
+  if (providerNpm === "@ai-sdk/xai") return "xai";
+  if (providerNpm === "@ai-sdk/perplexity") return "perplexity";
+  if (providerNpm === "@ai-sdk/fireworks") return "fireworks";
+  if (providerNpm === "@ai-sdk/togetherai") return "togetherai";
+  if (providerNpm === "@ai-sdk/deepinfra") return "deepinfra";
+  if (providerNpm === "@ai-sdk/deepseek") return "deepseek";
+  if (providerNpm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
+  if (providerNpm === "@ai-sdk/openai-compatible") return "openai-compatible";
+
+  if (name in PROVIDER_INFO) return name;
+  return "openai-compatible";
+}
+
+function parseProviderConfig(provider: {
+  config?: string | null;
+}): Record<string, unknown> {
+  if (!provider.config) return {};
+  try {
+    const parsed = JSON.parse(provider.config);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -56,7 +102,12 @@ interface ProviderConfig {
  * Uses Vercel AI SDK v6 patterns
  */
 export function createModel(config: ProviderConfig): LanguageModel {
-  switch (config.name) {
+  const runtimeName = normalizeProviderRuntimeName(
+    config.name,
+    config.providerNpm,
+  );
+
+  switch (runtimeName) {
     case "openai": {
       const openai = createOpenAI({
         apiKey: config.apiKey,
@@ -188,7 +239,18 @@ export function createModel(config: ProviderConfig): LanguageModel {
     }
 
     default:
-      throw new Error(`Unknown provider: ${config.name}`);
+      if (!config.baseUrl) {
+        throw new Error(
+          `Unknown provider '${config.name}'. For custom providers, set a base URL and API key.`,
+        );
+      }
+
+      const compatible = createOpenAI({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+      });
+
+      return compatible(config.model);
   }
 }
 
@@ -257,7 +319,8 @@ function detectProviderFromEnv(): ProviderConfig | null {
     {
       key: "FIREWORKS_API_KEY",
       name: "fireworks",
-      model: process.env.FIREWORKS_MODEL || "accounts/fireworks/models/deepseek-v3",
+      model:
+        process.env.FIREWORKS_MODEL || "accounts/fireworks/models/deepseek-v3",
     },
     {
       key: "TOGETHER_API_KEY",
@@ -277,7 +340,8 @@ function detectProviderFromEnv(): ProviderConfig | null {
     {
       key: "AWS_ACCESS_KEY_ID",
       name: "amazon-bedrock",
-      model: process.env.BEDROCK_MODEL || "anthropic.claude-sonnet-4-20250514-v1:0",
+      model:
+        process.env.BEDROCK_MODEL || "anthropic.claude-sonnet-4-20250514-v1:0",
     },
   ];
 
@@ -318,7 +382,9 @@ export function getDefaultModel(): LanguageModel | null {
     // Try environment fallback
     const envProvider = detectProviderFromEnv();
     if (envProvider) {
-      logger.info("Using provider from environment", { provider: envProvider.name });
+      logger.info("Using provider from environment", {
+        provider: envProvider.name,
+      });
       try {
         return createModel(envProvider);
       } catch (error) {
@@ -330,17 +396,23 @@ export function getDefaultModel(): LanguageModel | null {
   }
 
   try {
+    const providerConfig = parseProviderConfig(provider);
+
     const apiKey = provider.api_key_encrypted
       ? decrypt(provider.api_key_encrypted)
       : undefined;
 
     return createModel({
-      name: provider.name as ProviderName,
+      name: provider.name,
       apiKey,
       baseUrl: provider.base_url || undefined,
       model: provider.model,
       maxTokens: provider.max_tokens,
       temperature: provider.temperature,
+      providerNpm:
+        typeof providerConfig.provider_npm === "string"
+          ? providerConfig.provider_npm
+          : undefined,
     });
   } catch (error) {
     logger.error("Failed to create default model", {
@@ -362,17 +434,23 @@ export function getModelById(providerId: number): LanguageModel | null {
   }
 
   try {
+    const providerConfig = parseProviderConfig(provider);
+
     const apiKey = provider.api_key_encrypted
       ? decrypt(provider.api_key_encrypted)
       : undefined;
 
     return createModel({
-      name: provider.name as ProviderName,
+      name: provider.name,
       apiKey,
       baseUrl: provider.base_url || undefined,
       model: provider.model,
       maxTokens: provider.max_tokens,
       temperature: provider.temperature,
+      providerNpm:
+        typeof providerConfig.provider_npm === "string"
+          ? providerConfig.provider_npm
+          : undefined,
     });
   } catch (error) {
     logger.error("Failed to create model", {
@@ -386,23 +464,32 @@ export function getModelById(providerId: number): LanguageModel | null {
 /**
  * Get all active models (for fallback)
  */
-export function getActiveModels(): { providerId: number; model: LanguageModel }[] {
+export function getActiveModels(): {
+  providerId: number;
+  model: LanguageModel;
+}[] {
   const providers = providersModel.findActive();
   const models: { providerId: number; model: LanguageModel }[] = [];
 
   for (const provider of providers) {
     try {
+      const providerConfig = parseProviderConfig(provider);
+
       const apiKey = provider.api_key_encrypted
         ? decrypt(provider.api_key_encrypted)
         : undefined;
 
       const model = createModel({
-        name: provider.name as ProviderName,
+        name: provider.name,
         apiKey,
         baseUrl: provider.base_url || undefined,
         model: provider.model,
         maxTokens: provider.max_tokens,
         temperature: provider.temperature,
+        providerNpm:
+          typeof providerConfig.provider_npm === "string"
+            ? providerConfig.provider_npm
+            : undefined,
       });
 
       models.push({ providerId: provider.id, model });
@@ -415,6 +502,91 @@ export function getActiveModels(): { providerId: number; model: LanguageModel }[
   }
 
   return models;
+}
+
+/**
+ * Get active model entries with metadata for deterministic fallback chains.
+ */
+export function getActiveModelEntries(maxModels = 5): ActiveModelEntry[] {
+  const providers = providersModel.findActive();
+  const entries: ActiveModelEntry[] = [];
+
+  for (const provider of providers) {
+    try {
+      const providerConfig = parseProviderConfig(provider);
+      const apiKey = provider.api_key_encrypted
+        ? decrypt(provider.api_key_encrypted)
+        : undefined;
+
+      const model = createModel({
+        name: provider.name,
+        apiKey,
+        baseUrl: provider.base_url || undefined,
+        model: provider.model,
+        maxTokens: provider.max_tokens,
+        temperature: provider.temperature,
+        providerNpm:
+          typeof providerConfig.provider_npm === "string"
+            ? providerConfig.provider_npm
+            : undefined,
+      });
+
+      entries.push({
+        providerId: provider.id,
+        providerName: provider.name,
+        modelId: provider.model,
+        model,
+        priority: provider.priority ?? 0,
+      });
+    } catch (error) {
+      logger.warn("Skipping provider in fallback chain due to error", {
+        providerId: provider.id,
+        providerName: provider.name,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return entries
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, Math.max(1, Math.min(maxModels, 5)));
+}
+
+/**
+ * Build a deterministic fallback chain up to 5 models.
+ */
+export function buildFallbackModelChain(
+  preferredModel: LanguageModel | null,
+  maxModels = 5,
+): LanguageModel[] {
+  const chain: LanguageModel[] = [];
+  const seen = new Set<string>();
+
+  const pushModel = (model: LanguageModel | null) => {
+    if (!model) return;
+    const modelId =
+      (model as { modelId?: string }).modelId ?? `unknown:${Math.random()}`;
+    if (seen.has(modelId)) return;
+    seen.add(modelId);
+    chain.push(model);
+  };
+
+  pushModel(preferredModel);
+
+  for (const entry of getActiveModelEntries(maxModels)) {
+    if (chain.length >= maxModels) break;
+    pushModel(entry.model);
+  }
+
+  return chain.slice(0, Math.max(1, Math.min(maxModels, 5)));
+}
+
+export async function getProviderNpmForDynamicProvider(
+  providerName: string,
+): Promise<string | undefined> {
+  const catalog = await getDynamicProviderCatalog();
+  const provider = catalog.find((p) => p.id === providerName);
+  return provider?.npm;
 }
 
 /**

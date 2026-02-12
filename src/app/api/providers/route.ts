@@ -9,7 +9,7 @@ export async function GET() {
   }
 
   const providers = providersModel.findAll();
-  
+
   // Don't expose API keys
   const safeProviders = providers.map((p) => ({
     ...p,
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
       priority: body.priority || 0,
       max_tokens: body.max_tokens || 4096,
       temperature: body.temperature || 0.7,
+      config: body.config,
     });
 
     return NextResponse.json({
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
     console.error("Error creating provider:", error);
     return NextResponse.json(
       { error: "Failed to create provider" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

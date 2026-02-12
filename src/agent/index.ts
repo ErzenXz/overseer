@@ -1,11 +1,29 @@
 // Main agent exports
-export { runAgent, runAgentStream, simpleChat, type AgentOptions, type AgentResult } from "./agent";
+export {
+  runAgent,
+  runAgentStream,
+  simpleChat,
+  type AgentOptions,
+  type AgentResult,
+} from "./agent";
 
 // Agent initialization
-export { initializeAgent, shutdownAgent, getAgentStatus, type InitResult } from "./init";
+export {
+  initializeAgent,
+  shutdownAgent,
+  getAgentStatus,
+  type InitResult,
+} from "./init";
 
 // Soul management
-export { loadSoul, saveSoul, getSoulPath, isUsingCustomSoul, resetToDefaultSoul, getDefaultSoul } from "./soul";
+export {
+  loadSoul,
+  saveSoul,
+  getSoulPath,
+  isUsingCustomSoul,
+  resetToDefaultSoul,
+  getDefaultSoul,
+} from "./soul";
 
 // Provider management
 export {
@@ -61,6 +79,7 @@ export {
   findBySubAgentId,
   findByParentSession,
   executeTask as executeSubAgentTask,
+  resumeTask as resumeSubAgentTask,
   getStats as getSubAgentStats,
   getAllSubAgentTypes,
   getSubAgentConfig,
@@ -68,3 +87,8 @@ export {
   type SubAgent,
   type TaskResult,
 } from "./subagents/manager";
+
+export {
+  runPlanModeOrchestration,
+  type OrchestrationResult,
+} from "./orchestrator";

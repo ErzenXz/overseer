@@ -7,23 +7,24 @@ import { db } from "../../database/db";
 import { createLogger } from "../../lib/logger";
 import { circuitBreakerManager } from "../../lib/circuit-breaker";
 import { poolManager } from "../../lib/resource-pool";
+import { agentCache } from "@/lib/agent-cache";
 import { v4 as uuidv4 } from "uuid";
 import { generateText, stepCountIs, type LanguageModel, type Tool } from "ai";
 
 const logger = createLogger("sub-agents");
 
-export type SubAgentType = 
-  | "code"        // Code generation and modification
-  | "file"        // File operations specialist
-  | "git"         // Git operations specialist
-  | "system"      // System administration
-  | "web"         // Web scraping and API calls
-  | "docker"      // Container management
-  | "db"          // Database operations
-  | "security"    // Security and firewall
-  | "network"     // Network diagnostics
-  | "planner"     // Task decomposition and planning
-  | "evaluator"   // Quality evaluation and review
+export type SubAgentType =
+  | "code" // Code generation and modification
+  | "file" // File operations specialist
+  | "git" // Git operations specialist
+  | "system" // System administration
+  | "web" // Web scraping and API calls
+  | "docker" // Container management
+  | "db" // Database operations
+  | "security" // Security and firewall
+  | "network" // Network diagnostics
+  | "planner" // Task decomposition and planning
+  | "evaluator" // Quality evaluation and review
   | "coordinator"; // Multi-agent coordination
 
 export interface SubAgent {
@@ -61,6 +62,7 @@ export interface TaskResult {
   execution_time_ms: number;
   error?: string;
   agent_id?: string;
+  resumed?: boolean;
 }
 
 export interface ExecutionNode {
@@ -83,13 +85,16 @@ export interface ExecutionGraph {
 }
 
 // Sub-agent configurations
-const SUB_AGENT_CONFIGS: Record<SubAgentType, {
-  name: string;
-  description: string;
-  system_prompt: string;
-  tools?: string[];
-  priority?: number;
-}> = {
+const SUB_AGENT_CONFIGS: Record<
+  SubAgentType,
+  {
+    name: string;
+    description: string;
+    system_prompt: string;
+    tools?: string[];
+    priority?: number;
+  }
+> = {
   code: {
     name: "Code Agent",
     description: "Specializes in code generation, modification, and review",
@@ -296,34 +301,35 @@ for (const type of Object.keys(SUB_AGENT_CONFIGS) as SubAgentType[]) {
 function updateHealthMetrics(
   type: SubAgentType,
   success: boolean,
-  executionTime: number
+  executionTime: number,
 ): void {
   const metrics = healthMetrics.get(type)!;
-  
+
   metrics.totalExecutions++;
   metrics.totalExecutionTime += executionTime;
   metrics.lastExecutionAt = Date.now();
-  
+
   if (success) {
     metrics.successCount++;
   } else {
     metrics.failureCount++;
   }
-  
+
   metrics.successRate = metrics.successCount / metrics.totalExecutions;
-  metrics.averageExecutionTime = metrics.totalExecutionTime / metrics.totalExecutions;
-  
+  metrics.averageExecutionTime =
+    metrics.totalExecutionTime / metrics.totalExecutions;
+
   // Keep last 50 executions
   metrics.recentExecutions.push({
     timestamp: Date.now(),
     success,
     executionTime,
   });
-  
+
   if (metrics.recentExecutions.length > 50) {
     metrics.recentExecutions.shift();
   }
-  
+
   healthMetrics.set(type, metrics);
 }
 
@@ -356,37 +362,42 @@ export function detectPerformanceDegradation(type: SubAgentType): {
   if (!metrics || metrics.totalExecutions < 10) {
     return { degraded: false, reasons: [] };
   }
-  
+
   const reasons: string[] = [];
   let degraded = false;
-  
+
   // Check success rate
   if (metrics.successRate < 0.7) {
     degraded = true;
-    reasons.push(`Low success rate: ${(metrics.successRate * 100).toFixed(1)}%`);
+    reasons.push(
+      `Low success rate: ${(metrics.successRate * 100).toFixed(1)}%`,
+    );
   }
-  
+
   // Check recent failures
   const recentCount = Math.min(10, metrics.recentExecutions.length);
   const recentFailures = metrics.recentExecutions
     .slice(-recentCount)
     .filter((e) => !e.success).length;
-  
+
   if (recentFailures >= recentCount * 0.5) {
     degraded = true;
     reasons.push(`High recent failure rate: ${recentFailures}/${recentCount}`);
   }
-  
+
   // Check execution time increase
-  const recentAvg = metrics.recentExecutions
-    .slice(-recentCount)
-    .reduce((sum, e) => sum + e.executionTime, 0) / recentCount;
-  
+  const recentAvg =
+    metrics.recentExecutions
+      .slice(-recentCount)
+      .reduce((sum, e) => sum + e.executionTime, 0) / recentCount;
+
   if (recentAvg > metrics.averageExecutionTime * 1.5) {
     degraded = true;
-    reasons.push(`Execution time increased: ${Math.round(recentAvg)}ms vs ${Math.round(metrics.averageExecutionTime)}ms avg`);
+    reasons.push(
+      `Execution time increased: ${Math.round(recentAvg)}ms vs ${Math.round(metrics.averageExecutionTime)}ms avg`,
+    );
   }
-  
+
   return { degraded, reasons };
 }
 
@@ -395,23 +406,62 @@ export function detectPerformanceDegradation(type: SubAgentType): {
  */
 export function selectAgentForTask(taskDescription: string): SubAgentType {
   const keywords: Record<SubAgentType, string[]> = {
-    code: ["code", "function", "class", "implement", "refactor", "bug", "syntax"],
-    file: ["file", "directory", "read", "write", "copy", "move", "delete", "search"],
-    git: ["git", "commit", "branch", "merge", "pull", "push", "repository", "version"],
+    code: [
+      "code",
+      "function",
+      "class",
+      "implement",
+      "refactor",
+      "bug",
+      "syntax",
+    ],
+    file: [
+      "file",
+      "directory",
+      "read",
+      "write",
+      "copy",
+      "move",
+      "delete",
+      "search",
+    ],
+    git: [
+      "git",
+      "commit",
+      "branch",
+      "merge",
+      "pull",
+      "push",
+      "repository",
+      "version",
+    ],
     system: ["install", "service", "process", "system", "restart", "configure"],
     web: ["http", "api", "request", "fetch", "curl", "scrape", "endpoint"],
     docker: ["docker", "container", "image", "compose", "dockerfile"],
     db: ["database", "query", "sql", "table", "migration", "backup"],
-    security: ["security", "permission", "firewall", "certificate", "ssl", "vulnerability"],
+    security: [
+      "security",
+      "permission",
+      "firewall",
+      "certificate",
+      "ssl",
+      "vulnerability",
+    ],
     network: ["network", "ping", "connectivity", "dns", "port", "connection"],
     planner: ["plan", "steps", "organize", "decompose", "strategy", "complex"],
     evaluator: ["review", "check", "evaluate", "quality", "validate", "assess"],
-    coordinator: ["coordinate", "multiple", "parallel", "orchestrate", "manage"],
+    coordinator: [
+      "coordinate",
+      "multiple",
+      "parallel",
+      "orchestrate",
+      "manage",
+    ],
   };
-  
+
   const lowerTask = taskDescription.toLowerCase();
   const scores = new Map<SubAgentType, number>();
-  
+
   // Score each agent type based on keyword matches
   for (const [type, words] of Object.entries(keywords)) {
     let score = 0;
@@ -420,33 +470,33 @@ export function selectAgentForTask(taskDescription: string): SubAgentType {
         score++;
       }
     }
-    
+
     // Factor in health metrics
     const health = healthMetrics.get(type as SubAgentType);
     if (health && health.totalExecutions > 0) {
       score *= health.successRate;
     }
-    
+
     scores.set(type as SubAgentType, score);
   }
-  
+
   // Find agent with highest score
   let bestAgent: SubAgentType = "code";
   let bestScore = 0;
-  
+
   for (const [type, score] of scores.entries()) {
     if (score > bestScore) {
       bestScore = score;
       bestAgent = type;
     }
   }
-  
-  logger.debug("Agent selected for task", { 
+
+  logger.debug("Agent selected for task", {
     task: taskDescription.substring(0, 50),
     selected: bestAgent,
     score: bestScore,
   });
-  
+
   return bestAgent;
 }
 
@@ -456,14 +506,14 @@ export function selectAgentForTask(taskDescription: string): SubAgentType {
 export function createSubAgent(input: CreateSubAgentInput): SubAgent {
   const config = SUB_AGENT_CONFIGS[input.agent_type];
   const subAgentId = uuidv4();
-  
+
   const stmt = db.prepare(`
     INSERT INTO sub_agents (
       parent_session_id, sub_agent_id, agent_type, name, description,
       status, assigned_task, metadata
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  
+
   const result = stmt.run(
     input.parent_session_id,
     subAgentId,
@@ -472,15 +522,15 @@ export function createSubAgent(input: CreateSubAgentInput): SubAgent {
     input.description || config.description,
     "idle",
     input.assigned_task || null,
-    input.metadata ? JSON.stringify(input.metadata) : null
+    input.metadata ? JSON.stringify(input.metadata) : null,
   );
-  
-  logger.info("Created sub-agent", { 
-    subAgentId, 
+
+  logger.info("Created sub-agent", {
+    subAgentId,
     type: input.agent_type,
-    parent: input.parent_session_id 
+    parent: input.parent_session_id,
   });
-  
+
   return findById(result.lastInsertRowid as number)!;
 }
 
@@ -522,17 +572,17 @@ export function updateStatus(
     task_result?: string;
     step_count?: number;
     tokens_used?: number;
-  }
+  },
 ): void {
   const fields: string[] = ["status = ?"];
   const values: any[] = [status];
-  
+
   if (status === "working") {
     fields.push("started_at = CURRENT_TIMESTAMP");
   } else if (status === "completed" || status === "error") {
     fields.push("completed_at = CURRENT_TIMESTAMP");
   }
-  
+
   if (updates?.task_result !== undefined) {
     fields.push("task_result = ?");
     values.push(updates.task_result);
@@ -545,13 +595,13 @@ export function updateStatus(
     fields.push("tokens_used = ?");
     values.push(updates.tokens_used);
   }
-  
+
   const stmt = db.prepare(`
     UPDATE sub_agents 
     SET ${fields.join(", ")}
     WHERE sub_agent_id = ?
   `);
-  
+
   stmt.run(...values, subAgentId);
 }
 
@@ -566,11 +616,11 @@ export async function executeTask(
     priority?: number;
     timeout?: number;
     bypassCircuitBreaker?: boolean;
-  } = {}
+  } = {},
 ): Promise<TaskResult> {
   const startTime = Date.now();
   const subAgent = findBySubAgentId(subAgentId);
-  
+
   if (!subAgent) {
     return {
       success: false,
@@ -581,7 +631,7 @@ export async function executeTask(
       error: "Sub-agent not found",
     };
   }
-  
+
   if (!subAgent.assigned_task) {
     return {
       success: false,
@@ -592,10 +642,33 @@ export async function executeTask(
       error: "No task assigned",
     };
   }
-  
+
   const agentType = subAgent.agent_type as SubAgentType;
   const config = SUB_AGENT_CONFIGS[agentType];
-  
+
+  const cacheKey = [
+    "subagent:v2",
+    agentType,
+    (model as { modelId?: string }).modelId ?? "unknown",
+    subAgent.assigned_task ?? "",
+    Object.keys(availableTools).join(","),
+  ].join("|");
+
+  const cached = agentCache.get<TaskResult>("subagent", cacheKey);
+  if (cached) {
+    updateStatus(subAgentId, "completed", {
+      task_result: cached.result,
+      step_count: cached.steps,
+      tokens_used: cached.tokens_used,
+    });
+
+    return {
+      ...cached,
+      agent_id: subAgentId,
+      resumed: false,
+    };
+  }
+
   // Check for performance degradation
   const degradation = detectPerformanceDegradation(agentType);
   if (degradation.degraded) {
@@ -604,12 +677,12 @@ export async function executeTask(
       reasons: degradation.reasons,
     });
   }
-  
+
   // Execute with circuit breaker and resource pool
   try {
     const executeWithProtection = async (): Promise<TaskResult> => {
       updateStatus(subAgentId, "working");
-      
+
       // Filter tools for this sub-agent
       const subAgentTools: Record<string, Tool> = {};
       if (config.tools) {
@@ -619,7 +692,7 @@ export async function executeTask(
           }
         }
       }
-      
+
       const result = await generateText({
         model,
         system: config.system_prompt,
@@ -633,7 +706,8 @@ export async function executeTask(
       updateStatus(subAgentId, "completed", {
         task_result: result.text,
         step_count: result.steps?.length || 0,
-        tokens_used: (result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0),
+        tokens_used:
+          (result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0),
       });
 
       logger.info("Sub-agent completed task", {
@@ -650,52 +724,74 @@ export async function executeTask(
         success: true,
         result: result.text,
         steps: result.steps?.length || 0,
-        tokens_used: (result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0),
+        tokens_used:
+          (result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0),
         execution_time_ms: executionTime,
         agent_id: subAgentId,
       };
     };
-    
+
     // Use resource pool for concurrent execution limiting
     const poolKey = `subagent-${agentType}`;
     const priority = options.priority ?? config.priority ?? 5;
-    
+
     // Execute with circuit breaker protection (unless bypassed)
     if (options.bypassCircuitBreaker) {
-      return await poolManager.execute(
+      const output = await poolManager.execute(
         poolKey,
         `${agentType}-${subAgentId}`,
         executeWithProtection,
-        { priority, timeout: options.timeout }
+        { priority, timeout: options.timeout },
       );
+
+      agentCache.set({
+        scope: "subagent",
+        key: cacheKey,
+        value: output,
+        ttlSeconds: output.success ? 900 : 60,
+        tags: ["subagent", agentType],
+      });
+
+      return output;
     } else {
-      return await poolManager.execute(
+      const output = await poolManager.execute(
         poolKey,
         `${agentType}-${subAgentId}`,
-        () => circuitBreakerManager.execute(
-          `subagent-${agentType}`,
-          executeWithProtection
-        ),
-        { priority, timeout: options.timeout }
+        () =>
+          circuitBreakerManager.execute(
+            `subagent-${agentType}`,
+            executeWithProtection,
+          ),
+        { priority, timeout: options.timeout },
       );
+
+      agentCache.set({
+        scope: "subagent",
+        key: cacheKey,
+        value: output,
+        ttlSeconds: output.success ? 900 : 60,
+        tags: ["subagent", agentType],
+      });
+
+      return output;
     }
   } catch (error) {
     const executionTime = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
-    
+
     updateStatus(subAgentId, "error", {
       task_result: errorMessage,
     });
-    
+
     // Update health metrics
     updateHealthMetrics(agentType, false, executionTime);
-    
+
     logger.error("Sub-agent task failed", {
       subAgentId,
       type: agentType,
       error: errorMessage,
     });
-    
+
     return {
       success: false,
       result: "",
@@ -709,6 +805,60 @@ export async function executeTask(
 }
 
 /**
+ * Resume a sub-agent task by re-executing with checkpoint context.
+ */
+export async function resumeTask(
+  subAgentId: string,
+  model: LanguageModel,
+  availableTools: Record<string, Tool>,
+  options: {
+    bypassCircuitBreaker?: boolean;
+    timeout?: number;
+    reason?: string;
+  } = {},
+): Promise<TaskResult> {
+  const subAgent = findBySubAgentId(subAgentId);
+  if (!subAgent) {
+    return {
+      success: false,
+      result: "",
+      steps: 0,
+      tokens_used: 0,
+      execution_time_ms: 0,
+      error: "Sub-agent not found",
+      agent_id: subAgentId,
+      resumed: true,
+    };
+  }
+
+  const previousResult = subAgent.task_result ?? "";
+  const resumeContext = [
+    subAgent.assigned_task ?? "",
+    previousResult ? `Previous attempt output/error:\n${previousResult}` : "",
+    options.reason
+      ? `Resume reason: ${options.reason}`
+      : "Resume reason: manual resume request",
+    "Continue from previous progress and provide a complete final result.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  db.prepare(
+    "UPDATE sub_agents SET assigned_task = ? WHERE sub_agent_id = ?",
+  ).run(resumeContext, subAgentId);
+
+  const result = await executeTask(subAgentId, model, availableTools, {
+    bypassCircuitBreaker: options.bypassCircuitBreaker,
+    timeout: options.timeout,
+  });
+
+  return {
+    ...result,
+    resumed: true,
+  };
+}
+
+/**
  * Execute multiple tasks in parallel
  */
 export async function executeParallel(
@@ -719,13 +869,13 @@ export async function executeParallel(
   }>,
   parentSessionId: string,
   model: LanguageModel,
-  availableTools: Record<string, Tool>
+  availableTools: Record<string, Tool>,
 ): Promise<TaskResult[]> {
-  logger.info("Executing tasks in parallel", { 
+  logger.info("Executing tasks in parallel", {
     count: tasks.length,
     types: tasks.map((t) => t.agentType),
   });
-  
+
   const promises = tasks.map(async ({ agentType, task, context }) => {
     const fullTask = context ? `${task}\n\nContext: ${context}` : task;
     const subAgent = createSubAgent({
@@ -733,10 +883,10 @@ export async function executeParallel(
       agent_type: agentType,
       assigned_task: fullTask,
     });
-    
+
     return executeTask(subAgent.sub_agent_id, model, availableTools);
   });
-  
+
   return Promise.all(promises);
 }
 
@@ -751,34 +901,40 @@ export async function executeSequential(
   }>,
   parentSessionId: string,
   model: LanguageModel,
-  availableTools: Record<string, Tool>
+  availableTools: Record<string, Tool>,
 ): Promise<TaskResult[]> {
-  logger.info("Executing tasks sequentially", { 
+  logger.info("Executing tasks sequentially", {
     count: tasks.length,
     types: tasks.map((t) => t.agentType),
   });
-  
+
   const results: TaskResult[] = [];
   let aggregatedContext = "";
-  
+
   for (const { agentType, task, context } of tasks) {
-    const fullContext = [context, aggregatedContext].filter(Boolean).join("\n\n");
+    const fullContext = [context, aggregatedContext]
+      .filter(Boolean)
+      .join("\n\n");
     const fullTask = fullContext ? `${task}\n\nContext: ${fullContext}` : task;
-    
+
     const subAgent = createSubAgent({
       parent_session_id: parentSessionId,
       agent_type: agentType,
       assigned_task: fullTask,
     });
-    
-    const result = await executeTask(subAgent.sub_agent_id, model, availableTools);
+
+    const result = await executeTask(
+      subAgent.sub_agent_id,
+      model,
+      availableTools,
+    );
     results.push(result);
-    
+
     // Add result to context for next task
     if (result.success) {
       aggregatedContext += `\n\nPrevious step (${agentType}): ${result.result.substring(0, 500)}`;
     }
-    
+
     // Stop on failure unless explicitly continuing
     if (!result.success) {
       logger.warn("Sequential execution stopped due to failure", {
@@ -788,7 +944,7 @@ export async function executeSequential(
       break;
     }
   }
-  
+
   return results;
 }
 
@@ -799,16 +955,16 @@ export async function executeGraph(
   graph: ExecutionGraph,
   parentSessionId: string,
   model: LanguageModel,
-  availableTools: Record<string, Tool>
+  availableTools: Record<string, Tool>,
 ): Promise<ExecutionGraph> {
-  logger.info("Executing execution graph", { 
+  logger.info("Executing execution graph", {
     graphId: graph.id,
     nodeCount: graph.nodes.length,
   });
-  
+
   graph.status = "running";
   const nodeResults = new Map<string, TaskResult>();
-  
+
   // Helper to check if all dependencies are completed
   const areDependenciesCompleted = (node: ExecutionNode): boolean => {
     return node.dependencies.every((depId) => {
@@ -816,17 +972,21 @@ export async function executeGraph(
       return depNode?.status === "completed";
     });
   };
-  
+
   // Execute nodes in order of dependencies
-  while (graph.nodes.some((n) => n.status === "pending" || n.status === "running")) {
+  while (
+    graph.nodes.some((n) => n.status === "pending" || n.status === "running")
+  ) {
     // Find nodes ready to execute (dependencies met)
     const readyNodes = graph.nodes.filter(
-      (node) => node.status === "pending" && areDependenciesCompleted(node)
+      (node) => node.status === "pending" && areDependenciesCompleted(node),
     );
-    
+
     if (readyNodes.length === 0) {
       // Check if we're stuck (all pending nodes have unmet dependencies)
-      const pendingCount = graph.nodes.filter((n) => n.status === "pending").length;
+      const pendingCount = graph.nodes.filter(
+        (n) => n.status === "pending",
+      ).length;
       if (pendingCount > 0) {
         logger.error("Execution graph deadlock detected", {
           graphId: graph.id,
@@ -835,44 +995,50 @@ export async function executeGraph(
         graph.status = "failed";
         break;
       }
-      
+
       // Wait for running nodes
       await new Promise((resolve) => setTimeout(resolve, 100));
       continue;
     }
-    
+
     // Execute ready nodes in parallel
     await Promise.all(
       readyNodes.map(async (node) => {
         node.status = "running";
         node.startedAt = Date.now();
-        
+
         // Gather context from dependencies
         const depContext = node.dependencies
           .map((depId) => {
             const result = nodeResults.get(depId);
-            return result?.success ? `Dependency ${depId}: ${result.result}` : null;
+            return result?.success
+              ? `Dependency ${depId}: ${result.result}`
+              : null;
           })
           .filter(Boolean)
           .join("\n\n");
-        
-        const fullTask = depContext 
+
+        const fullTask = depContext
           ? `${node.task}\n\nDependency Results:\n${depContext}`
           : node.task;
-        
+
         const subAgent = createSubAgent({
           parent_session_id: parentSessionId,
           agent_type: node.agentType,
           assigned_task: fullTask,
         });
-        
+
         try {
-          const result = await executeTask(subAgent.sub_agent_id, model, availableTools);
+          const result = await executeTask(
+            subAgent.sub_agent_id,
+            model,
+            availableTools,
+          );
           node.result = result;
           node.status = result.success ? "completed" : "failed";
           node.completedAt = Date.now();
           nodeResults.set(node.id, result);
-          
+
           if (!result.success) {
             logger.warn("Graph node failed", {
               graphId: graph.id,
@@ -889,23 +1055,27 @@ export async function executeGraph(
             error: error instanceof Error ? error.message : String(error),
           });
         }
-      })
+      }),
     );
   }
-  
+
   // Check final status
   const allCompleted = graph.nodes.every((n) => n.status === "completed");
   const anyFailed = graph.nodes.some((n) => n.status === "failed");
-  
-  graph.status = allCompleted ? "completed" : anyFailed ? "failed" : "completed";
+
+  graph.status = allCompleted
+    ? "completed"
+    : anyFailed
+      ? "failed"
+      : "completed";
   graph.completedAt = Date.now();
-  
+
   logger.info("Execution graph completed", {
     graphId: graph.id,
     status: graph.status,
     duration: graph.completedAt - graph.createdAt,
   });
-  
+
   return graph;
 }
 
@@ -933,7 +1103,9 @@ export function getStats(): {
   error: number;
   working: number;
 } {
-  const stats = db.prepare(`
+  const stats = db
+    .prepare(
+      `
     SELECT 
       COUNT(*) as total,
       agent_type,
@@ -942,14 +1114,16 @@ export function getStats(): {
       SUM(CASE WHEN status = 'working' THEN 1 ELSE 0 END) as working
     FROM sub_agents
     GROUP BY agent_type
-  `).all() as any[];
-  
+  `,
+    )
+    .all() as any[];
+
   const byType: Record<string, number> = {};
   let total = 0;
   let completed = 0;
   let error = 0;
   let working = 0;
-  
+
   for (const row of stats) {
     byType[row.agent_type] = row.total;
     total += row.total;
@@ -957,7 +1131,7 @@ export function getStats(): {
     error += row.error;
     working += row.working;
   }
-  
+
   return { total, by_type: byType, completed, error, working };
 }
 

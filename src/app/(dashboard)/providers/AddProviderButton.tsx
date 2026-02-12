@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PROVIDER_INFO, type ProviderName, type ModelInfo } from "@/agent/provider-info";
+import type { ModelInfo } from "@/agent/provider-info";
 import {
   CapabilityBadges,
   CostTierBadge,
@@ -16,48 +16,114 @@ interface AddProviderButtonProps {
   variant?: "default" | "primary";
 }
 
+interface CatalogProvider {
+  id: string;
+  displayName: string;
+  requiresKey: boolean;
+  description: string;
+  npm: string;
+  apiBaseUrl?: string;
+  models: ModelInfo[];
+  runtimeAdapter: string;
+}
+
 export function AddProviderButton({ variant = "default" }: AddProviderButtonProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   const [formData, setFormData] = useState({
-    name: "openai" as ProviderName,
-    display_name: "OpenAI",
+    name: "",
+    display_name: "",
     api_key: "",
     base_url: "",
-    model: "gpt-4o",
+    model: "",
     max_tokens: 4096,
     temperature: 0.7,
     is_default: false,
     priority: 0,
   });
 
+  const selectedProvider = useMemo(
+    () => catalog.find((provider) => provider.id === formData.name),
+    [catalog, formData.name]
+  );
+
+  useEffect(() => {
+    if (!isOpen || catalog.length > 0 || catalogLoading) return;
+
+    let cancelled = false;
+    const loadCatalog = async () => {
+      setCatalogLoading(true);
+      try {
+        const res = await fetch("/api/providers/catalog", { cache: "no-store" });
+        const data = await res.json();
+        const providers = (data.providers || []) as CatalogProvider[];
+
+        if (!cancelled) {
+          setCatalog(providers);
+          if (providers.length > 0) {
+            const first = providers[0];
+            const firstModel = first.models[0];
+            setFormData((prev) => ({
+              ...prev,
+              name: first.id,
+              display_name: first.displayName,
+              model: firstModel?.id || "",
+              base_url: first.apiBaseUrl || "",
+              max_tokens: firstModel?.maxOutput || prev.max_tokens,
+              temperature: firstModel?.allowsTemperature === false ? 0 : prev.temperature,
+            }));
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Failed to load dynamic provider catalog");
+        }
+      } finally {
+        if (!cancelled) {
+          setCatalogLoading(false);
+        }
+      }
+    };
+
+    void loadCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, catalog.length, catalogLoading]);
+
   // Look up the selected model's info from the provider registry
   const selectedModelInfo: ModelInfo | undefined = useMemo(() => {
-    const provider = PROVIDER_INFO[formData.name];
+    const provider = selectedProvider;
     if (!provider) return undefined;
     return provider.models.find((m) => m.id === formData.model);
-  }, [formData.name, formData.model]);
+  }, [selectedProvider, formData.model]);
 
-  const handleProviderChange = (name: ProviderName) => {
-    const info = PROVIDER_INFO[name];
+  const handleProviderChange = (name: string) => {
+    const info = catalog.find((p) => p.id === name);
+    if (!info) return;
     const firstModel = info.models[0];
+
     setFormData((prev) => ({
       ...prev,
       name,
       display_name: info.displayName,
-      model: firstModel.id,
-      base_url: name === "ollama" ? "http://localhost:11434/v1" : "",
+      model: firstModel?.id || "",
+      base_url: info.apiBaseUrl || "",
       // Auto-set sensible defaults based on model capabilities
-      max_tokens: firstModel.maxOutput,
-      temperature: firstModel.allowsTemperature ? 0.7 : 0,
+      max_tokens: firstModel?.maxOutput || prev.max_tokens,
+      temperature: firstModel?.allowsTemperature === false ? 0 : 0.7,
     }));
   };
 
   const handleModelChange = (modelId: string) => {
-    const provider = PROVIDER_INFO[formData.name];
+    const provider = selectedProvider;
+    if (!provider) return;
     const model = provider.models.find((m) => m.id === modelId);
     setFormData((prev) => ({
       ...prev,
@@ -74,10 +140,21 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
     setLoading(true);
 
     try {
+      const providerConfig = selectedProvider
+        ? {
+            models_dev_provider_id: selectedProvider.id,
+            provider_npm: selectedProvider.npm,
+            runtime_adapter: selectedProvider.runtimeAdapter,
+          }
+        : undefined;
+
       const res = await fetch("/api/providers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          config: providerConfig,
+        }),
       });
 
       if (!res.ok) {
@@ -135,17 +212,20 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Provider</label>
                 <select
                   value={formData.name}
-                  onChange={(e) => handleProviderChange(e.target.value as ProviderName)}
+                  onChange={(e) => handleProviderChange(e.target.value)}
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                  disabled={catalogLoading || catalog.length === 0}
                 >
-                  {Object.entries(PROVIDER_INFO).map(([key, info]) => (
-                    <option key={key} value={key}>
+                  {catalog.map((info) => (
+                    <option key={info.id} value={info.id}>
                       {info.displayName}
                     </option>
                   ))}
                 </select>
                 <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                  {PROVIDER_INFO[formData.name].description}
+                  {catalogLoading
+                    ? "Loading providers from models.dev…"
+                    : selectedProvider?.description || ""}
                 </p>
               </div>
 
@@ -155,8 +235,9 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                   value={formData.model}
                   onChange={(e) => handleModelChange(e.target.value)}
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                  disabled={!selectedProvider || selectedProvider.models.length === 0}
                 >
-                  {PROVIDER_INFO[formData.name].models.map((model) => (
+                  {(selectedProvider?.models || []).map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.name} {model.reasoning ? "(reasoning)" : ""}
                     </option>
@@ -200,7 +281,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                 </div>
               )}
 
-              {PROVIDER_INFO[formData.name].requiresKey && (
+              {selectedProvider?.requiresKey && (
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">API Key</label>
                   <input
@@ -214,7 +295,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                 </div>
               )}
 
-              {formData.name === "ollama" && (
+              {selectedProvider && (selectedProvider.id === "ollama" || selectedProvider.runtimeAdapter === "openai-compatible") && (
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Base URL</label>
                   <input

@@ -11,6 +11,8 @@ import {
   createSubAgent,
   executeTask,
   findBySubAgentId,
+  resumeTask,
+  selectAgentForTask,
   type SubAgentType,
 } from "../subagents/manager";
 import { allTools } from "./index";
@@ -29,10 +31,20 @@ const SUB_AGENT_TYPES: SubAgentType[] = [
   "db",
   "security",
   "network",
+  "planner",
+  "evaluator",
+  "coordinator",
 ];
+
+type RequestedSubAgentType = SubAgentType | "auto";
 
 export const spawnSubAgent = tool<any, any>({
   description: `Spawn a specialized sub-agent to handle a focused task autonomously. The sub-agent runs with its own LLM context and full tool access.
+
+CRITICAL MODEL NOTE:
+- Sub-agents are orchestrated workers under the main agent.
+- They use the same tool ecosystem as the orchestrator (built-in tools, MCP tools, and skills-derived tools).
+- Treat sub-agent output as high-signal delegated work that is returned to the main agent for final synthesis.
 
 AVAILABLE TYPES:
 - code: Code generation, modification, review, refactoring, and debugging.
@@ -44,6 +56,9 @@ AVAILABLE TYPES:
 - db: Database operations — queries, migrations, backups, schema inspection.
 - security: Security auditing, firewall rules, SSL certs, user permissions.
 - network: Network diagnostics — ping, traceroute, DNS, port scanning, connectivity.
+- planner: Complex plan decomposition and dependency graph design.
+- evaluator: Quality scoring and validation of intermediate outputs.
+- coordinator: Multi-worker orchestration and result merging.
 
 WHEN TO USE:
 - Use for tasks that require focused domain expertise or multi-step operations.
@@ -57,53 +72,118 @@ TASK FORMULATION TIPS:
 - GOOD: "In /app/src/auth/login.ts, the validateToken function on line 45 returns undefined when the token is expired instead of throwing an AuthError. Fix it to throw AuthError('TOKEN_EXPIRED')."
 
 EXECUTION MODES:
-- wait_for_result: true (default) — blocks until the sub-agent finishes and returns the result. Use for tasks you need the output of.
-- wait_for_result: false — returns immediately with a sub_agent_id. Use for long-running background tasks, then check status with checkSubAgentStatus.`,
+- wait_for_result: false (default) — returns immediately with a sub_agent_id and starts execution in background. Use this to keep the main conversation responsive.
+- wait_for_result: true — blocks until the sub-agent finishes and returns the result. Use only when you immediately need the output to continue.`,
   inputSchema: z.object({
     type: z
-      .enum(["code", "file", "git", "system", "web", "docker", "db", "security", "network"])
-      .describe("The type of specialized sub-agent to spawn"),
-    task: z
-      .string()
-      .describe("The specific task to assign to the sub-agent"),
+      .enum([
+        "auto",
+        "code",
+        "file",
+        "git",
+        "system",
+        "web",
+        "docker",
+        "db",
+        "security",
+        "network",
+        "planner",
+        "evaluator",
+        "coordinator",
+      ])
+      .describe(
+        "The type of specialized sub-agent to spawn. Use 'auto' for generic task routing.",
+      ),
+    task: z.string().describe("The specific task to assign to the sub-agent"),
     wait_for_result: z
       .boolean()
-      .default(true)
-      .describe("Whether to wait for the sub-agent to complete (default: true)"),
+      .default(false)
+      .describe(
+        "Whether to wait for the sub-agent to complete (default: false, background mode)",
+      ),
     context: z
       .string()
       .optional()
-      .describe("Additional context or information to provide to the sub-agent"),
+      .describe(
+        "Additional context or information to provide to the sub-agent",
+      ),
   }),
-  execute: async ({ type, task, wait_for_result, context }: { type: SubAgentType; task: string; wait_for_result: boolean; context?: string }) => {
+  execute: async ({
+    type,
+    task,
+    wait_for_result,
+    context,
+  }: {
+    type: RequestedSubAgentType;
+    task: string;
+    wait_for_result: boolean;
+    context?: string;
+  }) => {
     const startTime = Date.now();
     const sessionId = uuidv4();
 
-    logger.info("Spawning sub-agent", { type, task: task.substring(0, 100), wait_for_result });
+    logger.info("Spawning sub-agent", {
+      type,
+      task: task.substring(0, 100),
+      wait_for_result,
+    });
 
     try {
       // Build the full task with context if provided
       const fullTask = context ? `${task}\n\nContext: ${context}` : task;
 
+      // Auto-route generic tasks to the best agent type
+      const resolvedType: SubAgentType =
+        type === "auto" ? selectAgentForTask(fullTask) : type;
+
       // Create the sub-agent
       const subAgent = createSubAgent({
         parent_session_id: sessionId,
-        agent_type: type as SubAgentType,
+        agent_type: resolvedType,
         assigned_task: fullTask,
         metadata: {
           spawned_at: new Date().toISOString(),
           wait_for_result,
+          requested_type: type,
+          resolved_type: resolvedType,
         },
       });
 
       if (!wait_for_result) {
+        const model = getDefaultModel();
+        if (!model) {
+          return {
+            success: false,
+            error: "No LLM provider configured for sub-agent",
+            sub_agent_id: subAgent.sub_agent_id,
+            execution_time_ms: Date.now() - startTime,
+          };
+        }
+
+        // Fire-and-forget autonomous execution so the main agent can continue immediately
+        void executeTask(subAgent.sub_agent_id, model, allTools).catch(
+          (error) => {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            logger.error("Background sub-agent execution failed", {
+              sub_agent_id: subAgent.sub_agent_id,
+              resolvedType,
+              error: errorMessage,
+            });
+          },
+        );
+
         // Return immediately with the sub-agent ID for later reference
         return {
           success: true,
           sub_agent_id: subAgent.sub_agent_id,
+          requested_type: type,
           type: subAgent.agent_type,
           status: "working",
-          message: `Sub-agent spawned and working on task. ID: ${subAgent.sub_agent_id}`,
+          mode: "background",
+          message: `Sub-agent spawned in background and started autonomously. ID: ${subAgent.sub_agent_id}`,
+          next_steps:
+            "Continue helping the user immediately. Check progress with checkSubAgentStatus using this sub_agent_id.",
           execution_time_ms: Date.now() - startTime,
         };
       }
@@ -131,8 +211,10 @@ EXECUTION MODES:
       return {
         success: result.success,
         sub_agent_id: subAgent.sub_agent_id,
+        requested_type: type,
         type: subAgent.agent_type,
         status: result.success ? "completed" : "error",
+        mode: "foreground",
         result: result.result,
         steps: result.steps,
         tokens_used: result.tokens_used,
@@ -140,8 +222,9 @@ EXECUTION MODES:
         execution_time_ms: result.execution_time_ms,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
       logger.error("Failed to spawn sub-agent", { type, error: errorMessage });
 
       return {
@@ -150,6 +233,59 @@ EXECUTION MODES:
         execution_time_ms: Date.now() - startTime,
       };
     }
+  },
+});
+
+export const resumeSubAgent = tool<any, any>({
+  description: `Resume a previously failed or interrupted sub-agent run. This tool appends checkpoint context and retries execution.
+
+Use when:
+- checkSubAgentStatus reports status=error
+- a long-running task appears interrupted
+- circuit breaker or timeout errors need a controlled retry`,
+  inputSchema: z.object({
+    sub_agent_id: z.string().describe("Sub-agent ID to resume"),
+    reason: z
+      .string()
+      .optional()
+      .describe("Why this resume is being requested"),
+    bypass_circuit_breaker: z
+      .boolean()
+      .default(false)
+      .describe("Use true only for manual recovery attempts"),
+  }),
+  execute: async ({
+    sub_agent_id,
+    reason,
+    bypass_circuit_breaker,
+  }: {
+    sub_agent_id: string;
+    reason?: string;
+    bypass_circuit_breaker: boolean;
+  }) => {
+    const model = getDefaultModel();
+    if (!model) {
+      return {
+        success: false,
+        error: "No LLM provider configured for sub-agent resume",
+      };
+    }
+
+    const resumed = await resumeTask(sub_agent_id, model, allTools, {
+      reason,
+      bypassCircuitBreaker: bypass_circuit_breaker,
+    });
+
+    return {
+      success: resumed.success,
+      sub_agent_id,
+      resumed: true,
+      result: resumed.result,
+      steps: resumed.steps,
+      tokens_used: resumed.tokens_used,
+      error: resumed.error,
+      execution_time_ms: resumed.execution_time_ms,
+    };
   },
 });
 

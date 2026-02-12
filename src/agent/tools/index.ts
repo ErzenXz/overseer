@@ -1,20 +1,48 @@
 // Shell tools
-export { executeShellCommand, executeShellCommandConfirmed, getShellInfo } from "./shell";
+export {
+  executeShellCommand,
+  executeShellCommandConfirmed,
+  getShellInfo,
+} from "./shell";
 
 // File tools
 export { readFile, writeFile, listDirectory } from "./files";
 
 // Sub-agent tools
-export { spawnSubAgent, checkSubAgentStatus } from "./subagent-tool";
+export {
+  spawnSubAgent,
+  checkSubAgentStatus,
+  resumeSubAgent,
+} from "./subagent-tool";
 
 // Cron tools
-export { createCronJob, listCronJobs, deleteCronJob, toggleCronJob, runCronJobNow } from "./cron";
+export {
+  createCronJob,
+  listCronJobs,
+  deleteCronJob,
+  toggleCronJob,
+  runCronJobNow,
+} from "./cron";
 
 // All tools in a single object
-import { executeShellCommand, executeShellCommandConfirmed, getShellInfo } from "./shell";
+import {
+  executeShellCommand,
+  executeShellCommandConfirmed,
+  getShellInfo,
+} from "./shell";
 import { readFile, writeFile, listDirectory } from "./files";
-import { spawnSubAgent, checkSubAgentStatus } from "./subagent-tool";
-import { createCronJob, listCronJobs, deleteCronJob, toggleCronJob, runCronJobNow } from "./cron";
+import {
+  spawnSubAgent,
+  checkSubAgentStatus,
+  resumeSubAgent,
+} from "./subagent-tool";
+import {
+  createCronJob,
+  listCronJobs,
+  deleteCronJob,
+  toggleCronJob,
+  runCronJobNow,
+} from "./cron";
 
 // Import MCP and Skills for combined tools
 import { getAllMCPTools } from "../mcp/client";
@@ -29,15 +57,16 @@ export const allTools = {
   executeShellCommand,
   executeShellCommandConfirmed,
   getShellInfo,
-  
+
   // Files
   readFile,
   writeFile,
   listDirectory,
-  
+
   // Sub-agents
   spawnSubAgent,
   checkSubAgentStatus,
+  resumeSubAgent,
 
   // Cron
   createCronJob,
@@ -58,19 +87,19 @@ export type ToolName = keyof typeof allTools;
  */
 export function getAllAvailableTools(): Record<string, Tool> {
   const combinedTools: Record<string, Tool> = { ...allTools };
-  
+
   // Add MCP tools
   const mcpTools = getAllMCPTools();
   for (const [name, tool] of Object.entries(mcpTools)) {
     combinedTools[name] = tool;
   }
-  
+
   // Add Skill tools
   const skillTools = getAllActiveSkillTools();
   for (const [name, tool] of Object.entries(skillTools)) {
     combinedTools[name] = tool;
   }
-  
+
   return combinedTools;
 }
 
@@ -88,7 +117,7 @@ export function getToolCounts(): {
   const builtinCount = Object.keys(allTools).length;
   const mcpCount = Object.keys(mcpTools).length;
   const skillsCount = Object.keys(skillTools).length;
-  
+
   return {
     builtin: builtinCount,
     mcp: mcpCount,
@@ -98,13 +127,20 @@ export function getToolCounts(): {
 }
 
 export const toolCategories = {
-  shell: ["executeShellCommand", "executeShellCommandConfirmed", "getShellInfo"],
-  files: ["readFile", "writeFile", "listDirectory"],
-  subagents: [
-    "spawnSubAgent",
-    "checkSubAgentStatus",
+  shell: [
+    "executeShellCommand",
+    "executeShellCommandConfirmed",
+    "getShellInfo",
   ],
-  cron: ["createCronJob", "listCronJobs", "deleteCronJob", "toggleCronJob", "runCronJobNow"],
+  files: ["readFile", "writeFile", "listDirectory"],
+  subagents: ["spawnSubAgent", "checkSubAgentStatus", "resumeSubAgent"],
+  cron: [
+    "createCronJob",
+    "listCronJobs",
+    "deleteCronJob",
+    "toggleCronJob",
+    "runCronJobNow",
+  ],
 } as const;
 
 export const toolDescriptions: Record<string, string> = {
@@ -116,6 +152,8 @@ export const toolDescriptions: Record<string, string> = {
   listDirectory: "List directory contents",
   spawnSubAgent: "Spawn specialized sub-agents for complex tasks",
   checkSubAgentStatus: "Check status of a spawned sub-agent",
+  resumeSubAgent:
+    "Resume a failed or interrupted sub-agent with checkpoint context",
   createCronJob: "Create a scheduled cron job with an AI prompt",
   listCronJobs: "List all scheduled cron jobs",
   deleteCronJob: "Delete a scheduled cron job",

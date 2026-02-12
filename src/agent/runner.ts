@@ -4,13 +4,22 @@
  * NO CONFIRMATIONS - Executes commands immediately!
  */
 
-import { generateText, streamText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
+import {
+  generateText,
+  streamText,
+  stepCountIs,
+  type LanguageModel,
+  type ModelMessage,
+} from "ai";
 
 // Type alias for messages
 type CoreMessage = ModelMessage;
 import { loadSoul } from "./soul";
-import { getDefaultModel, getActiveModels, type ProviderName } from "./providers";
-import { executeShellCommand, executeMultipleCommands } from "./tools/shell-noconfirm";
+import { buildFallbackModelChain, getDefaultModel } from "./providers";
+import {
+  executeShellCommand,
+  executeMultipleCommands,
+} from "./tools/shell-noconfirm";
 import { allTools } from "./tools/index";
 import { messagesModel, conversationsModel } from "../database/index";
 import { createLogger } from "../lib/logger";
@@ -63,7 +72,7 @@ interface AgentResult {
  */
 function buildSystemPrompt(context?: Partial<AgentContext>): string {
   const soul = loadSoul();
-  
+
   let contextInfo = "";
   if (context) {
     contextInfo = `
@@ -104,7 +113,10 @@ ${contextInfo}
 /**
  * Get conversation history for context
  */
-async function getConversationHistory(conversationId: number, limit = 30): Promise<CoreMessage[]> {
+async function getConversationHistory(
+  conversationId: number,
+  limit = 30,
+): Promise<CoreMessage[]> {
   const dbMessages = messagesModel.getRecentForContext(conversationId, limit);
   const messages: CoreMessage[] = [];
 
@@ -129,7 +141,7 @@ export async function executeAgent(
     stream?: boolean;
     onProgress?: (text: string) => void;
     onToolCall?: (toolName: string) => void;
-  } = {}
+  } = {},
 ): Promise<AgentResult> {
   const startTime = Date.now();
   const { conversationId, stream, onProgress, onToolCall } = options;
@@ -165,7 +177,7 @@ export async function executeAgent(
     messages: await getConversationHistory(convId),
     workingDirectory: process.cwd(),
     environment: Object.fromEntries(
-      Object.entries(process.env).filter(([, v]) => v !== undefined)
+      Object.entries(process.env).filter(([, v]) => v !== undefined),
     ) as Record<string, string>,
     metadata: {
       startTime: Date.now(),
@@ -179,7 +191,12 @@ export async function executeAgent(
   // Get model with fallback
   let model = getDefaultModel();
   let providerIndex = 0;
-  const activeModels = getActiveModels();
+  const fallbackChain = buildFallbackModelChain(model, 5);
+  const maxAttempts = Math.min(
+    MAX_RETRIES,
+    Math.max(0, fallbackChain.length - 1),
+  );
+  model = fallbackChain[0] ?? model;
 
   if (!model) {
     return {
@@ -192,14 +209,16 @@ export async function executeAgent(
 
   // Retry loop
   let lastError: Error | null = null;
-  
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+
+  for (let attempt = 0; attempt <= maxAttempts; attempt++) {
     try {
       context.metadata.retryCount = attempt;
 
       if (attempt > 0) {
         logger.info(`Retry attempt ${attempt}/${MAX_RETRIES}`);
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt));
+        await new Promise((resolve) =>
+          setTimeout(resolve, RETRY_DELAY_MS * attempt),
+        );
       }
 
       let result;
@@ -209,16 +228,13 @@ export async function executeAgent(
         const streamResult = streamText({
           model,
           system: buildSystemPrompt(context),
-          messages: [
-            ...context.messages,
-            { role: "user", content: prompt },
-          ],
+          messages: [...context.messages, { role: "user", content: prompt }],
           tools: { ...allTools, executeShellCommand, executeMultipleCommands },
           stopWhen: stepCountIs(MAX_STEPS),
           maxRetries: 3,
           onStepFinish: ({ toolCalls, toolResults }) => {
             context.metadata.stepCount++;
-            
+
             if (toolCalls) {
               for (const tc of toolCalls) {
                 context.metadata.toolCalls.push({
@@ -227,7 +243,10 @@ export async function executeAgent(
                   success: true,
                 });
                 onToolCall?.(tc.toolName);
-                logger.info("Tool called", { name: tc.toolName, step: context.metadata.stepCount });
+                logger.info("Tool called", {
+                  name: tc.toolName,
+                  step: context.metadata.stepCount,
+                });
               }
             }
           },
@@ -255,16 +274,13 @@ export async function executeAgent(
         result = await generateText({
           model,
           system: buildSystemPrompt(context),
-          messages: [
-            ...context.messages,
-            { role: "user", content: prompt },
-          ],
+          messages: [...context.messages, { role: "user", content: prompt }],
           tools: { ...allTools, executeShellCommand, executeMultipleCommands },
           stopWhen: stepCountIs(MAX_STEPS),
           maxRetries: 3,
           onStepFinish: ({ toolCalls, toolResults }) => {
             context.metadata.stepCount++;
-            
+
             if (toolCalls) {
               for (const tc of toolCalls) {
                 context.metadata.toolCalls.push({
@@ -273,7 +289,10 @@ export async function executeAgent(
                   success: true,
                 });
                 onToolCall?.(tc.toolName);
-                logger.info("Tool called", { name: tc.toolName, step: context.metadata.stepCount });
+                logger.info("Tool called", {
+                  name: tc.toolName,
+                  step: context.metadata.stepCount,
+                });
               }
             }
           },
@@ -306,9 +325,8 @@ export async function executeAgent(
         inputTokens: result.usage?.inputTokens,
         outputTokens: result.usage?.outputTokens,
         executionTimeMs,
-        toolCalls: context.metadata.toolCalls.map(t => t.name),
+        toolCalls: context.metadata.toolCalls.map((t) => t.name),
       };
-
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       logger.error("Agent execution error", {
@@ -318,25 +336,29 @@ export async function executeAgent(
       });
 
       // Try next provider if available
-      if (attempt < MAX_RETRIES && activeModels.length > 1) {
-        providerIndex = (providerIndex + 1) % activeModels.length;
-        model = activeModels[providerIndex].model;
-        logger.info("Switching to fallback provider", { providerIndex });
+      if (attempt < maxAttempts && fallbackChain.length > 1) {
+        providerIndex = Math.min(providerIndex + 1, fallbackChain.length - 1);
+        model = fallbackChain[providerIndex];
+        logger.info("Switching to fallback provider", {
+          providerIndex,
+          modelId: (model as { modelId?: string }).modelId ?? "unknown",
+          chainLength: fallbackChain.length,
+        });
       }
     }
   }
 
   // All retries exhausted
   const executionTimeMs = Date.now() - startTime;
-  
+
   logger.error("Agent execution failed after all retries", {
-    retries: MAX_RETRIES,
+    retries: maxAttempts,
     error: lastError?.message,
   });
 
   return {
     success: false,
-    text: `Execution failed after ${MAX_RETRIES} attempts. Last error: ${lastError?.message}`,
+    text: `Execution failed after ${maxAttempts} attempts. Last error: ${lastError?.message}`,
     executionTimeMs,
     error: lastError?.message,
   };
@@ -365,7 +387,7 @@ export async function startInteractiveMode() {
 
       if (input.trim()) {
         console.log("\n🔄 Executing...\n");
-        
+
         const result = await executeAgent(input, {
           stream: true,
           onProgress: (text) => {
@@ -378,12 +400,14 @@ export async function startInteractiveMode() {
         });
 
         console.log("\n\n" + result.text);
-        
+
         if (result.toolCalls && result.toolCalls.length > 0) {
           console.log(`\n📊 Tools used: ${result.toolCalls.join(", ")}`);
         }
-        
-        console.log(`\n⏱️  Time: ${result.executionTimeMs}ms | Steps: ${result.steps || 0}`);
+
+        console.log(
+          `\n⏱️  Time: ${result.executionTimeMs}ms | Steps: ${result.steps || 0}`,
+        );
       }
 
       askQuestion();
@@ -411,7 +435,7 @@ export async function executeSingleCommand(command: string) {
   });
 
   console.log("\n\n====================================");
-  
+
   if (result.success) {
     console.log("✅ Execution completed successfully");
   } else {
@@ -424,7 +448,9 @@ export async function executeSingleCommand(command: string) {
   console.log(`\n📊 Stats:`);
   console.log(`  Time: ${result.executionTimeMs}ms`);
   console.log(`  Steps: ${result.steps || 0}`);
-  console.log(`  Tokens: ${(result.inputTokens || 0) + (result.outputTokens || 0)}`);
+  console.log(
+    `  Tokens: ${(result.inputTokens || 0) + (result.outputTokens || 0)}`,
+  );
   if (result.toolCalls) {
     console.log(`  Tools: ${result.toolCalls.length}`);
   }
@@ -435,7 +461,7 @@ export async function executeSingleCommand(command: string) {
 // Main execution
 if (require.main === module) {
   const args = process.argv.slice(2);
-  
+
   if (args.length === 0) {
     // Interactive mode
     startInteractiveMode();

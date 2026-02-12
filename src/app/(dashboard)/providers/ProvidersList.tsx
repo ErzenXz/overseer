@@ -1,17 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Provider } from "@/types/database";
-import { PROVIDER_INFO, type ProviderName } from "@/agent/provider-info";
+import type { ModelInfo } from "@/agent/provider-info";
 import {
   CapabilityBadges,
   CostTierBadge,
-  ContextWindowBar,
   PricingDisplay,
-  ThinkingBadge,
   formatTokenCount,
 } from "@/components/ModelBadges";
+
+interface CatalogProvider {
+  id: string;
+  displayName: string;
+  models: ModelInfo[];
+}
+
+interface ProviderRuntimeConfig {
+  providerId?: string;
+  models_dev_provider_id?: string;
+}
 
 interface ProvidersListProps {
   providers: Provider[];
@@ -22,6 +31,32 @@ export function ProvidersList({ providers }: ProvidersListProps) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ id: number; success: boolean; message: string } | null>(null);
+  const [catalog, setCatalog] = useState<Record<string, CatalogProvider>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const res = await fetch("/api/providers/catalog", { cache: "no-store" });
+      const data = await res.json();
+      const providersList = (data.providers || []) as CatalogProvider[];
+
+      if (cancelled) return;
+
+      const mapped = providersList.reduce<Record<string, CatalogProvider>>((acc, item) => {
+        acc[item.id] = item;
+        return acc;
+      }, {});
+
+      setCatalog(mapped);
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this provider?")) return;
@@ -71,9 +106,19 @@ export function ProvidersList({ providers }: ProvidersListProps) {
     }
   };
 
-  // Look up model info from PROVIDER_INFO
+  const parseConfig = (raw: string | null): ProviderRuntimeConfig => {
+    if (!raw) return {};
+
+    try {
+      return JSON.parse(raw) as ProviderRuntimeConfig;
+    } catch {
+      return {};
+    }
+  };
+
+  // Look up model info from dynamic catalog
   function getModelInfo(providerName: string, modelId: string) {
-    const providerInfo = PROVIDER_INFO[providerName as ProviderName];
+    const providerInfo = catalog[providerName];
     if (!providerInfo) return null;
     return providerInfo.models.find((m) => m.id === modelId) || null;
   }
@@ -81,7 +126,10 @@ export function ProvidersList({ providers }: ProvidersListProps) {
   return (
     <div className="space-y-4">
       {providers.map((provider) => {
-        const modelInfo = getModelInfo(provider.name, provider.model);
+        const runtimeConfig = parseConfig(provider.config);
+        const providerLookupId =
+          runtimeConfig.models_dev_provider_id || runtimeConfig.providerId || provider.name;
+        const modelInfo = getModelInfo(providerLookupId, provider.model);
         const isTestingThis = testingId === provider.id;
         const testResultForThis = testResult?.id === provider.id ? testResult : null;
 

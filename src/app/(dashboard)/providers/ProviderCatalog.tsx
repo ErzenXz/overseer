@@ -1,14 +1,44 @@
 "use client";
 
-import { useState } from "react";
-import { PROVIDER_INFO, type ProviderName } from "@/agent/provider-info";
+import { useEffect, useState } from "react";
 import { ModelCard, formatTokenCount } from "@/components/ModelBadges";
+import type { ModelInfo } from "@/agent/provider-info";
+
+interface CatalogProvider {
+  id: string;
+  displayName: string;
+  requiresKey: boolean;
+  description: string;
+  npm: string;
+  supportsThinking: boolean;
+  supportsMultimodal: boolean;
+  models: ModelInfo[];
+}
 
 export function ProviderCatalog() {
-  const [expandedProvider, setExpandedProvider] = useState<ProviderName | null>(null);
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "thinking" | "multimodal" | "free">("all");
+  const [entries, setEntries] = useState<Array<[string, CatalogProvider]>>([]);
 
-  const entries = Object.entries(PROVIDER_INFO) as [ProviderName, typeof PROVIDER_INFO[ProviderName]][];
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const res = await fetch("/api/providers/catalog", { cache: "no-store" });
+      const data = await res.json();
+      const providers = (data.providers || []) as CatalogProvider[];
+
+      if (!cancelled) {
+        setEntries(providers.map((provider) => [provider.id, provider]));
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Compute stats for the header
   const totalModels = entries.reduce((acc, [, info]) => acc + info.models.length, 0);
