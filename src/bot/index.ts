@@ -17,6 +17,8 @@ import {
 } from "./shared";
 import { getRateLimiter } from "../lib/rate-limiter";
 import { poolManager } from "../lib/resource-pool";
+import { getDefaultModel } from "../agent/providers";
+import { recordChannelEvent } from "../lib/channel-observability";
 
 // Load environment
 config({ path: resolve(process.cwd(), ".env") });
@@ -43,7 +45,9 @@ function isUserAllowed(userId: string): boolean {
 async function startBot() {
   const token = getBotToken();
   if (!token) {
-    logger.error("No Telegram bot token configured. Add it in the admin panel or set TELEGRAM_BOT_TOKEN.");
+    logger.error(
+      "No Telegram bot token configured. Add it in the admin panel or set TELEGRAM_BOT_TOKEN.",
+    );
     console.log("\n⚠️  No Telegram bot token found!");
     console.log("   Configure it at: http://localhost:3000/interfaces");
     console.log("   Or set TELEGRAM_BOT_TOKEN in .env\n");
@@ -55,7 +59,20 @@ async function startBot() {
   // Error handling
   bot.catch((err: unknown, ctx) => {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error("Bot error", { error: errorMessage, userId: String(ctx.from?.id) });
+    recordChannelEvent({
+      channel: "telegram",
+      event: "runtime_error",
+      ok: false,
+      details: {
+        phase: "bot.catch",
+        userId: String(ctx.from?.id),
+        error: errorMessage,
+      },
+    });
+    logger.error("Bot error", {
+      error: errorMessage,
+      userId: String(ctx.from?.id),
+    });
   });
 
   // /start command
@@ -66,12 +83,17 @@ async function startBot() {
       return;
     }
 
-    await ctx.reply(getWelcomeMessage() + "\n\nCommands:\n/help - Show this message\n/reset - Clear conversation history\n/status - Check system status");
+    await ctx.reply(
+      getWelcomeMessage() +
+        "\n\nCommands:\n/help - Show this message\n/reset - Clear conversation history\n/status - Check system status",
+    );
   });
 
   // /help command
   bot.help(async (ctx) => {
-    await ctx.reply(getHelpMessage("Overseer Telegram"), { parse_mode: "Markdown" });
+    await ctx.reply(getHelpMessage("Overseer Telegram"), {
+      parse_mode: "Markdown",
+    });
   });
 
   // /reset command
@@ -88,7 +110,7 @@ async function startBot() {
 
     // Clear both database messages and session
     conversationsModel.clearMessages(conversation.id);
-    
+
     // Get or create session and clear it
     const session = SessionManager.getOrCreateSession({
       conversation_id: conversation.id,
@@ -97,7 +119,7 @@ async function startBot() {
       external_chat_id: chatId,
     });
     SessionManager.clearMessages(session.id);
-    
+
     await ctx.reply("🔄 Conversation history cleared. Let's start fresh!");
   });
 
@@ -124,17 +146,32 @@ async function startBot() {
     // Check comprehensive rate limits
     const rateLimiter = getRateLimiter();
     const estimatedTokenCount = estimateTokens(messageText);
-    
+    const activeModelId =
+      (getDefaultModel() as { modelId?: string } | null)?.modelId || "default";
+
     const rateLimitCheck = await rateLimiter.checkLimit({
       userId,
       interfaceType: "telegram",
       tokens: estimatedTokenCount,
+      modelId: activeModelId,
     });
 
     if (!rateLimitCheck.allowed) {
       const errorMessage = rateLimiter.getErrorMessage(rateLimitCheck);
       await ctx.reply(errorMessage);
-      logger.warn("Rate limit exceeded", { userId, reason: rateLimitCheck.reason });
+      recordChannelEvent({
+        channel: "telegram",
+        event: "rate_limit",
+        ok: false,
+        details: {
+          userId,
+          reason: rateLimitCheck.reason,
+        },
+      });
+      logger.warn("Rate limit exceeded", {
+        userId,
+        reason: rateLimitCheck.reason,
+      });
       return;
     }
 
@@ -144,7 +181,11 @@ async function startBot() {
       await ctx.reply(warning.message);
     }
 
-    logger.info("Message received", { userId, username, length: messageText.length });
+    logger.info("Message received", {
+      userId,
+      username,
+      length: messageText.length,
+    });
 
     // Get or create conversation
     const conversation = conversationsModel.findOrCreate({
@@ -178,16 +219,22 @@ async function startBot() {
     try {
       // Submit to resource pool with priority
       const pool = poolManager.getPool("agent-execution");
-      
+
       await pool.execute(`telegram-${userId}`, async () => {
         // Run agent with streaming
-        const { textStream, fullText, usage } = await runAgentStream(messageText, {
-          conversationId: conversation.id,
-          onToolCall: (toolName) => {
-            logger.info("Tool called", { toolName, conversationId: conversation.id });
-            SessionManager.recordToolCall(session.id);
+        const { textStream, fullText, usage } = await runAgentStream(
+          messageText,
+          {
+            conversationId: conversation.id,
+            onToolCall: (toolName) => {
+              logger.info("Tool called", {
+                toolName,
+                conversationId: conversation.id,
+              });
+              SessionManager.recordToolCall(session.id);
+            },
           },
-        });
+        );
 
         // Stream response to Telegram
         let responseText = "";
@@ -209,7 +256,7 @@ async function startBot() {
                   ctx.chat.id,
                   sentMessage.message_id,
                   undefined,
-                  responseText + "▌"
+                  responseText + "▌",
                 );
               }
               lastUpdate = now;
@@ -230,7 +277,7 @@ async function startBot() {
                 ctx.chat.id,
                 sentMessage.message_id,
                 undefined,
-                finalText
+                finalText,
               );
             }
           } catch {
@@ -261,19 +308,46 @@ async function startBot() {
               interfaceType: "telegram",
               inputTokens: usageData.inputTokens,
               outputTokens: usageData.outputTokens,
-              model: "default", // Could be extracted from agent response
+              model: activeModelId,
             });
           }
         } else if (!responseText) {
-          await ctx.reply("I apologize, but I couldn't generate a response. Please try again.");
+          await ctx.reply(
+            "I apologize, but I couldn't generate a response. Please try again.",
+          );
         }
 
-        logger.info("Response sent", { conversationId: conversation.id, length: finalText?.length });
+        logger.info("Response sent", {
+          conversationId: conversation.id,
+          length: finalText?.length,
+        });
+
+        recordChannelEvent({
+          channel: "telegram",
+          event: "message_processing",
+          ok: true,
+          details: {
+            userId,
+            conversationId: conversation.id,
+            responseLength: finalText?.length,
+          },
+        });
       });
     } catch (error) {
       // Record error in session
       SessionManager.recordError(session.id);
-      
+
+      recordChannelEvent({
+        channel: "telegram",
+        event: "message_processing",
+        ok: false,
+        details: {
+          userId,
+          conversationId: conversation.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+
       logger.error("Error processing message", {
         error: error instanceof Error ? error.message : String(error),
         userId,
@@ -281,16 +355,25 @@ async function startBot() {
 
       await ctx.reply(
         "❌ I encountered an error processing your request. Please try again.\n\n" +
-          "If this persists, check the admin panel for provider configuration."
+          "If this persists, check the admin panel for provider configuration.",
       );
     }
   });
 
   // Start polling
   logger.info("Starting Telegram bot...");
-  
+
   bot.launch({
     dropPendingUpdates: true,
+  });
+
+  recordChannelEvent({
+    channel: "telegram",
+    event: "startup",
+    ok: true,
+    details: {
+      mode: "polling",
+    },
   });
 
   console.log("🤖 Telegram bot is running!");

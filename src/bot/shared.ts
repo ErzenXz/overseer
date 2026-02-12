@@ -57,7 +57,7 @@ export function createBotLogger(botType: string): BotLogger {
  */
 export function isRateLimited(
   userId: string,
-  config: RateLimitConfig = {}
+  config: RateLimitConfig = {},
 ): boolean {
   const cooldownMs = config.cooldownMs || DEFAULT_COOLDOWN_MS;
   const now = Date.now();
@@ -76,7 +76,7 @@ export function isRateLimited(
  */
 export function getRemainingCooldown(
   userId: string,
-  config: RateLimitConfig = {}
+  config: RateLimitConfig = {},
 ): number {
   const cooldownMs = config.cooldownMs || DEFAULT_COOLDOWN_MS;
   const now = Date.now();
@@ -97,7 +97,7 @@ export function clearRateLimit(userId: string): void {
  */
 export function getBotToken(
   interfaceType: "telegram" | "discord" | "slack",
-  envVarName: string
+  envVarName: string,
 ): string | null {
   // First try database
   const botInterface = interfacesModel.findByType(interfaceType);
@@ -117,7 +117,7 @@ export function getBotToken(
  */
 export function getAllowedUsers(
   interfaceType: "telegram" | "discord" | "slack",
-  envVarName: string
+  envVarName: string,
 ): string[] {
   const botInterface = interfacesModel.findByType(interfaceType);
   if (botInterface) {
@@ -143,7 +143,7 @@ export function getAllowedUsers(
 export function isUserAllowed(
   userId: string,
   interfaceType: "telegram" | "discord" | "slack",
-  envVarName: string
+  envVarName: string,
 ): boolean {
   const allowed = getAllowedUsers(interfaceType, envVarName);
   if (allowed.length === 0) return true; // No restrictions
@@ -153,7 +153,23 @@ export function isUserAllowed(
 /**
  * Get allowed guilds/groups from environment
  */
-export function getAllowedGuilds(envVarName: string): string[] {
+export function getAllowedGuilds(
+  envVarName: string,
+  interfaceType: "discord" | "slack" = "discord",
+): string[] {
+  const botInterface = interfacesModel.findByType(interfaceType);
+  if (botInterface) {
+    const config = interfacesModel.getDecryptedConfig(botInterface.id);
+    if (Array.isArray(config?.allowed_guilds)) {
+      const guilds = config.allowed_guilds.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      );
+      if (guilds.length > 0) {
+        return guilds;
+      }
+    }
+  }
+
   const envGuilds = process.env[envVarName];
   if (envGuilds) {
     return envGuilds
@@ -237,7 +253,7 @@ export async function getSystemStatus(): Promise<string> {
   const os = await import("os");
   const uptime = Math.floor(os.uptime() / 60);
   const memUsed = Math.round(
-    ((os.totalmem() - os.freemem()) / os.totalmem()) * 100
+    ((os.totalmem() - os.freemem()) / os.totalmem()) * 100,
   );
   const load = os.loadavg()[0].toFixed(2);
 

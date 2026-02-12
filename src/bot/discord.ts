@@ -47,6 +47,8 @@ import {
   getHelpMessage,
   getWelcomeMessage,
 } from "./shared";
+import { getRateLimiter } from "../lib/rate-limiter";
+import { recordChannelEvent } from "../lib/channel-observability";
 
 // Load environment
 config({ path: resolve(process.cwd(), ".env") });
@@ -106,7 +108,7 @@ const commands = [
       option
         .setName("prompt")
         .setDescription("Your question or request")
-        .setRequired(true)
+        .setRequired(true),
     ),
 
   new SlashCommandBuilder()
@@ -116,7 +118,7 @@ const commands = [
       option
         .setName("command")
         .setDescription("The shell command to execute")
-        .setRequired(true)
+        .setRequired(true),
     ),
 
   new SlashCommandBuilder()
@@ -154,7 +156,7 @@ async function registerCommands(token: string, clientId: string) {
 
 // Process attachments for multi-modal
 async function processAttachments(
-  attachments: Attachment[]
+  attachments: Attachment[],
 ): Promise<{ type: "image" | "file"; url: string; name: string }[]> {
   const processed: { type: "image" | "file"; url: string; name: string }[] = [];
 
@@ -177,7 +179,7 @@ async function processAttachments(
 function getOrCreateConversation(
   channelId: string,
   userId: string,
-  username?: string
+  username?: string,
 ) {
   return conversationsModel.findOrCreate({
     interface_type: "discord",
@@ -221,6 +223,36 @@ async function handleAskCommand(interaction: ChatInputCommandInteraction) {
   }
 
   const prompt = interaction.options.getString("prompt", true);
+  const rateLimiter = getRateLimiter();
+  const estimatedTokenCount = estimateTokens(prompt);
+
+  const preCheck = await rateLimiter.checkLimit({
+    userId,
+    interfaceType: "discord",
+    tokens: estimatedTokenCount,
+  });
+
+  if (!preCheck.allowed) {
+    recordChannelEvent({
+      channel: "discord",
+      event: "rate_limit",
+      ok: false,
+      details: {
+        userId,
+        reason: preCheck.reason,
+        command: "ask",
+      },
+    });
+
+    await interaction.reply({
+      content:
+        rateLimiter.getErrorMessage(preCheck) ||
+        preCheck.reason ||
+        "Rate limit exceeded",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   logger.info("Ask command received", {
     userId,
     username,
@@ -278,7 +310,7 @@ async function handleAskCommand(interaction: ChatInputCommandInteraction) {
         try {
           const displayText = truncateText(
             responseText + "▌",
-            MAX_MESSAGE_LENGTH
+            MAX_MESSAGE_LENGTH,
           );
           await interaction.editReply(displayText);
           lastUpdate = now;
@@ -318,9 +350,20 @@ async function handleAskCommand(interaction: ChatInputCommandInteraction) {
         input_tokens: usageData?.inputTokens,
         output_tokens: usageData?.outputTokens,
       });
+
+      if (usageData) {
+        rateLimiter.recordRequest({
+          userId,
+          conversationId: conversation.id,
+          interfaceType: "discord",
+          inputTokens: usageData.inputTokens,
+          outputTokens: usageData.outputTokens,
+          model: "default",
+        });
+      }
     } else if (!responseText) {
       await interaction.editReply(
-        "I apologize, but I couldn't generate a response. Please try again."
+        "I apologize, but I couldn't generate a response. Please try again.",
       );
     }
 
@@ -328,18 +371,42 @@ async function handleAskCommand(interaction: ChatInputCommandInteraction) {
       conversationId: conversation.id,
       length: finalText?.length,
     });
+
+    recordChannelEvent({
+      channel: "discord",
+      event: "command_processing",
+      ok: true,
+      details: {
+        command: "ask",
+        userId,
+        conversationId: conversation.id,
+        responseLength: finalText?.length,
+      },
+    });
   } catch (error) {
     // Record error in session
     SessionManager.recordError(session.id);
-    
+
     logger.error("Error processing ask command", {
       error: error instanceof Error ? error.message : String(error),
       userId,
     });
 
+    recordChannelEvent({
+      channel: "discord",
+      event: "command_processing",
+      ok: false,
+      details: {
+        command: "ask",
+        userId,
+        conversationId: conversation.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+
     await interaction.editReply(
       "❌ I encountered an error processing your request. Please try again.\n\n" +
-        "If this persists, check the admin panel for provider configuration."
+        "If this persists, check the admin panel for provider configuration.",
     );
   }
 }
@@ -378,6 +445,36 @@ async function handleExecuteCommand(interaction: ChatInputCommandInteraction) {
   }
 
   const command = interaction.options.getString("command", true);
+  const rateLimiter = getRateLimiter();
+  const estimatedTokenCount = estimateTokens(command);
+
+  const preCheck = await rateLimiter.checkLimit({
+    userId,
+    interfaceType: "discord",
+    tokens: estimatedTokenCount,
+  });
+
+  if (!preCheck.allowed) {
+    recordChannelEvent({
+      channel: "discord",
+      event: "rate_limit",
+      ok: false,
+      details: {
+        userId,
+        reason: preCheck.reason,
+        command: "execute",
+      },
+    });
+
+    await interaction.reply({
+      content:
+        rateLimiter.getErrorMessage(preCheck) ||
+        preCheck.reason ||
+        "Rate limit exceeded",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   logger.info("Execute command received", { userId, username, command });
 
   // Defer reply for long operations
@@ -420,7 +517,7 @@ async function handleExecuteCommand(interaction: ChatInputCommandInteraction) {
         try {
           const displayText = truncateText(
             responseText + "▌",
-            MAX_MESSAGE_LENGTH
+            MAX_MESSAGE_LENGTH,
           );
           await interaction.editReply(displayText);
           lastUpdate = now;
@@ -452,9 +549,32 @@ async function handleExecuteCommand(interaction: ChatInputCommandInteraction) {
         input_tokens: usageData?.inputTokens,
         output_tokens: usageData?.outputTokens,
       });
+
+      if (usageData) {
+        rateLimiter.recordRequest({
+          userId,
+          conversationId: conversation.id,
+          interfaceType: "discord",
+          inputTokens: usageData.inputTokens,
+          outputTokens: usageData.outputTokens,
+          model: "default",
+        });
+      }
+
+      recordChannelEvent({
+        channel: "discord",
+        event: "command_processing",
+        ok: true,
+        details: {
+          command: "execute",
+          userId,
+          conversationId: conversation.id,
+          responseLength: finalText.length,
+        },
+      });
     } else {
       await interaction.editReply(
-        "I couldn't execute the command. Please try again."
+        "I couldn't execute the command. Please try again.",
       );
     }
   } catch (error) {
@@ -463,7 +583,21 @@ async function handleExecuteCommand(interaction: ChatInputCommandInteraction) {
       userId,
     });
 
-    await interaction.editReply("❌ Error executing command. Please try again.");
+    recordChannelEvent({
+      channel: "discord",
+      event: "command_processing",
+      ok: false,
+      details: {
+        command: "execute",
+        userId,
+        conversationId: conversation.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+
+    await interaction.editReply(
+      "❌ Error executing command. Please try again.",
+    );
   }
 }
 
@@ -511,7 +645,7 @@ async function handleHelpCommand(interaction: ChatInputCommandInteraction) {
       { name: "/ask", value: "Ask the AI assistant a question", inline: true },
       { name: "/execute", value: "Execute a shell command", inline: true },
       { name: "/status", value: "Check system status", inline: true },
-      { name: "/reset", value: "Clear conversation history", inline: true }
+      { name: "/reset", value: "Clear conversation history", inline: true },
     )
     .setFooter({ text: "You can also mention me or DM me directly!" });
 
@@ -540,7 +674,7 @@ async function handleResetCommand(interaction: ChatInputCommandInteraction) {
 
   // Clear both database messages and session
   conversationsModel.clearMessages(conversation.id);
-  
+
   // Get or create session and clear it
   const session = SessionManager.getOrCreateSession({
     conversation_id: conversation.id,
@@ -592,7 +726,9 @@ async function handleMessage(message: Message) {
   // Extract message content (remove mention if present)
   let content = message.content;
   if (isMentioned && client.user) {
-    content = content.replace(new RegExp(`<@!?${client.user.id}>`, "g"), "").trim();
+    content = content
+      .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
+      .trim();
   }
 
   // If no content after removing mention, send help
@@ -621,7 +757,7 @@ async function handleMessage(message: Message) {
 
   // Process attachments
   const attachments = await processAttachments(
-    Array.from(message.attachments.values())
+    Array.from(message.attachments.values()),
   );
 
   // Build prompt with attachment context
@@ -635,6 +771,34 @@ async function handleMessage(message: Message) {
 
   // Get or create conversation
   const conversation = getOrCreateConversation(channelId, userId, username);
+
+  const rateLimiter = getRateLimiter();
+  const estimatedTokenCount = estimateTokens(prompt);
+  const preCheck = await rateLimiter.checkLimit({
+    userId,
+    interfaceType: "discord",
+    tokens: estimatedTokenCount,
+  });
+
+  if (!preCheck.allowed) {
+    recordChannelEvent({
+      channel: "discord",
+      event: "rate_limit",
+      ok: false,
+      details: {
+        userId,
+        reason: preCheck.reason,
+        source: isDM ? "dm" : "mention",
+      },
+    });
+
+    await message.reply(
+      rateLimiter.getErrorMessage(preCheck) ||
+        preCheck.reason ||
+        "Rate limit exceeded",
+    );
+    return;
+  }
 
   // Get or create session
   const session = SessionManager.getOrCreateSession({
@@ -690,7 +854,7 @@ async function handleMessage(message: Message) {
         try {
           const displayText = truncateText(
             responseText + "▌",
-            MAX_MESSAGE_LENGTH
+            MAX_MESSAGE_LENGTH,
           );
           if (!sentMessage) {
             sentMessage = await message.reply(displayText);
@@ -732,10 +896,10 @@ async function handleMessage(message: Message) {
 
       // Save assistant message
       const usageData = await usage;
-      
+
       // Add to session
       SessionManager.addMessage(session.id, "assistant", finalText);
-      
+
       // Save to database
       messagesModel.create({
         conversation_id: conversation.id,
@@ -744,9 +908,20 @@ async function handleMessage(message: Message) {
         input_tokens: usageData?.inputTokens,
         output_tokens: usageData?.outputTokens,
       });
+
+      if (usageData) {
+        rateLimiter.recordRequest({
+          userId,
+          conversationId: conversation.id,
+          interfaceType: "discord",
+          inputTokens: usageData.inputTokens,
+          outputTokens: usageData.outputTokens,
+          model: "default",
+        });
+      }
     } else if (!responseText) {
       await message.reply(
-        "I apologize, but I couldn't generate a response. Please try again."
+        "I apologize, but I couldn't generate a response. Please try again.",
       );
     }
 
@@ -754,19 +929,41 @@ async function handleMessage(message: Message) {
       conversationId: conversation.id,
       length: finalText?.length,
     });
+
+    recordChannelEvent({
+      channel: "discord",
+      event: "message_processing",
+      ok: true,
+      details: {
+        userId,
+        conversationId: conversation.id,
+        responseLength: finalText?.length,
+      },
+    });
   } catch (error) {
     clearInterval(typingInterval);
-    
+
     // Record error in session
     SessionManager.recordError(session.id);
-    
+
     logger.error("Error processing message", {
       error: error instanceof Error ? error.message : String(error),
       userId,
     });
 
+    recordChannelEvent({
+      channel: "discord",
+      event: "message_processing",
+      ok: false,
+      details: {
+        userId,
+        conversationId: conversation.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+
     await message.reply(
-      "❌ I encountered an error processing your request. Please try again."
+      "❌ I encountered an error processing your request. Please try again.",
     );
   }
 }
@@ -776,7 +973,7 @@ async function startBot() {
   const token = getDiscordToken();
   if (!token) {
     logger.error(
-      "No Discord bot token configured. Add it in the admin panel or set DISCORD_BOT_TOKEN."
+      "No Discord bot token configured. Add it in the admin panel or set DISCORD_BOT_TOKEN.",
     );
     console.log("\n⚠️  No Discord bot token found!");
     console.log("   Configure it at: http://localhost:3000/interfaces");
@@ -786,7 +983,9 @@ async function startBot() {
 
   const clientId = getClientId();
   if (!clientId) {
-    logger.error("No Discord client ID configured. Set DISCORD_CLIENT_ID in .env.");
+    logger.error(
+      "No Discord client ID configured. Set DISCORD_CLIENT_ID in .env.",
+    );
     console.log("\n⚠️  No Discord client ID found!");
     console.log("   Set DISCORD_CLIENT_ID in .env\n");
     process.exit(1);
@@ -813,6 +1012,16 @@ async function startBot() {
     console.log(`   Logged in as: ${readyClient.user.tag}`);
     console.log(`   Servers: ${readyClient.guilds.cache.size}`);
     console.log(`   Use /ask to start a conversation\n`);
+
+    recordChannelEvent({
+      channel: "discord",
+      event: "startup",
+      ok: true,
+      details: {
+        userTag: readyClient.user.tag,
+        guildCount: readyClient.guilds.cache.size,
+      },
+    });
   });
 
   // Handle slash commands
@@ -850,6 +1059,16 @@ async function startBot() {
         commandName,
       });
 
+      recordChannelEvent({
+        channel: "discord",
+        event: "command_processing",
+        ok: false,
+        details: {
+          command: commandName,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+
       const errorReply = {
         content: "❌ An error occurred while processing your command.",
         ephemeral: true,
@@ -869,6 +1088,15 @@ async function startBot() {
   // Handle errors
   client.on(Events.Error, (error) => {
     logger.error("Discord client error", { error: error.message });
+
+    recordChannelEvent({
+      channel: "discord",
+      event: "runtime_error",
+      ok: false,
+      details: {
+        error: error.message,
+      },
+    });
   });
 
   // Login

@@ -29,6 +29,57 @@ get_ip() {
     hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost"
 }
 
+UPDATE_REMOTE=""
+UPDATE_BRANCH=""
+UPDATE_LOCAL_SHA=""
+UPDATE_REMOTE_SHA=""
+UPDATE_BASE_SHA=""
+UPDATE_STATUS=""
+
+resolve_tracking_ref() {
+    local tracking_ref
+    tracking_ref=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || true)
+
+    if [ -n "$tracking_ref" ]; then
+        UPDATE_REMOTE="${tracking_ref%%/*}"
+        UPDATE_BRANCH="${tracking_ref#*/}"
+        return 0
+    fi
+
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+    UPDATE_REMOTE="origin"
+    UPDATE_BRANCH="$current_branch"
+}
+
+check_for_updates() {
+    if [ ! -d ".git" ]; then
+        UPDATE_STATUS="not-git"
+        return 0
+    fi
+
+    resolve_tracking_ref
+
+    if ! git fetch "$UPDATE_REMOTE" "$UPDATE_BRANCH" --quiet; then
+        UPDATE_STATUS="fetch-failed"
+        return 0
+    fi
+
+    UPDATE_LOCAL_SHA=$(git rev-parse HEAD)
+    UPDATE_REMOTE_SHA=$(git rev-parse "$UPDATE_REMOTE/$UPDATE_BRANCH")
+    UPDATE_BASE_SHA=$(git merge-base HEAD "$UPDATE_REMOTE/$UPDATE_BRANCH")
+
+    if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
+        UPDATE_STATUS="up-to-date"
+    elif [ "$UPDATE_LOCAL_SHA" = "$UPDATE_BASE_SHA" ]; then
+        UPDATE_STATUS="behind"
+    elif [ "$UPDATE_REMOTE_SHA" = "$UPDATE_BASE_SHA" ]; then
+        UPDATE_STATUS="ahead"
+    else
+        UPDATE_STATUS="diverged"
+    fi
+}
+
 # ---- Regenerate systemd service to match current config ----
 regenerate_systemd_service() {
     if ! is_linux || ! command -v systemctl &>/dev/null; then
@@ -137,61 +188,224 @@ cmd_logs() {
     fi
 }
 
+cmd_install_cli() {
+    local target="/usr/local/bin/overseer"
+    echo -e "${CYAN}${BOLD}Installing global Overseer command...${NC}"
+
+    if [ -L "$target" ] || [ -e "$target" ]; then
+        echo -e "${YELLOW}[WARN]${NC} $target already exists. Replacing it."
+        sudo rm -f "$target"
+    fi
+
+    sudo ln -s "$SCRIPT_DIR/overseer" "$target"
+    sudo chmod +x "$SCRIPT_DIR/overseer"
+
+    echo -e "${GREEN}[OK]${NC} Global command installed."
+    echo -e "  You can now run: ${BOLD}overseer status${NC} from any directory"
+}
+
+cmd_uninstall_cli() {
+    local target="/usr/local/bin/overseer"
+    echo -e "${CYAN}${BOLD}Removing global Overseer command...${NC}"
+
+    if [ -L "$target" ] || [ -e "$target" ]; then
+        sudo rm -f "$target"
+        echo -e "${GREEN}[OK]${NC} Removed $target"
+    else
+        echo -e "${YELLOW}[WARN]${NC} No global overseer command found at $target"
+    fi
+}
+
+cmd_update_check() {
+    echo -e "${CYAN}${BOLD}Checking for Overseer updates...${NC}"
+    echo ""
+
+    check_for_updates
+
+    case "$UPDATE_STATUS" in
+        up-to-date)
+            echo -e "${GREEN}[OK]${NC} Already up-to-date (${UPDATE_LOCAL_SHA:0:8})."
+            ;;
+        behind)
+            echo -e "${YELLOW}[UPDATE AVAILABLE]${NC} New commits found on ${UPDATE_REMOTE}/${UPDATE_BRANCH}."
+            echo -e "  Local:  ${UPDATE_LOCAL_SHA:0:8}"
+            echo -e "  Remote: ${UPDATE_REMOTE_SHA:0:8}"
+            ;;
+        ahead)
+            echo -e "${YELLOW}[INFO]${NC} Local branch is ahead of ${UPDATE_REMOTE}/${UPDATE_BRANCH}."
+            echo -e "  Local:  ${UPDATE_LOCAL_SHA:0:8}"
+            echo -e "  Remote: ${UPDATE_REMOTE_SHA:0:8}"
+            ;;
+        diverged)
+            echo -e "${RED}[WARN]${NC} Local and remote branches have diverged."
+            echo -e "  Local:  ${UPDATE_LOCAL_SHA:0:8}"
+            echo -e "  Remote: ${UPDATE_REMOTE_SHA:0:8}"
+            ;;
+        not-git)
+            echo -e "${YELLOW}[WARN]${NC} This directory is not a git repository; update check unavailable."
+            ;;
+        fetch-failed)
+            echo -e "${RED}[ERROR]${NC} Failed to fetch from ${UPDATE_REMOTE}/${UPDATE_BRANCH}."
+            ;;
+    esac
+}
+
 cmd_update() {
+    local force_update="${1:-false}"
     echo -e "${CYAN}${BOLD}Updating Overseer...${NC}"
     echo ""
 
-    # 1. Pull latest code (this also updates THIS script)
+    # 1. Check if updates are available
+    check_for_updates
+
+    case "$UPDATE_STATUS" in
+        up-to-date)
+            echo -e "${GREEN}[OK]${NC} No updates available. Already on latest commit (${UPDATE_LOCAL_SHA:0:8})."
+            return 0
+            ;;
+        ahead)
+            echo -e "${YELLOW}[INFO]${NC} Local branch is ahead of ${UPDATE_REMOTE}/${UPDATE_BRANCH}; no remote updates to apply."
+            return 0
+            ;;
+        diverged)
+            if [ "$force_update" != "true" ]; then
+                echo -e "${RED}[WARN]${NC} Local and remote branches diverged. Resolve manually or run: ./overseer update --force"
+                return 1
+            fi
+            echo -e "${YELLOW}[FORCE]${NC} Branch has diverged; attempting forced update path."
+            ;;
+        not-git)
+            echo -e "${RED}[ERROR]${NC} This folder is not a git repository. Cannot perform update."
+            return 1
+            ;;
+        fetch-failed)
+            echo -e "${RED}[ERROR]${NC} Could not fetch updates from ${UPDATE_REMOTE}/${UPDATE_BRANCH}."
+            return 1
+            ;;
+        behind)
+            echo -e "${BLUE}==>${NC} Updates detected on ${UPDATE_REMOTE}/${UPDATE_BRANCH}"
+            ;;
+    esac
+
+    # 2. Pull latest code (this also updates THIS script)
     echo -e "${BLUE}==>${NC} Pulling latest code..."
-    if [ -d ".git" ]; then
-        git stash 2>/dev/null || true
-        git pull origin main
-        git stash pop 2>/dev/null || true
+
+    local had_stash="false"
+    if [ -n "$(git status --porcelain)" ]; then
+        git stash push -u -m "overseer-auto-stash-$(date +%s)" >/dev/null 2>&1 || true
+        had_stash="true"
     fi
+
+    local old_sha="$UPDATE_LOCAL_SHA"
+    if ! git pull --ff-only "$UPDATE_REMOTE" "$UPDATE_BRANCH"; then
+        echo -e "${RED}[ERROR]${NC} Failed to fast-forward. Resolve git state and retry."
+        if [ "$had_stash" = "true" ]; then
+            git stash pop >/dev/null 2>&1 || true
+        fi
+        return 1
+    fi
+
+    if [ "$had_stash" = "true" ]; then
+        git stash pop >/dev/null 2>&1 || true
+    fi
+
+    local new_sha
+    new_sha=$(git rev-parse HEAD)
+
+    if [ "$old_sha" = "$new_sha" ]; then
+        echo -e "${GREEN}[OK]${NC} Pull completed, but no new commit was applied."
+        return 0
+    fi
+
+    echo -e "    ${GREEN}+${NC} Updated ${old_sha:0:8} -> ${new_sha:0:8}"
     echo ""
 
-    # 2. Install dependencies
-    echo -e "${BLUE}==>${NC} Installing dependencies..."
-    if command -v pnpm &>/dev/null; then
-        pnpm install --no-frozen-lockfile
+    local changed_files
+    changed_files=$(git diff --name-only "$old_sha" "$new_sha")
+
+    local needs_install="false"
+    local needs_db="false"
+    local needs_build="false"
+
+    while IFS= read -r file; do
+        [ -z "$file" ] && continue
+        case "$file" in
+            package.json|pnpm-lock.yaml|package-lock.json|yarn.lock)
+                needs_install="true"
+                ;;
+        esac
+
+        case "$file" in
+            src/database/*|src/database/*/*|data/*)
+                needs_db="true"
+                ;;
+        esac
+
+        case "$file" in
+            docs/*|*.md|LICENSE)
+                ;;
+            *)
+                needs_build="true"
+                ;;
+        esac
+    done <<< "$changed_files"
+
+    # 3. Install dependencies (only if lockfiles/package changed)
+    if [ "$needs_install" = "true" ]; then
+        echo -e "${BLUE}==>${NC} Installing dependencies..."
+        if command -v pnpm &>/dev/null; then
+            pnpm install --no-frozen-lockfile
+        else
+            npm install
+        fi
+        echo ""
     else
-        npm install
+        echo -e "${BLUE}==>${NC} Skipping dependency install (no lockfile/package changes)."
+        echo ""
     fi
-    echo ""
 
-    # 3. Run database migrations
-    echo -e "${BLUE}==>${NC} Running database migrations..."
-    if command -v pnpm &>/dev/null; then
-        pnpm run db:init 2>&1 || true
+    # 4. Run database migrations when database-related files changed
+    if [ "$needs_db" = "true" ]; then
+        echo -e "${BLUE}==>${NC} Running database migrations..."
+        if command -v pnpm &>/dev/null; then
+            pnpm run db:init 2>&1 || true
+        else
+            npm run db:init 2>&1 || true
+        fi
+        echo ""
     else
-        npm run db:init 2>&1 || true
+        echo -e "${BLUE}==>${NC} Skipping database migrations (no DB changes detected)."
+        echo ""
     fi
-    echo ""
 
-    # 4. Clean build
-    echo -e "${BLUE}==>${NC} Building application..."
-    rm -rf .next
-    if command -v pnpm &>/dev/null; then
-        pnpm run build
+    # 5. Build and restart only when runtime-affecting changes exist
+    if [ "$needs_build" = "true" ]; then
+        echo -e "${BLUE}==>${NC} Building application..."
+        rm -rf .next
+        if command -v pnpm &>/dev/null; then
+            pnpm run build
+        else
+            npm run build
+        fi
+
+        if [ ! -d ".next" ]; then
+            echo -e "${RED}Build failed!${NC}"
+            exit 1
+        fi
+        echo ""
+
+        # 6. Regenerate systemd service (ensures it matches current config)
+        echo -e "${BLUE}==>${NC} Updating system service..."
+        regenerate_systemd_service
+
+        # 7. Restart
+        echo -e "${BLUE}==>${NC} Restarting services..."
+        cmd_stop
+        sleep 2
+        cmd_start
     else
-        npm run build
+        echo -e "${BLUE}==>${NC} Runtime unchanged (docs/meta-only update). Skipping build and restart."
     fi
-
-    if [ ! -d ".next" ]; then
-        echo -e "${RED}Build failed!${NC}"
-        exit 1
-    fi
-    echo ""
-
-    # 5. Regenerate systemd service (ensures it matches current config)
-    echo -e "${BLUE}==>${NC} Updating system service..."
-    regenerate_systemd_service
-
-    # 6. Restart
-    echo -e "${BLUE}==>${NC} Restarting services..."
-    cmd_stop
-    sleep 2
-    cmd_start
 
     echo ""
     echo -e "${GREEN}${BOLD}Update complete!${NC}"
@@ -209,7 +423,11 @@ cmd_help() {
     echo "  restart   Restart all services"
     echo "  status    Show service status"
     echo "  logs      View logs (logs web|telegram|discord|whatsapp)"
-    echo "  update    Update to latest version"
+    echo "  update    Update to latest version (only applies when new commits exist)"
+    echo "  update --check  Check if updates are available"
+    echo "  update --force  Attempt update even if branch diverged"
+    echo "  install-cli     Install global 'overseer' command"
+    echo "  uninstall-cli   Remove global 'overseer' command"
     echo "  help      Show this help"
 }
 
@@ -219,6 +437,14 @@ case "${1:-help}" in
     restart) cmd_restart ;;
     status)  cmd_status ;;
     logs)    cmd_logs "${2:-}" ;;
-    update)  cmd_update ;;
+    install-cli) cmd_install_cli ;;
+    uninstall-cli) cmd_uninstall_cli ;;
+    update)
+        case "${2:-}" in
+            --check|-c) cmd_update_check ;;
+            --force|-f) cmd_update true ;;
+            *) cmd_update ;;
+        esac
+        ;;
     help|*)  cmd_help ;;
 esac

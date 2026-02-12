@@ -6,6 +6,8 @@ import { conversationsModel, messagesModel } from "@/database";
 import { getModelById } from "@/agent/providers";
 import { createLogger } from "@/lib/logger";
 import { resumableStreams } from "@/lib/resumable-streams";
+import { getRateLimiter } from "@/lib/rate-limiter";
+import { estimateTokens } from "@/lib/session-manager";
 
 const logger = createLogger("chat-api");
 
@@ -70,6 +72,29 @@ export async function POST(request: NextRequest) {
 
     // Get model
     const model = providerId ? getModelById(providerId) : undefined;
+    const modelId =
+      (model as { modelId?: string } | undefined)?.modelId || "default";
+
+    // Check multi-tier limits and user policy before starting the stream
+    const rateLimiter = getRateLimiter();
+    const preCheck = await rateLimiter.checkLimit({
+      userId: user.username,
+      interfaceType: "web",
+      tokens: estimateTokens(message),
+      modelId,
+    });
+
+    if (!preCheck.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            rateLimiter.getErrorMessage(preCheck) ||
+            preCheck.reason ||
+            "Rate limit exceeded",
+        },
+        { status: 429 },
+      );
+    }
 
     logger.info("Starting chat stream", {
       conversationId,
@@ -167,6 +192,17 @@ export async function POST(request: NextRequest) {
             input_tokens: usage?.inputTokens,
             output_tokens: usage?.outputTokens,
           });
+
+          if (usage) {
+            rateLimiter.recordRequest({
+              userId: user.username,
+              interfaceType: "web",
+              conversationId,
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+              model: modelId,
+            });
+          }
 
           // Send done event
           sendEvent({

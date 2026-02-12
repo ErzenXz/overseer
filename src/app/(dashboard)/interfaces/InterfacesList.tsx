@@ -24,6 +24,17 @@ const interfaceIcons: Record<string, React.ReactNode> = {
 export function InterfacesList({ interfaces }: InterfacesListProps) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [testingId, setTestingId] = useState<number | null>(null);
+  const [testResult, setTestResult] = useState<{ id: number; success: boolean; message: string } | null>(null);
+
+  const parseConfig = (raw: string): Record<string, unknown> => {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
 
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this interface?")) return;
@@ -48,11 +59,34 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
     router.refresh();
   };
 
+  const handleTest = async (id: number) => {
+    setTestingId(id);
+    setTestResult(null);
+
+    try {
+      const res = await fetch(`/api/interfaces/${id}/test`, { method: "POST" });
+      const data = await res.json();
+      setTestResult({
+        id,
+        success: Boolean(data.success),
+        message: data.message || data.error || "Unknown result",
+      });
+    } catch {
+      setTestResult({ id, success: false, message: "Interface test failed" });
+    } finally {
+      setTestingId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {interfaces.map((iface) => {
-        const config = JSON.parse(iface.config);
+        const config = parseConfig(iface.config);
         const hasToken = !!config.bot_token;
+        const hasClientId = iface.type !== "discord" || Boolean(config.client_id);
+        const isHealthyConfig = hasToken && hasClientId;
+        const isTestingThis = testingId === iface.id;
+        const testResultForThis = testResult?.id === iface.id ? testResult : null;
 
         return (
           <div
@@ -95,6 +129,16 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
                   <p className="text-sm text-[var(--color-text-secondary)] mt-1">
                     Token: {hasToken ? "••••••••" : "Not configured"}
                   </p>
+                  {iface.type === "discord" && (
+                    <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                      Client ID: {hasClientId ? "configured" : "missing"}
+                    </p>
+                  )}
+                  {!isHealthyConfig && (
+                    <p className="text-xs text-amber-400 mt-1">
+                      Setup incomplete. Add all required platform fields.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -108,6 +152,13 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
                   }`}
                 >
                   {iface.is_active ? "Disable" : "Enable"}
+                </button>
+                <button
+                  onClick={() => handleTest(iface.id)}
+                  disabled={isTestingThis}
+                  className="px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:text-white bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {isTestingThis ? "Testing..." : "Test"}
                 </button>
                 <a
                   href={`/interfaces/${iface.id}/edit`}
@@ -124,6 +175,18 @@ export function InterfacesList({ interfaces }: InterfacesListProps) {
                 </button>
               </div>
             </div>
+
+            {testResultForThis && (
+              <div
+                className={`mt-3 px-3 py-2 rounded-lg text-xs border ${
+                  testResultForThis.success
+                    ? "bg-green-500/10 border-green-500/20 text-green-400"
+                    : "bg-red-500/10 border-red-500/20 text-red-400"
+                }`}
+              >
+                {testResultForThis.message}
+              </div>
+            )}
           </div>
         );
       })}

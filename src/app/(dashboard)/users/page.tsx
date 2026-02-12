@@ -1,199 +1,239 @@
+import { revalidatePath } from "next/cache";
 import { StatsCard } from "@/components/StatsCard";
-import { UserCard } from "@/components/admin/UserCard";
-import { QuotaUsageBar } from "@/components/admin/QuotaUsageBar";
 import { usersModel } from "@/database";
+import { getQuotaManager } from "@/lib/quota-manager";
+import { getCostTracker } from "@/lib/cost-tracker";
+import { getAllowedModels, getUserPolicy, getUserTokenUsage, upsertUserPolicy } from "@/lib/user-policy";
+
+async function updateUserPolicyAction(formData: FormData) {
+  "use server";
+
+  const userId = String(formData.get("user_id") ?? "").trim();
+  if (!userId) return;
+
+  const parseNullableNumber = (key: string) => {
+    const raw = String(formData.get(key) ?? "").trim();
+    if (!raw) return null;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const allowedModelsRaw = String(formData.get("allowed_models") ?? "").trim();
+  const allowedModels = allowedModelsRaw
+    ? allowedModelsRaw.split(",").map((m) => m.trim()).filter(Boolean)
+    : [];
+
+  upsertUserPolicy(userId, {
+    allowedModels,
+    maxInputTokensPerRequest: parseNullableNumber("max_input_tokens_per_request"),
+    maxOutputTokensPerRequest: parseNullableNumber("max_output_tokens_per_request"),
+    dailyTokenLimit: parseNullableNumber("daily_token_limit"),
+    monthlyTokenLimit: parseNullableNumber("monthly_token_limit"),
+    dailyCostLimit: parseNullableNumber("daily_cost_limit"),
+    monthlyCostLimit: parseNullableNumber("monthly_cost_limit"),
+  });
+
+  revalidatePath("/users");
+}
+
+async function updateTierAction(formData: FormData) {
+  "use server";
+
+  const userId = String(formData.get("user_id") ?? "").trim();
+  const tier = String(formData.get("tier") ?? "free").trim() as "free" | "pro" | "enterprise";
+  if (!userId) return;
+
+  getQuotaManager().updateTier(userId, tier);
+  revalidatePath("/users");
+}
 
 export default function UsersPage() {
   const users = usersModel.findAll();
-  const adminCount = users.filter(u => u.role === "admin").length;
-  const developerCount = users.filter(u => u.role === "developer").length;
-  const operatorCount = users.filter(u => u.role === "operator").length;
-  const viewerCount = users.filter(u => u.role === "viewer").length;
+  const quotaManager = getQuotaManager();
+  const costTracker = getCostTracker();
 
-  // Mock quota data - in production, this would come from database
-  const quotaData = users.map(user => ({
-    user,
-    quotas: {
-      messages: { used: Math.floor(Math.random() * 1000), limit: 1000 },
-      tokens: { used: Math.floor(Math.random() * 100000), limit: 100000 },
-      sessions: { used: Math.floor(Math.random() * 50), limit: 50 },
-    }
-  }));
+  const quotaRows = users.map((user) => {
+    const userId = user.username;
+    const tier = quotaManager.getUserTier(userId);
+    const usage = quotaManager.getUsage(userId);
+    const cost = costTracker.getUserCostSummary(userId);
+    const policy = getUserPolicy(userId);
+    const tokenUsage = getUserTokenUsage(userId);
+    const allowedModels = getAllowedModels(userId)?.join(", ") || "";
+
+    return {
+      user,
+      tier,
+      usage,
+      cost,
+      policy,
+      tokenUsage,
+      allowedModels,
+    };
+  });
+
+  const adminCount = users.filter((u) => u.role === "admin").length;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">User Management</h1>
-          <p className="text-[var(--color-text-secondary)] mt-1">Manage user accounts, roles, and permissions</p>
+          <h1 className="text-xl text-white font-(--font-mono)">User Management</h1>
+          <p className="text-text-secondary mt-1">Multi-user access, quotas, and model usage policy controls.</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] border border-[var(--color-border)] text-sm font-medium rounded transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            Export Users
-          </button>
+          <a
+            href="/analytics"
+            className="px-4 py-2 bg-surface-overlay hover:bg-border text-text-primary border border-border text-sm font-medium rounded transition-colors"
+          >
+            Analytics
+          </a>
           <a
             href="/users/add"
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors"
+            className="px-4 py-2 bg-accent hover:bg-accent-light text-black text-sm font-medium rounded transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
             Add User
           </a>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <StatsCard
           title="Total Users"
           value={users.length}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-          }
           color="accent"
+          icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197" /></svg>}
         />
         <StatsCard
           title="Admins"
           value={adminCount}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          }
           color="danger"
+          icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>}
         />
         <StatsCard
-          title="Developers"
-          value={developerCount}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          }
-          color="success"
-        />
-        <StatsCard
-          title="Operators"
-          value={operatorCount}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.97a1 1 0 00.95.69h4.173c.969 0 1.371 1.24.588 1.81l-3.377 2.455a1 1 0 00-.364 1.118l1.287 3.97c.3.92-.755 1.688-1.54 1.118l-3.377-2.456a1 1 0 00-1.176 0l-3.377 2.456c-.784.57-1.838-.197-1.539-1.118l1.287-3.97a1 1 0 00-.364-1.118L2.98 9.397c-.783-.57-.38-1.81.588-1.81h4.173a1 1 0 00.95-.69l1.286-3.97z" />
-            </svg>
-          }
+          title="Total Monthly Cost"
+          value={`$${quotaRows.reduce((acc, row) => acc + row.cost.monthlyCost, 0).toFixed(2)}`}
           color="warning"
-        />
-        <StatsCard
-          title="Viewers"
-          value={viewerCount}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          }
-          color="info"
+          icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V6m0 12v-2m9-4a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
         />
       </div>
 
-      {/* Role Descriptions */}
-      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
-        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Role Permissions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border-l-4 border-red-500">
-            <h3 className="font-medium text-white mb-2">Admin</h3>
-            <ul className="text-xs text-[var(--color-text-secondary)] space-y-1">
-              <li>✓ Full system access</li>
-              <li>✓ Manage users and roles</li>
-              <li>✓ Configure providers and interfaces</li>
-              <li>✓ Access all conversations</li>
-              <li>✓ Modify system settings</li>
-            </ul>
-          </div>
-          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border-l-4 border-green-500">
-            <h3 className="font-medium text-white mb-2">User</h3>
-            <ul className="text-xs text-[var(--color-text-secondary)] space-y-1">
-              <li>✓ Use the AI agent</li>
-              <li>✓ View own conversations</li>
-              <li>✓ Manage own sessions</li>
-              <li>✓ View active skills</li>
-              <li>✗ Cannot modify system config</li>
-            </ul>
-          </div>
-          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border-l-4 border-blue-500">
-            <h3 className="font-medium text-white mb-2">Viewer</h3>
-            <ul className="text-xs text-[var(--color-text-secondary)] space-y-1">
-              <li>✓ Read-only dashboard access</li>
-              <li>✓ View logs and stats</li>
-              <li>✗ Cannot start conversations</li>
-              <li>✗ Cannot modify anything</li>
-              <li>✓ Monitoring and auditing</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Users Grid */}
-      {users.length === 0 ? (
-        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-12 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-overlay)] flex items-center justify-center">
-            <svg className="w-8 h-8 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-medium text-white mb-2">No users found</h3>
-          <p className="text-[var(--color-text-secondary)] mb-6">Create your first user account to get started</p>
-          <a
-            href="/users/add"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Add Your First User
-          </a>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {quotaData.map(({ user, quotas }) => (
-              <div key={user.id} className="space-y-4">
-                <UserCard user={user} />
-                
-                {/* Quota Usage */}
-                <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
-                  <h3 className="text-sm font-semibold text-white mb-4">Quota Usage</h3>
-                  <div className="space-y-4">
-                    <QuotaUsageBar
-                      used={quotas.messages.used}
-                      limit={quotas.messages.limit}
-                      label="Messages"
-                      color="blue"
-                    />
-                    <QuotaUsageBar
-                      used={quotas.tokens.used}
-                      limit={quotas.tokens.limit}
-                      label="Tokens"
-                      color="purple"
-                    />
-                    <QuotaUsageBar
-                      used={quotas.sessions.used}
-                      limit={quotas.sessions.limit}
-                      label="Sessions"
-                      color="green"
-                    />
-                  </div>
-                </div>
-              </div>
+      <div className="mb-8 bg-surface-raised border border-border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-overlay border-b border-border text-left text-text-secondary">
+            <tr>
+              <th className="px-4 py-3">Username</th>
+              <th className="px-4 py-3">Role</th>
+              <th className="px-4 py-3">Created</th>
+              <th className="px-4 py-3">Last login</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-b border-border/60 last:border-b-0">
+                <td className="px-4 py-3 text-white">{u.username}</td>
+                <td className="px-4 py-3 text-text-secondary">{u.role}</td>
+                <td className="px-4 py-3 text-text-secondary">{new Date(u.created_at).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-text-secondary">{u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "Never"}</td>
+              </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="space-y-4">
+        <h2 className="text-lg text-white font-(--font-mono)">Per-user AI Limits & Policies</h2>
+        {quotaRows.map(({ user, tier, usage, cost, policy, tokenUsage, allowedModels }) => (
+          <div key={user.id} className="bg-surface-raised border border-border rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-white font-medium">{user.username}</h3>
+                <p className="text-xs text-text-muted">
+                  Tier: <span className="text-text-secondary">{tier}</span> · Daily req: {usage.dailyRequests}/{usage.dailyLimit} · Monthly req: {usage.monthlyRequests}/{usage.monthlyLimit}
+                </p>
+                <p className="text-xs text-text-muted">
+                  Tokens (daily/monthly): {tokenUsage.dailyTokens.toLocaleString()} / {tokenUsage.monthlyTokens.toLocaleString()} · Cost (daily/monthly): ${cost.dailyCost.toFixed(4)} / ${cost.monthlyCost.toFixed(4)}
+                </p>
+              </div>
+
+              <form action={updateTierAction} className="flex items-center gap-2">
+                <input type="hidden" name="user_id" value={user.username} />
+                <select
+                  name="tier"
+                  defaultValue={tier}
+                  className="rounded border border-border bg-surface-overlay px-2 py-1.5 text-sm text-white"
+                >
+                  <option value="free">free</option>
+                  <option value="pro">pro</option>
+                  <option value="enterprise">enterprise</option>
+                </select>
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 rounded bg-surface-overlay hover:bg-border text-sm text-white"
+                >
+                  Save Tier
+                </button>
+              </form>
+            </div>
+
+            <form action={updateUserPolicyAction} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input type="hidden" name="user_id" value={user.username} />
+
+              <input
+                name="allowed_models"
+                defaultValue={allowedModels}
+                placeholder="allowed models (comma-separated)"
+                className="rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white"
+              />
+              <input
+                name="max_input_tokens_per_request"
+                defaultValue={policy?.max_input_tokens_per_request ?? ""}
+                placeholder="max input tokens / request"
+                className="rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white"
+              />
+              <input
+                name="max_output_tokens_per_request"
+                defaultValue={policy?.max_output_tokens_per_request ?? ""}
+                placeholder="max output tokens / request"
+                className="rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white"
+              />
+              <input
+                name="daily_token_limit"
+                defaultValue={policy?.daily_token_limit ?? ""}
+                placeholder="daily token limit"
+                className="rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white"
+              />
+              <input
+                name="monthly_token_limit"
+                defaultValue={policy?.monthly_token_limit ?? ""}
+                placeholder="monthly token limit"
+                className="rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white"
+              />
+              <input
+                name="daily_cost_limit"
+                defaultValue={policy?.daily_cost_limit ?? ""}
+                placeholder="daily cost limit ($)"
+                className="rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white"
+              />
+              <input
+                name="monthly_cost_limit"
+                defaultValue={policy?.monthly_cost_limit ?? ""}
+                placeholder="monthly cost limit ($)"
+                className="rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white"
+              />
+
+              <div className="md:col-span-3">
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded bg-accent hover:bg-accent-light text-black text-sm font-medium"
+                >
+                  Save Policy
+                </button>
+              </div>
+            </form>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

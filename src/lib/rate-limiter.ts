@@ -7,6 +7,7 @@ import { getTokenBucketManager, type TokenBucketConfig } from "./token-bucket";
 import { getQuotaManager, TIER_LIMITS, type UserTier } from "./quota-manager";
 import { getCostTracker } from "./cost-tracker";
 import { poolManager } from "./resource-pool";
+import { checkUserPolicyBeforeRequest, getUserPolicy } from "./user-policy";
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -17,7 +18,12 @@ export interface RateLimitResult {
     tpm: { current: number; limit: number };
     daily: { current: number; limit: number };
     monthly: { current: number; limit: number };
-    cost: { daily: number; monthly: number; dailyLimit: number; monthlyLimit: number };
+    cost: {
+      daily: number;
+      monthly: number;
+      dailyLimit: number;
+      monthlyLimit: number;
+    };
   };
 }
 
@@ -26,6 +32,8 @@ export interface RateLimitCheck {
   interfaceType: "telegram" | "discord" | "slack" | "web" | "api";
   tokens?: number; // For TPM limiting
   estimatedCost?: number; // For cost limiting
+  modelId?: string;
+  requestedMaxOutputTokens?: number;
 }
 
 /**
@@ -41,11 +49,43 @@ export class RateLimiter {
    * Check if a request is allowed under all rate limits
    */
   async checkLimit(check: RateLimitCheck): Promise<RateLimitResult> {
-    const { userId, interfaceType, tokens = 0, estimatedCost = 0 } = check;
+    const {
+      userId,
+      interfaceType,
+      tokens = 0,
+      estimatedCost = 0,
+      modelId,
+      requestedMaxOutputTokens,
+    } = check;
 
     // Get user tier and limits
     const tier = this.quotaManager.getUserTier(userId);
-    const limits = TIER_LIMITS[tier];
+    const baseLimits = TIER_LIMITS[tier];
+    const userPolicy = getUserPolicy(userId);
+    const limits = {
+      ...baseLimits,
+      ...(userPolicy?.daily_cost_limit !== null &&
+      userPolicy?.daily_cost_limit !== undefined
+        ? { dailyCost: userPolicy.daily_cost_limit }
+        : {}),
+      ...(userPolicy?.monthly_cost_limit !== null &&
+      userPolicy?.monthly_cost_limit !== undefined
+        ? { monthlyCost: userPolicy.monthly_cost_limit }
+        : {}),
+    };
+
+    const policyCheck = checkUserPolicyBeforeRequest({
+      userId,
+      modelId,
+      estimatedInputTokens: tokens,
+      requestedMaxOutputTokens,
+    });
+    if (!policyCheck.allowed) {
+      return {
+        allowed: false,
+        reason: policyCheck.reason,
+      };
+    }
 
     // 1. Check quota (daily/monthly request limits)
     const quotaCheck = this.quotaManager.hasQuota(userId);
@@ -53,8 +93,8 @@ export class RateLimiter {
       const retryAfter = quotaCheck.resetDaily
         ? quotaCheck.resetDaily.getTime() - Date.now()
         : quotaCheck.resetMonthly
-        ? quotaCheck.resetMonthly.getTime() - Date.now()
-        : undefined;
+          ? quotaCheck.resetMonthly.getTime() - Date.now()
+          : undefined;
 
       return {
         allowed: false,
@@ -73,7 +113,10 @@ export class RateLimiter {
 
     const rpmAllowed = this.tokenBucketManager.tryConsume(rpmConfig, 1);
     if (!rpmAllowed) {
-      const retryAfter = this.tokenBucketManager.getTimeUntilRefill(rpmConfig, 1);
+      const retryAfter = this.tokenBucketManager.getTimeUntilRefill(
+        rpmConfig,
+        1,
+      );
       return {
         allowed: false,
         reason: `Rate limit exceeded: ${limits.rpm} requests per minute`,
@@ -94,7 +137,7 @@ export class RateLimiter {
       if (!tpmAllowed) {
         const retryAfter = this.tokenBucketManager.getTimeUntilRefill(
           tpmConfig,
-          tokens
+          tokens,
         );
         return {
           allowed: false,
@@ -109,7 +152,7 @@ export class RateLimiter {
       const costStatus = this.costTracker.isOverBudget(
         userId,
         limits.dailyCost,
-        limits.monthlyCost
+        limits.monthlyCost,
       );
 
       if (costStatus.overDaily) {
@@ -132,11 +175,11 @@ export class RateLimiter {
     // 5. Check concurrent execution limits
     const pool = poolManager.getPool("agent-execution");
     const poolMetrics = pool.getMetrics();
-    
+
     // Count user's concurrent requests
-    const userConcurrent = pool.getActiveTasks().filter((task) => 
-      task.id.startsWith(userId)
-    ).length;
+    const userConcurrent = pool
+      .getActiveTasks()
+      .filter((task) => task.id.startsWith(userId)).length;
 
     if (userConcurrent >= limits.maxConcurrent) {
       return {
@@ -154,11 +197,26 @@ export class RateLimiter {
       allowed: true,
       limits: {
         rpm: {
-          current: limits.rpm - Math.floor(this.tokenBucketManager.getBucket(rpmConfig).getTokens()),
+          current:
+            limits.rpm -
+            Math.floor(
+              this.tokenBucketManager.getBucket(rpmConfig).getTokens(),
+            ),
           limit: limits.rpm,
         },
         tpm: {
-          current: limits.tpm - Math.floor(this.tokenBucketManager.getBucket({ ...rpmConfig, bucketType: "tpm", capacity: limits.tpm, refillRate: limits.tpm / 60 }).getTokens()),
+          current:
+            limits.tpm -
+            Math.floor(
+              this.tokenBucketManager
+                .getBucket({
+                  ...rpmConfig,
+                  bucketType: "tpm",
+                  capacity: limits.tpm,
+                  refillRate: limits.tpm / 60,
+                })
+                .getTokens(),
+            ),
           limit: limits.tpm,
         },
         daily: {
@@ -218,7 +276,19 @@ export class RateLimiter {
     };
   } {
     const tier = this.quotaManager.getUserTier(userId);
-    const limits = TIER_LIMITS[tier];
+    const baseLimits = TIER_LIMITS[tier];
+    const userPolicy = getUserPolicy(userId);
+    const limits = {
+      ...baseLimits,
+      ...(userPolicy?.daily_cost_limit !== null &&
+      userPolicy?.daily_cost_limit !== undefined
+        ? { dailyCost: userPolicy.daily_cost_limit }
+        : {}),
+      ...(userPolicy?.monthly_cost_limit !== null &&
+      userPolicy?.monthly_cost_limit !== undefined
+        ? { monthlyCost: userPolicy.monthly_cost_limit }
+        : {}),
+    };
     const usage = this.quotaManager.getUsage(userId);
     const cost = this.costTracker.getUserCostSummary(userId);
 
@@ -273,7 +343,7 @@ export class RateLimiter {
   private getTimeUntilNextDay(): number {
     const now = new Date();
     const tomorrow = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
     );
     return tomorrow.getTime() - now.getTime();
   }
@@ -284,7 +354,7 @@ export class RateLimiter {
   private getTimeUntilNextMonth(): number {
     const now = new Date();
     const nextMonth = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
     );
     return nextMonth.getTime() - now.getTime();
   }

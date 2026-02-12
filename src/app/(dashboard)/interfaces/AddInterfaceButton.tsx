@@ -17,6 +17,8 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
     type: "telegram" as "telegram" | "discord",
     name: "My Telegram Bot",
     bot_token: "",
+    client_id: "",
+    allowed_guilds: "",
     allowed_users: "",
   });
 
@@ -34,6 +36,17 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
           name: formData.name,
           config: {
             bot_token: formData.bot_token,
+            ...(formData.type === "discord" && formData.client_id
+              ? { client_id: formData.client_id }
+              : {}),
+            ...(formData.type === "discord" && formData.allowed_guilds
+              ? {
+                  allowed_guilds: formData.allowed_guilds
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                }
+              : {}),
           },
           allowed_users: formData.allowed_users
             ? formData.allowed_users.split(",").map((s) => s.trim())
@@ -96,11 +109,18 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Platform</label>
                 <select
                   value={formData.type}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, type: e.target.value as "telegram" | "discord" }))}
+                  onChange={(e) => {
+                    const type = e.target.value as "telegram" | "discord";
+                    setFormData((prev) => ({
+                      ...prev,
+                      type,
+                      name: type === "telegram" ? "My Telegram Bot" : "My Discord Bot",
+                    }));
+                  }}
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   <option value="telegram">Telegram</option>
-                  <option value="discord" disabled>Discord (Coming Soon)</option>
+                  <option value="discord">Discord</option>
                 </select>
               </div>
 
@@ -126,8 +146,48 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                   placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
                   required
                 />
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">Get this from @BotFather on Telegram</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                  {formData.type === "telegram"
+                    ? "Get this from @BotFather on Telegram"
+                    : "Get this from the Discord Developer Portal → Bot → Token"}
+                </p>
               </div>
+
+              {formData.type === "discord" && (
+                <div>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                    Discord Client ID
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.client_id}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, client_id: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                    placeholder="123456789012345678"
+                  />
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    Needed for slash command registration.
+                  </p>
+                </div>
+              )}
+
+              {formData.type === "discord" && (
+                <div>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                    Allowed Guild IDs (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.allowed_guilds}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, allowed_guilds: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                    placeholder="123456789012345678, 987654321098765432"
+                  />
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    Comma-separated Discord server IDs. Leave empty to allow all.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
@@ -141,7 +201,7 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                   placeholder="123456789, 987654321"
                 />
                 <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                  Comma-separated Telegram user IDs. Leave empty to allow all.
+                  Comma-separated {formData.type === "telegram" ? "Telegram" : "Discord"} user IDs. Leave empty to allow all.
                 </p>
               </div>
 

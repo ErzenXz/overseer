@@ -53,6 +53,17 @@ const navigationSections: NavSection[] = [
         ),
       },
       {
+        name: "Analytics",
+        href: "/analytics",
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3v18h18" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 14l3-3 3 2 4-5" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 8h.01" />
+          </svg>
+        ),
+      },
+      {
         name: "Conversations",
         href: "/conversations",
         icon: (

@@ -9,6 +9,12 @@ import { getRateLimiter } from "@/lib/rate-limiter";
 import { getQuotaManager, TIER_LIMITS } from "@/lib/quota-manager";
 import { getCostTracker } from "@/lib/cost-tracker";
 import { getTokenBucketManager } from "@/lib/token-bucket";
+import {
+  getUserPolicy,
+  getUserTokenUsage,
+  upsertUserPolicy,
+} from "@/lib/user-policy";
+import { usersModel } from "@/database";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,9 +29,54 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const userId = user.username; // Use username as user ID
+    const { searchParams } = new URL(request.url);
+    const scope = searchParams.get("scope");
+    const requestedUserId = searchParams.get("userId") || undefined;
+
+    if (scope === "admin") {
+      if (user.role !== "admin") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      const quotaManager = getQuotaManager();
+      const costTracker = getCostTracker();
+      const stats = quotaManager.getStats();
+      const topUsers = costTracker.getTopUsers(20);
+
+      const users = usersModel.findAll().map((u) => {
+        const userId = u.username;
+        const usage = quotaManager.getUsage(userId);
+        const cost = costTracker.getUserCostSummary(userId);
+        const policy = getUserPolicy(userId);
+        const tokenUsage = getUserTokenUsage(userId);
+
+        return {
+          userId,
+          role: u.role,
+          tier: quotaManager.getUserTier(userId),
+          usage,
+          cost,
+          tokenUsage,
+          policy,
+        };
+      });
+
+      return NextResponse.json({
+        users,
+        topUsers,
+        stats,
+        tiers: TIER_LIMITS,
+      });
+    }
+
+    const userId =
+      user.role === "admin" && requestedUserId
+        ? requestedUserId
+        : user.username;
     const rateLimiter = getRateLimiter();
     const status = rateLimiter.getStatus(userId);
+    const policy = getUserPolicy(userId);
+    const tokenUsage = getUserTokenUsage(userId);
 
     // Format response
     const response = {
@@ -77,6 +128,8 @@ export async function GET(request: NextRequest) {
         daily: status.usage.resetDaily,
         monthly: status.usage.resetMonthly,
       },
+      policy,
+      customUsage: tokenUsage,
     };
 
     return NextResponse.json(response);
@@ -84,7 +137,7 @@ export async function GET(request: NextRequest) {
     console.error("Error fetching quotas:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -105,7 +158,7 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json(
         { error: "userId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -115,10 +168,7 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case "upgrade": {
         if (!tier || !["free", "pro", "enterprise"].includes(tier)) {
-          return NextResponse.json(
-            { error: "Invalid tier" },
-            { status: 400 }
-          );
+          return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
         }
         quotaManager.updateTier(userId, tier);
         return NextResponse.json({
@@ -160,17 +210,58 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      case "set_policy": {
+        const allowedModels = Array.isArray(body.allowedModels)
+          ? body.allowedModels.filter((v: unknown) => typeof v === "string")
+          : undefined;
+
+        const policy = upsertUserPolicy(userId, {
+          allowedModels,
+          maxInputTokensPerRequest:
+            body.maxInputTokensPerRequest === null ||
+            body.maxInputTokensPerRequest === undefined
+              ? body.maxInputTokensPerRequest
+              : Number(body.maxInputTokensPerRequest),
+          maxOutputTokensPerRequest:
+            body.maxOutputTokensPerRequest === null ||
+            body.maxOutputTokensPerRequest === undefined
+              ? body.maxOutputTokensPerRequest
+              : Number(body.maxOutputTokensPerRequest),
+          dailyTokenLimit:
+            body.dailyTokenLimit === null || body.dailyTokenLimit === undefined
+              ? body.dailyTokenLimit
+              : Number(body.dailyTokenLimit),
+          monthlyTokenLimit:
+            body.monthlyTokenLimit === null ||
+            body.monthlyTokenLimit === undefined
+              ? body.monthlyTokenLimit
+              : Number(body.monthlyTokenLimit),
+          dailyCostLimit:
+            body.dailyCostLimit === null || body.dailyCostLimit === undefined
+              ? body.dailyCostLimit
+              : Number(body.dailyCostLimit),
+          monthlyCostLimit:
+            body.monthlyCostLimit === null ||
+            body.monthlyCostLimit === undefined
+              ? body.monthlyCostLimit
+              : Number(body.monthlyCostLimit),
+        });
+
+        return NextResponse.json({
+          success: true,
+          message: `Custom policy updated for ${userId}`,
+          policy,
+        });
+      }
+
       default:
-        return NextResponse.json(
-          { error: "Invalid action" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
     console.error("Error updating quotas:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -210,7 +301,7 @@ export async function GET_STATS(request: NextRequest) {
     console.error("Error fetching quota stats:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

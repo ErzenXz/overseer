@@ -333,9 +333,7 @@ export function OnboardingWizard() {
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   <option value="telegram">Telegram</option>
-                  <option value="discord" disabled>
-                    Discord (Coming Soon)
-                  </option>
+                  <option value="discord">Discord</option>
                 </select>
               </div>
               <div>
