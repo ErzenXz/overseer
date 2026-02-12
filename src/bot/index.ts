@@ -56,6 +56,33 @@ async function startBot() {
 
   const bot = new Telegraf(token);
 
+  try {
+    const me = await bot.telegram.getMe();
+    logger.info("Telegram bot authenticated", {
+      botId: me.id,
+      username: me.username,
+    });
+
+    const webhookInfo = await bot.telegram.getWebhookInfo();
+    if (webhookInfo.url) {
+      logger.warn(
+        "Webhook configured while running in polling mode, removing",
+        {
+          webhookUrl: webhookInfo.url,
+          pendingUpdateCount: webhookInfo.pending_update_count,
+        },
+      );
+
+      await bot.telegram.deleteWebhook({
+        drop_pending_updates: false,
+      });
+    }
+  } catch (error) {
+    logger.error("Telegram startup validation failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   // Error handling
   bot.catch((err: unknown, ctx) => {
     const errorMessage = err instanceof Error ? err.message : String(err);

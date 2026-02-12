@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
@@ -14,6 +14,7 @@ interface ChatContainerProps {
 export function ChatContainer({ initialConversationId }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null);
 
   const {
     messages,
@@ -27,8 +28,6 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
     conversationId: initialConversationId,
   });
 
-  const selectedProviderId = useRef<number | null>(null);
-
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -37,11 +36,13 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
   }, [messages]);
 
   const handleSend = async (content: string, attachments?: File[]) => {
-    await sendMessage(content, attachments);
+    await sendMessage(content, attachments, {
+      providerId: selectedProviderId,
+    });
   };
 
   const handleProviderChange = (providerId: number | null) => {
-    selectedProviderId.current = providerId;
+    setSelectedProviderId(providerId);
   };
 
   const handleNewChat = () => {
@@ -54,7 +55,7 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
       <ChatHeader
         conversationId={conversationId}
         onNewChat={handleNewChat}
-        selectedProviderId={selectedProviderId.current}
+        selectedProviderId={selectedProviderId}
         onProviderChange={handleProviderChange}
       />
 

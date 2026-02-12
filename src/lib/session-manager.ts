@@ -46,12 +46,12 @@ export function estimateTokens(text: string): number {
  */
 function calculateMessageTokens(message: SessionMessage): number {
   if (message.tokens) return message.tokens;
-  
+
   let tokens = estimateTokens(message.content);
-  
+
   // Add overhead for role and formatting
   tokens += 4; // ~4 tokens for role + formatting
-  
+
   return tokens;
 }
 
@@ -79,7 +79,7 @@ class SessionCache {
     const session = this.cache.get(sessionId);
     if (session) {
       // Update access order (LRU)
-      this.accessOrder = this.accessOrder.filter(id => id !== sessionId);
+      this.accessOrder = this.accessOrder.filter((id) => id !== sessionId);
       this.accessOrder.push(sessionId);
     }
     return session;
@@ -101,7 +101,7 @@ class SessionCache {
 
   delete(sessionId: number): void {
     this.cache.delete(sessionId);
-    this.accessOrder = this.accessOrder.filter(id => id !== sessionId);
+    this.accessOrder = this.accessOrder.filter((id) => id !== sessionId);
   }
 
   clear(): void {
@@ -125,9 +125,9 @@ export class SessionManager {
    * Get or create a session
    */
   static getOrCreateSession(input: SessionInput): AgentSession {
-    logger.debug("Getting or creating session", { 
+    logger.debug("Getting or creating session", {
       conversationId: input.conversation_id,
-      interfaceType: input.interface_type 
+      interfaceType: input.interface_type,
     });
 
     // Set defaults
@@ -173,7 +173,7 @@ export class SessionManager {
     sessionId: number,
     role: SessionMessage["role"],
     content: string,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
   ): AgentSession | undefined {
     const message: SessionMessage = {
       role,
@@ -211,7 +211,7 @@ export class SessionManager {
    */
   private static checkAndSummarize(session: AgentSession): void {
     const tokenUsage = session.total_tokens / session.token_limit;
-    
+
     if (
       tokenUsage > SUMMARIZE_THRESHOLD &&
       session.messages.length >= MIN_MESSAGES_TO_SUMMARIZE
@@ -239,7 +239,10 @@ export class SessionManager {
 
     // Don't summarize if too few messages
     if (session.messages.length < MIN_MESSAGES_TO_SUMMARIZE) {
-      logger.debug("Too few messages to summarize", { sessionId, count: session.messages.length });
+      logger.debug("Too few messages to summarize", {
+        sessionId,
+        count: session.messages.length,
+      });
       return;
     }
 
@@ -272,21 +275,29 @@ export class SessionManager {
     // Add summary to database
     agentSessionsModel.addSummary(sessionId, summary);
 
-    // Clear old messages and keep only recent ones
-    const updatedSession = agentSessionsModel.findById(sessionId);
-    if (updatedSession) {
-      updatedSession.messages = toKeep;
-      
-      // Recalculate tokens
-      const newTotalTokens = 
-        summary.tokens + 
-        calculateTotalTokens(toKeep) +
-        session.summaries.reduce((sum, s) => sum + s.tokens, 0);
+    // Persist compacted messages and recalculated token accounting
+    const allSummaries = [...session.summaries, summary];
+    const summariesTokens = allSummaries.reduce((sum, s) => sum + s.tokens, 0);
+    const keepInputTokens = toKeep
+      .filter((m) => m.role === "user")
+      .reduce((sum, m) => sum + calculateMessageTokens(m), 0);
+    const keepOutputTokens = toKeep
+      .filter((m) => m.role !== "user")
+      .reduce((sum, m) => sum + calculateMessageTokens(m), 0);
 
-      // Update session in database (would need a method for this)
-      // For now, just update cache
-      updatedSession.total_tokens = newTotalTokens;
-      sessionCache.set(sessionId, updatedSession);
+    const recalculated = agentSessionsModel.replaceMessagesAndTotals(
+      sessionId,
+      toKeep,
+      {
+        total_tokens: summariesTokens + keepInputTokens + keepOutputTokens,
+        input_tokens: keepInputTokens,
+        output_tokens: keepOutputTokens,
+        message_count: toKeep.length,
+      },
+    );
+
+    if (recalculated) {
+      sessionCache.set(sessionId, recalculated);
     }
   }
 
@@ -295,7 +306,7 @@ export class SessionManager {
    */
   private static buildSummary(messages: SessionMessage[]): string {
     const lines: string[] = [];
-    
+
     // Group messages by role
     let userMessages = 0;
     let assistantMessages = 0;
@@ -317,7 +328,7 @@ export class SessionManager {
     lines.push(`Previous conversation summary (${messages.length} messages):`);
     lines.push(`- User messages: ${userMessages}`);
     lines.push(`- Assistant messages: ${assistantMessages}`);
-    
+
     if (topics.length > 0) {
       // Get unique topics (simple deduplication)
       const uniqueTopics = [...new Set(topics)].slice(0, 3);
@@ -330,7 +341,10 @@ export class SessionManager {
   /**
    * Build context for AI (system prompt + summaries + recent messages)
    */
-  static buildContext(sessionId: number, maxMessages = 20): {
+  static buildContext(
+    sessionId: number,
+    maxMessages = 20,
+  ): {
     messages: Array<{ role: string; content: string }>;
     totalTokens: number;
     hasSummaries: boolean;
@@ -383,12 +397,12 @@ export class SessionManager {
    */
   static clearMessages(sessionId: number): AgentSession | undefined {
     logger.info("Clearing messages from session", { sessionId });
-    
+
     const session = agentSessionsModel.clearMessages(sessionId);
     if (session) {
       sessionCache.set(sessionId, session);
     }
-    
+
     return session;
   }
 
@@ -397,7 +411,7 @@ export class SessionManager {
    */
   static updateState(
     sessionId: number,
-    state: Record<string, unknown>
+    state: Record<string, unknown>,
   ): AgentSession | undefined {
     const session = agentSessionsModel.updateState(sessionId, state);
     if (session) {
@@ -411,7 +425,7 @@ export class SessionManager {
    */
   static recordToolCall(sessionId: number): void {
     agentSessionsModel.incrementToolCalls(sessionId);
-    
+
     // Update cache if present
     const cached = sessionCache.get(sessionId);
     if (cached) {
@@ -425,7 +439,7 @@ export class SessionManager {
    */
   static recordError(sessionId: number): void {
     agentSessionsModel.incrementErrors(sessionId);
-    
+
     // Update cache if present
     const cached = sessionCache.get(sessionId);
     if (cached) {
@@ -439,11 +453,46 @@ export class SessionManager {
    */
   static deactivateSession(sessionId: number): boolean {
     logger.info("Deactivating session", { sessionId });
-    
+
     const result = agentSessionsModel.deactivate(sessionId);
     sessionCache.delete(sessionId);
-    
+
     return result;
+  }
+
+  /**
+   * Roll over to a fresh active session while keeping historical sessions available.
+   */
+  static rolloverSession(
+    sessionId: number,
+    metadata: Record<string, unknown> = {},
+  ): AgentSession | undefined {
+    const current = this.getSession(sessionId);
+    if (!current) return undefined;
+
+    this.deactivateSession(sessionId);
+
+    const next = this.getOrCreateSession({
+      conversation_id: current.conversation_id,
+      interface_type: current.interface_type,
+      external_user_id: current.external_user_id,
+      external_chat_id: current.external_chat_id,
+      token_limit: current.token_limit,
+      state: current.state,
+      metadata: {
+        rolled_over_from: sessionId,
+        reason: "context_limit",
+        ...metadata,
+      },
+    });
+
+    logger.info("Rolled over session", {
+      fromSessionId: sessionId,
+      toSessionId: next.id,
+      conversationId: current.conversation_id,
+    });
+
+    return next;
   }
 
   /**
@@ -461,10 +510,10 @@ export class SessionManager {
    */
   static cleanup(): void {
     logger.debug("Running session cleanup");
-    
+
     const expiredCount = agentSessionsModel.cleanupExpired();
     const inactiveCount = agentSessionsModel.cleanupInactive(SESSION_EXPIRY_MS);
-    
+
     if (expiredCount > 0 || inactiveCount > 0) {
       logger.info("Session cleanup completed", {
         expiredCount,

@@ -7,7 +7,7 @@ import { getModelById } from "@/agent/providers";
 import { createLogger } from "@/lib/logger";
 import { resumableStreams } from "@/lib/resumable-streams";
 import { getRateLimiter } from "@/lib/rate-limiter";
-import { estimateTokens } from "@/lib/session-manager";
+import { estimateTokens, SessionManager } from "@/lib/session-manager";
 
 const logger = createLogger("chat-api");
 
@@ -103,6 +103,23 @@ export async function POST(request: NextRequest) {
       planMode: Boolean(planMode),
     });
 
+    // Ensure there is an active session for this conversation (web interface)
+    const session = SessionManager.getOrCreateSession({
+      conversation_id: conversationId,
+      interface_type: "web",
+      external_user_id: user.username,
+      external_chat_id: `web-${user.username}-${conversationId}`,
+      metadata: {
+        source: "web-chat",
+      },
+    });
+
+    SessionManager.addMessage(session.id, "user", message, {
+      source: "web-chat",
+      providerId: providerId ?? null,
+      planMode: Boolean(planMode),
+    });
+
     const streamId = requestedStreamId || randomUUID();
     resumableStreams.create(streamId, conversationId);
 
@@ -125,6 +142,7 @@ export async function POST(request: NextRequest) {
           sendEvent({
             type: "stream_initialized",
             conversationId,
+            sessionId: session.id,
           });
 
           // Send conversation ID if newly created
@@ -145,6 +163,7 @@ export async function POST(request: NextRequest) {
             planMode: Boolean(planMode),
             steering,
             onToolCall: (toolName, args) => {
+              SessionManager.recordToolCall(session.id);
               sendEvent({
                 type: "tool_call",
                 toolName,
@@ -193,6 +212,48 @@ export async function POST(request: NextRequest) {
             output_tokens: usage?.outputTokens,
           });
 
+          const summariesBefore =
+            SessionManager.getSession(session.id)?.summaries.length ?? 0;
+          const updatedSession = SessionManager.addMessage(
+            session.id,
+            "assistant",
+            finalText,
+            {
+              source: "web-chat",
+              usage,
+              model: modelId,
+            },
+          );
+
+          const summariesAfter =
+            updatedSession?.summaries.length ?? summariesBefore;
+          if (summariesAfter > summariesBefore) {
+            const latestSummary = updatedSession?.summaries[summariesAfter - 1];
+            sendEvent({
+              type: "session_summarized",
+              sessionId: session.id,
+              messagesSummarized: latestSummary?.messages_summarized ?? 0,
+            });
+          }
+
+          if (
+            updatedSession &&
+            updatedSession.total_tokens >= updatedSession.token_limit * 0.95
+          ) {
+            const nextSession = SessionManager.rolloverSession(session.id, {
+              trigger: "context_limit_reached",
+            });
+
+            if (nextSession) {
+              sendEvent({
+                type: "session_rollover",
+                previousSessionId: session.id,
+                newSessionId: nextSession.id,
+                reason: "context_limit_reached",
+              });
+            }
+          }
+
           if (usage) {
             rateLimiter.recordRequest({
               userId: user.username,
@@ -218,6 +279,8 @@ export async function POST(request: NextRequest) {
           logger.error("Chat stream error", {
             error: error instanceof Error ? error.message : String(error),
           });
+
+          SessionManager.recordError(session.id);
 
           sendEvent({
             type: "error",
@@ -275,6 +338,7 @@ export async function GET(request: NextRequest) {
       );
       return NextResponse.json({
         streamId,
+        conversationId: status.conversation_id,
         status: status.status,
         updatedAt: status.updated_at,
         events,

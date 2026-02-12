@@ -29,24 +29,343 @@ export interface ChatOptions {
   onNewConversation?: (conversationId: number) => void;
 }
 
+export interface SendMessageOptions {
+  providerId?: number | null;
+  planMode?: boolean;
+  steering?: {
+    tone?: "concise" | "balanced" | "deep";
+    responseStyle?: "direct" | "explanatory" | "mentor";
+    requireChecklist?: boolean;
+    prioritizeSafety?: boolean;
+    includeReasoningSummary?: boolean;
+  };
+}
+
+interface ActiveStreamState {
+  streamId: string;
+  assistantMessageId: string;
+  conversationId: number | null;
+  lastSeq: number;
+  startedAt: number;
+  messages: Array<{
+    id: string;
+    role: "user" | "assistant" | "system";
+    content: string;
+    timestamp: string;
+    toolCalls?: ToolCall[];
+    isStreaming?: boolean;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    thinking?: string;
+    isThinking?: boolean;
+  }>;
+}
+
+const ACTIVE_STREAM_STORAGE_KEY = "overseer.chat.active-stream";
+
+function getStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage;
+}
+
+function saveActiveStream(state: ActiveStreamState) {
+  const storage = getStorage();
+  if (!storage) return;
+  storage.setItem(ACTIVE_STREAM_STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadActiveStream(): ActiveStreamState | null {
+  const storage = getStorage();
+  if (!storage) return null;
+
+  const raw = storage.getItem(ACTIVE_STREAM_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as ActiveStreamState;
+  } catch {
+    storage.removeItem(ACTIVE_STREAM_STORAGE_KEY);
+    return null;
+  }
+}
+
+function clearActiveStream() {
+  const storage = getStorage();
+  if (!storage) return;
+  storage.removeItem(ACTIVE_STREAM_STORAGE_KEY);
+}
+
 export function useChat(options: ChatOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<number | null>(
-    options.conversationId ?? null
+    options.conversationId ?? null,
   );
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentAssistantMessageIdRef = useRef<string | null>(null);
+  const activeStreamRef = useRef<ActiveStreamState | null>(null);
+  const unmountedRef = useRef(false);
 
-  // Load conversation history
+  // Load conversation history for externally-selected conversation
   useEffect(() => {
-    if (options.conversationId && options.conversationId !== conversationId) {
+    if (options.conversationId) {
       setConversationId(options.conversationId);
       loadConversation(options.conversationId);
     }
   }, [options.conversationId]);
+
+  // Resume an active stream after refresh/navigation
+  useEffect(() => {
+    unmountedRef.current = false;
+    const saved = loadActiveStream();
+    if (!saved) {
+      return () => {
+        unmountedRef.current = true;
+      };
+    }
+
+    const restoredMessages: ChatMessage[] = saved.messages.map((m) => ({
+      ...m,
+      timestamp: new Date(m.timestamp),
+    }));
+
+    setMessages(restoredMessages);
+    if (saved.conversationId) {
+      setConversationId(saved.conversationId);
+      options.onNewConversation?.(saved.conversationId);
+    }
+    setIsLoading(true);
+    activeStreamRef.current = saved;
+    currentAssistantMessageIdRef.current = saved.assistantMessageId;
+
+    const pollResume = async () => {
+      const resumeToolCalls: ToolCall[] = [];
+
+      const applyEvent = (event: Record<string, unknown>) => {
+        const assistantMessageId = saved.assistantMessageId;
+        switch (event.type) {
+          case "conversation_id": {
+            const nextConversationId = Number(event.conversationId);
+            if (Number.isFinite(nextConversationId)) {
+              setConversationId(nextConversationId);
+              options.onNewConversation?.(nextConversationId);
+              if (activeStreamRef.current) {
+                activeStreamRef.current = {
+                  ...activeStreamRef.current,
+                  conversationId: nextConversationId,
+                };
+              }
+            }
+            break;
+          }
+
+          case "text_delta": {
+            const delta = String(event.text ?? "");
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: (msg.content || "") + delta }
+                  : msg,
+              ),
+            );
+            break;
+          }
+
+          case "thinking": {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      thinking: String(event.content ?? ""),
+                      isThinking: Boolean(event.active),
+                    }
+                  : msg,
+              ),
+            );
+            break;
+          }
+
+          case "tool_call": {
+            const newToolCall: ToolCall = {
+              id: `tool-${Date.now()}-${String(event.toolName ?? "tool")}`,
+              name: String(event.toolName ?? "tool"),
+              args: event.args,
+              status: "executing",
+            };
+            resumeToolCalls.push(newToolCall);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, toolCalls: [...resumeToolCalls] }
+                  : msg,
+              ),
+            );
+            break;
+          }
+
+          case "tool_result": {
+            const toolName = String(event.toolName ?? "");
+            const idx = resumeToolCalls.findIndex(
+              (tc) => tc.name === toolName && tc.status === "executing",
+            );
+            if (idx !== -1) {
+              resumeToolCalls[idx] = {
+                ...resumeToolCalls[idx],
+                status: "completed",
+                result: event.result,
+              };
+            }
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, toolCalls: [...resumeToolCalls] }
+                  : msg,
+              ),
+            );
+            break;
+          }
+
+          case "session_rollover": {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                role: "system",
+                content:
+                  "Session context reached capacity. A new active session was created and context summary was carried forward.",
+                timestamp: new Date(),
+              },
+            ]);
+            break;
+          }
+
+          case "session_summarized": {
+            const count = Number(event.messagesSummarized ?? 0);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                role: "system",
+                content: `Session memory compacted (${count} messages summarized) to preserve continuity.`,
+                timestamp: new Date(),
+              },
+            ]);
+            break;
+          }
+
+          case "error": {
+            setError(String(event.error ?? "Unknown error"));
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, isStreaming: false }
+                  : msg,
+              ),
+            );
+            break;
+          }
+
+          case "done": {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      content: String(event.fullText ?? msg.content),
+                      isStreaming: false,
+                      model: event.model ? String(event.model) : msg.model,
+                      inputTokens: (
+                        event.usage as { inputTokens?: number } | undefined
+                      )?.inputTokens,
+                      outputTokens: (
+                        event.usage as { outputTokens?: number } | undefined
+                      )?.outputTokens,
+                    }
+                  : msg,
+              ),
+            );
+            break;
+          }
+        }
+      };
+
+      try {
+        let keepPolling = true;
+        while (
+          keepPolling &&
+          !unmountedRef.current &&
+          activeStreamRef.current
+        ) {
+          const current = activeStreamRef.current;
+          const response = await fetch(
+            `/api/chat?streamId=${encodeURIComponent(current.streamId)}&from=${current.lastSeq}`,
+            { cache: "no-store" },
+          );
+
+          if (!response.ok) {
+            throw new Error(`Resume failed with HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          const events: Array<{ seq: number; event: Record<string, unknown> }> =
+            Array.isArray(data.events) ? data.events : [];
+
+          for (const { seq, event } of events) {
+            applyEvent(event);
+            if (activeStreamRef.current) {
+              activeStreamRef.current.lastSeq = seq;
+            }
+          }
+
+          if (data.status !== "active") {
+            keepPolling = false;
+            break;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 900));
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to resume stream",
+        );
+      } finally {
+        if (saved.conversationId) {
+          void loadConversation(saved.conversationId);
+        }
+        setIsLoading(false);
+        currentAssistantMessageIdRef.current = null;
+        activeStreamRef.current = null;
+        clearActiveStream();
+      }
+    };
+
+    void pollResume();
+
+    return () => {
+      unmountedRef.current = true;
+    };
+    // intentionally run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const messagesToPersist = (source: ChatMessage[]) =>
+    source.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp.toISOString(),
+      toolCalls: m.toolCalls,
+      isStreaming: m.isStreaming,
+      model: m.model,
+      inputTokens: m.inputTokens,
+      outputTokens: m.outputTokens,
+      thinking: m.thinking,
+      isThinking: m.isThinking,
+    }));
 
   const loadConversation = async (convId: number) => {
     try {
@@ -75,7 +394,7 @@ export function useChat(options: ChatOptions = {}) {
           model: msg.model_used,
           inputTokens: msg.input_tokens,
           outputTokens: msg.output_tokens,
-        })
+        }),
       );
 
       setMessages(loadedMessages);
@@ -86,7 +405,11 @@ export function useChat(options: ChatOptions = {}) {
   };
 
   const sendMessage = useCallback(
-    async (content: string, attachments?: File[]) => {
+    async (
+      content: string,
+      attachments?: File[],
+      sendOptions?: SendMessageOptions,
+    ) => {
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
 
       // Cancel any ongoing request
@@ -127,11 +450,35 @@ export function useChat(options: ChatOptions = {}) {
           message: string;
           conversationId?: number | null;
           providerId?: number | null;
+          streamId: string;
+          planMode?: boolean;
+          steering?: SendMessageOptions["steering"];
         } = {
           message: content,
           conversationId,
-          providerId: options.providerId,
+          providerId: sendOptions?.providerId ?? options.providerId,
+          streamId:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `stream-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          planMode: sendOptions?.planMode,
+          steering: sendOptions?.steering,
         };
+
+        activeStreamRef.current = {
+          streamId: body.streamId,
+          assistantMessageId,
+          conversationId,
+          lastSeq: 0,
+          startedAt: Date.now(),
+          messages: [],
+        };
+
+        const pendingSnapshot: ChatMessage[] = [userMessage, assistantMessage];
+        saveActiveStream({
+          ...activeStreamRef.current,
+          messages: messagesToPersist(pendingSnapshot),
+        });
 
         const response = await fetch("/api/chat", {
           method: "POST",
@@ -174,9 +521,18 @@ export function useChat(options: ChatOptions = {}) {
                 const event = JSON.parse(data);
 
                 switch (event.type) {
+                  case "stream_initialized":
+                    break;
+
                   case "conversation_id":
                     setConversationId(event.conversationId);
                     options.onNewConversation?.(event.conversationId);
+                    if (activeStreamRef.current) {
+                      activeStreamRef.current = {
+                        ...activeStreamRef.current,
+                        conversationId: event.conversationId,
+                      };
+                    }
                     break;
 
                   case "text_delta":
@@ -185,8 +541,8 @@ export function useChat(options: ChatOptions = {}) {
                       prev.map((msg) =>
                         msg.id === assistantMessageId
                           ? { ...msg, content: fullText }
-                          : msg
-                      )
+                          : msg,
+                      ),
                     );
                     break;
 
@@ -195,9 +551,13 @@ export function useChat(options: ChatOptions = {}) {
                     setMessages((prev) =>
                       prev.map((msg) =>
                         msg.id === assistantMessageId
-                          ? { ...msg, thinking: event.content, isThinking: event.active ?? false }
-                          : msg
-                      )
+                          ? {
+                              ...msg,
+                              thinking: event.content,
+                              isThinking: event.active ?? false,
+                            }
+                          : msg,
+                      ),
                     );
                     break;
 
@@ -213,14 +573,15 @@ export function useChat(options: ChatOptions = {}) {
                       prev.map((msg) =>
                         msg.id === assistantMessageId
                           ? { ...msg, toolCalls: [...toolCalls] }
-                          : msg
-                      )
+                          : msg,
+                      ),
                     );
                     break;
 
                   case "tool_result":
                     const toolIndex = toolCalls.findIndex(
-                      (tc) => tc.name === event.toolName && tc.status === "executing"
+                      (tc) =>
+                        tc.name === event.toolName && tc.status === "executing",
                     );
                     if (toolIndex !== -1) {
                       toolCalls[toolIndex] = {
@@ -232,8 +593,8 @@ export function useChat(options: ChatOptions = {}) {
                         prev.map((msg) =>
                           msg.id === assistantMessageId
                             ? { ...msg, toolCalls: [...toolCalls] }
-                            : msg
-                        )
+                            : msg,
+                        ),
                       );
                     }
                     break;
@@ -248,9 +609,34 @@ export function useChat(options: ChatOptions = {}) {
                               content: fullText || `Error: ${event.error}`,
                               isStreaming: false,
                             }
-                          : msg
-                      )
+                          : msg,
+                      ),
                     );
+                    break;
+
+                  case "session_summarized":
+                    setMessages((prev) => [
+                      ...prev,
+                      {
+                        id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                        role: "system",
+                        content: `Session memory compacted (${event.messagesSummarized ?? 0} messages summarized) to keep context healthy.`,
+                        timestamp: new Date(),
+                      },
+                    ]);
+                    break;
+
+                  case "session_rollover":
+                    setMessages((prev) => [
+                      ...prev,
+                      {
+                        id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                        role: "system",
+                        content:
+                          "Session context reached capacity; agent rolled over into a fresh active session.",
+                        timestamp: new Date(),
+                      },
+                    ]);
                     break;
 
                   case "done":
@@ -265,10 +651,23 @@ export function useChat(options: ChatOptions = {}) {
                               inputTokens: event.usage?.inputTokens,
                               outputTokens: event.usage?.outputTokens,
                             }
-                          : msg
-                      )
+                          : msg,
+                      ),
                     );
+                    if (conversationId) {
+                      void loadConversation(conversationId);
+                    }
                     break;
+                }
+
+                if (activeStreamRef.current) {
+                  const seq = Number(event.seq ?? 0);
+                  if (
+                    Number.isFinite(seq) &&
+                    seq > activeStreamRef.current.lastSeq
+                  ) {
+                    activeStreamRef.current.lastSeq = seq;
+                  }
                 }
               } catch {
                 // Ignore JSON parse errors
@@ -281,7 +680,8 @@ export function useChat(options: ChatOptions = {}) {
           return;
         }
 
-        const errorMessage = err instanceof Error ? err.message : "Failed to send message";
+        const errorMessage =
+          err instanceof Error ? err.message : "Failed to send message";
         setError(errorMessage);
         setMessages((prev) =>
           prev.map((msg) =>
@@ -291,15 +691,17 @@ export function useChat(options: ChatOptions = {}) {
                   content: `Error: ${errorMessage}`,
                   isStreaming: false,
                 }
-              : msg
-          )
+              : msg,
+          ),
         );
       } finally {
         setIsLoading(false);
         currentAssistantMessageIdRef.current = null;
+        clearActiveStream();
+        activeStreamRef.current = null;
       }
     },
-    [conversationId, options]
+    [conversationId, options],
   );
 
   const stopGeneration = useCallback(() => {
@@ -313,22 +715,28 @@ export function useChat(options: ChatOptions = {}) {
         prev.map((msg) =>
           msg.id === currentAssistantMessageIdRef.current
             ? { ...msg, isStreaming: false }
-            : msg
-        )
+            : msg,
+        ),
       );
     }
 
     setIsLoading(false);
+    clearActiveStream();
+    activeStreamRef.current = null;
   }, []);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     setConversationId(null);
     setError(null);
+    clearActiveStream();
+    activeStreamRef.current = null;
   }, []);
 
   const regenerateLastMessage = useCallback(async () => {
-    const lastUserMessage = [...messages].reverse().find((m: ChatMessage) => m.role === "user");
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((m: ChatMessage) => m.role === "user");
     if (!lastUserMessage) return;
 
     // Remove the last assistant message

@@ -39,29 +39,29 @@ export interface AgentSession {
   interface_type: string;
   external_user_id: string;
   external_chat_id: string;
-  
+
   // Session data
   messages: SessionMessage[];
   summaries: SessionSummary[];
   state: SessionState;
-  
+
   // Token tracking
   total_tokens: number;
   input_tokens: number;
   output_tokens: number;
   token_limit: number;
-  
+
   // Metadata
   last_active_at: number;
   created_at: number;
   expires_at: number | null;
   is_active: boolean;
-  
+
   // Statistics
   message_count: number;
   tool_calls_count: number;
   error_count: number;
-  
+
   metadata?: Record<string, unknown>;
 }
 
@@ -148,7 +148,7 @@ export function initializeAgentSessionsTable(): void {
       CREATE INDEX IF NOT EXISTS idx_agent_sessions_active 
         ON agent_sessions(is_active, last_active_at);
     `);
-    
+
     logger.info("Agent sessions table initialized");
   } catch (error) {
     logger.error("Failed to initialize agent sessions table", {
@@ -201,7 +201,10 @@ function mapRowToSession(row: Record<string, unknown>): AgentSession {
     message_count: row.message_count as number,
     tool_calls_count: row.tool_calls_count as number,
     error_count: row.error_count as number,
-    metadata: parseJSON<Record<string, unknown>>(row.metadata as string | null, {}),
+    metadata: parseJSON<Record<string, unknown>>(
+      row.metadata as string | null,
+      {},
+    ),
   };
 }
 
@@ -218,7 +221,7 @@ export const agentSessionsModel = {
       const row = db
         .prepare("SELECT * FROM agent_sessions WHERE id = ?")
         .get(id);
-      
+
       return row ? mapRowToSession(row as Record<string, unknown>) : undefined;
     } catch (error) {
       logger.error("Failed to find session by ID", { id, error });
@@ -232,17 +235,22 @@ export const agentSessionsModel = {
   findByConversation(conversationId: number): AgentSession | undefined {
     try {
       const row = db
-        .prepare(`
+        .prepare(
+          `
           SELECT * FROM agent_sessions 
           WHERE conversation_id = ? AND is_active = 1
           ORDER BY last_active_at DESC
           LIMIT 1
-        `)
+        `,
+        )
         .get(conversationId);
-      
+
       return row ? mapRowToSession(row as Record<string, unknown>) : undefined;
     } catch (error) {
-      logger.error("Failed to find session by conversation", { conversationId, error });
+      logger.error("Failed to find session by conversation", {
+        conversationId,
+        error,
+      });
       return undefined;
     }
   },
@@ -254,18 +262,20 @@ export const agentSessionsModel = {
     try {
       // Try to find existing active session
       const existing = db
-        .prepare(`
+        .prepare(
+          `
           SELECT * FROM agent_sessions 
           WHERE conversation_id = ?
             AND is_active = 1
           ORDER BY last_active_at DESC
           LIMIT 1
-        `)
+        `,
+        )
         .get(input.conversation_id);
 
       if (existing) {
         const session = mapRowToSession(existing as Record<string, unknown>);
-        
+
         // Check if expired
         if (session.expires_at && Date.now() > session.expires_at) {
           // Mark as inactive and create new one
@@ -280,14 +290,16 @@ export const agentSessionsModel = {
       // Create new session
       const now = Date.now();
       const expiresAt = input.expires_in_ms ? now + input.expires_in_ms : null;
-      
+
       const result = db
-        .prepare(`
+        .prepare(
+          `
           INSERT INTO agent_sessions (
             conversation_id, interface_type, external_user_id, external_chat_id,
             token_limit, last_active_at, created_at, expires_at, state, metadata
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
+        `,
+        )
         .run(
           input.conversation_id,
           input.interface_type,
@@ -298,7 +310,7 @@ export const agentSessionsModel = {
           now,
           expiresAt,
           JSON.stringify(input.state || {}),
-          JSON.stringify(input.metadata || {})
+          JSON.stringify(input.metadata || {}),
         );
 
       return this.findById(result.lastInsertRowid as number)!;
@@ -313,7 +325,7 @@ export const agentSessionsModel = {
    */
   addMessage(
     sessionId: number,
-    message: SessionMessage
+    message: SessionMessage,
   ): AgentSession | undefined {
     try {
       const session = this.findById(sessionId);
@@ -321,17 +333,20 @@ export const agentSessionsModel = {
 
       // Add message
       const messages = [...session.messages, message];
-      
+
       // Update tokens
       const messageTokens = message.tokens || 0;
       const totalTokens = session.total_tokens + messageTokens;
-      
+
       const isUserMessage = message.role === "user";
-      const inputTokens = session.input_tokens + (isUserMessage ? messageTokens : 0);
-      const outputTokens = session.output_tokens + (isUserMessage ? 0 : messageTokens);
+      const inputTokens =
+        session.input_tokens + (isUserMessage ? messageTokens : 0);
+      const outputTokens =
+        session.output_tokens + (isUserMessage ? 0 : messageTokens);
 
       // Update session
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE agent_sessions 
         SET messages = ?,
             total_tokens = ?,
@@ -340,13 +355,14 @@ export const agentSessionsModel = {
             message_count = message_count + 1,
             last_active_at = ?
         WHERE id = ?
-      `).run(
+      `,
+      ).run(
         JSON.stringify(messages),
         totalTokens,
         inputTokens,
         outputTokens,
         Date.now(),
-        sessionId
+        sessionId,
       );
 
       return this.findById(sessionId);
@@ -361,7 +377,7 @@ export const agentSessionsModel = {
    */
   addSummary(
     sessionId: number,
-    summary: SessionSummary
+    summary: SessionSummary,
   ): AgentSession | undefined {
     try {
       const session = this.findById(sessionId);
@@ -369,16 +385,14 @@ export const agentSessionsModel = {
 
       const summaries = [...session.summaries, summary];
 
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE agent_sessions 
         SET summaries = ?,
             last_active_at = ?
         WHERE id = ?
-      `).run(
-        JSON.stringify(summaries),
-        Date.now(),
-        sessionId
-      );
+      `,
+      ).run(JSON.stringify(summaries), Date.now(), sessionId);
 
       return this.findById(sessionId);
     } catch (error) {
@@ -392,7 +406,7 @@ export const agentSessionsModel = {
    */
   updateState(
     sessionId: number,
-    state: Partial<SessionState>
+    state: Partial<SessionState>,
   ): AgentSession | undefined {
     try {
       const session = this.findById(sessionId);
@@ -400,16 +414,14 @@ export const agentSessionsModel = {
 
       const newState = { ...session.state, ...state };
 
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE agent_sessions 
         SET state = ?,
             last_active_at = ?
         WHERE id = ?
-      `).run(
-        JSON.stringify(newState),
-        Date.now(),
-        sessionId
-      );
+      `,
+      ).run(JSON.stringify(newState), Date.now(), sessionId);
 
       return this.findById(sessionId);
     } catch (error) {
@@ -423,16 +435,67 @@ export const agentSessionsModel = {
    */
   clearMessages(sessionId: number): AgentSession | undefined {
     try {
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE agent_sessions 
         SET messages = '[]',
+            total_tokens = 0,
+            input_tokens = 0,
+            output_tokens = 0,
+            message_count = 0,
             last_active_at = ?
         WHERE id = ?
-      `).run(Date.now(), sessionId);
+      `,
+      ).run(Date.now(), sessionId);
 
       return this.findById(sessionId);
     } catch (error) {
-      logger.error("Failed to clear messages from session", { sessionId, error });
+      logger.error("Failed to clear messages from session", {
+        sessionId,
+        error,
+      });
+      return undefined;
+    }
+  },
+
+  /**
+   * Replace in-memory message window and token counters (used after summarization/compaction)
+   */
+  replaceMessagesAndTotals(
+    sessionId: number,
+    messages: SessionMessage[],
+    totals: {
+      total_tokens: number;
+      input_tokens: number;
+      output_tokens: number;
+      message_count: number;
+    },
+  ): AgentSession | undefined {
+    try {
+      db.prepare(
+        `
+        UPDATE agent_sessions
+        SET messages = ?,
+            total_tokens = ?,
+            input_tokens = ?,
+            output_tokens = ?,
+            message_count = ?,
+            last_active_at = ?
+        WHERE id = ?
+      `,
+      ).run(
+        JSON.stringify(messages),
+        totals.total_tokens,
+        totals.input_tokens,
+        totals.output_tokens,
+        totals.message_count,
+        Date.now(),
+        sessionId,
+      );
+
+      return this.findById(sessionId);
+    } catch (error) {
+      logger.error("Failed to replace messages/totals", { sessionId, error });
       return undefined;
     }
   },
@@ -442,12 +505,14 @@ export const agentSessionsModel = {
    */
   incrementToolCalls(sessionId: number): void {
     try {
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE agent_sessions 
         SET tool_calls_count = tool_calls_count + 1,
             last_active_at = ?
         WHERE id = ?
-      `).run(Date.now(), sessionId);
+      `,
+      ).run(Date.now(), sessionId);
     } catch (error) {
       logger.error("Failed to increment tool calls", { sessionId, error });
     }
@@ -458,12 +523,14 @@ export const agentSessionsModel = {
    */
   incrementErrors(sessionId: number): void {
     try {
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE agent_sessions 
         SET error_count = error_count + 1,
             last_active_at = ?
         WHERE id = ?
-      `).run(Date.now(), sessionId);
+      `,
+      ).run(Date.now(), sessionId);
     } catch (error) {
       logger.error("Failed to increment errors", { sessionId, error });
     }
@@ -474,11 +541,13 @@ export const agentSessionsModel = {
    */
   touch(sessionId: number): void {
     try {
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE agent_sessions 
         SET last_active_at = ?
         WHERE id = ?
-      `).run(Date.now(), sessionId);
+      `,
+      ).run(Date.now(), sessionId);
     } catch (error) {
       logger.error("Failed to touch session", { sessionId, error });
     }
@@ -489,13 +558,17 @@ export const agentSessionsModel = {
    */
   deactivate(sessionId: number): boolean {
     try {
-      const result = db.prepare(`
+      const result = db
+        .prepare(
+          `
         UPDATE agent_sessions 
         SET is_active = 0,
             last_active_at = ?
         WHERE id = ?
-      `).run(Date.now(), sessionId);
-      
+      `,
+        )
+        .run(Date.now(), sessionId);
+
       return result.changes > 0;
     } catch (error) {
       logger.error("Failed to deactivate session", { sessionId, error });
@@ -508,7 +581,9 @@ export const agentSessionsModel = {
    */
   delete(sessionId: number): boolean {
     try {
-      const result = db.prepare("DELETE FROM agent_sessions WHERE id = ?").run(sessionId);
+      const result = db
+        .prepare("DELETE FROM agent_sessions WHERE id = ?")
+        .run(sessionId);
       return result.changes > 0;
     } catch (error) {
       logger.error("Failed to delete session", { sessionId, error });
@@ -522,15 +597,17 @@ export const agentSessionsModel = {
   findAllActive(limit = 100): AgentSession[] {
     try {
       const rows = db
-        .prepare(`
+        .prepare(
+          `
           SELECT * FROM agent_sessions 
           WHERE is_active = 1
           ORDER BY last_active_at DESC
           LIMIT ?
-        `)
+        `,
+        )
         .all(limit);
-      
-      return rows.map(row => mapRowToSession(row as Record<string, unknown>));
+
+      return rows.map((row) => mapRowToSession(row as Record<string, unknown>));
     } catch (error) {
       logger.error("Failed to find active sessions", { error });
       return [];
@@ -543,18 +620,22 @@ export const agentSessionsModel = {
   cleanupExpired(): number {
     try {
       const now = Date.now();
-      const result = db.prepare(`
+      const result = db
+        .prepare(
+          `
         UPDATE agent_sessions 
         SET is_active = 0
         WHERE is_active = 1 
           AND expires_at IS NOT NULL 
           AND expires_at < ?
-      `).run(now);
-      
+      `,
+        )
+        .run(now);
+
       if (result.changes > 0) {
         logger.info("Cleaned up expired sessions", { count: result.changes });
       }
-      
+
       return result.changes;
     } catch (error) {
       logger.error("Failed to cleanup expired sessions", { error });
@@ -568,17 +649,21 @@ export const agentSessionsModel = {
   cleanupInactive(inactiveThresholdMs: number = 24 * 60 * 60 * 1000): number {
     try {
       const cutoff = Date.now() - inactiveThresholdMs;
-      const result = db.prepare(`
+      const result = db
+        .prepare(
+          `
         UPDATE agent_sessions 
         SET is_active = 0
         WHERE is_active = 1 
           AND last_active_at < ?
-      `).run(cutoff);
-      
+      `,
+        )
+        .run(cutoff);
+
       if (result.changes > 0) {
         logger.info("Cleaned up inactive sessions", { count: result.changes });
       }
-      
+
       return result.changes;
     } catch (error) {
       logger.error("Failed to cleanup inactive sessions", { error });
@@ -601,32 +686,56 @@ export const agentSessionsModel = {
    */
   getStats(): SessionStats {
     try {
-      const totalResult = db.prepare(`
+      const totalResult = db
+        .prepare(
+          `
         SELECT COUNT(*) as count FROM agent_sessions
-      `).get() as { count: number };
+      `,
+        )
+        .get() as { count: number };
 
-      const activeResult = db.prepare(`
+      const activeResult = db
+        .prepare(
+          `
         SELECT COUNT(*) as count FROM agent_sessions WHERE is_active = 1
-      `).get() as { count: number };
+      `,
+        )
+        .get() as { count: number };
 
-      const messagesResult = db.prepare(`
+      const messagesResult = db
+        .prepare(
+          `
         SELECT SUM(message_count) as total FROM agent_sessions
-      `).get() as { total: number | null };
+      `,
+        )
+        .get() as { total: number | null };
 
-      const tokensResult = db.prepare(`
+      const tokensResult = db
+        .prepare(
+          `
         SELECT SUM(total_tokens) as total FROM agent_sessions
-      `).get() as { total: number | null };
+      `,
+        )
+        .get() as { total: number | null };
 
-      const avgResult = db.prepare(`
+      const avgResult = db
+        .prepare(
+          `
         SELECT AVG(message_count) as avg FROM agent_sessions WHERE is_active = 1
-      `).get() as { avg: number | null };
+      `,
+        )
+        .get() as { avg: number | null };
 
-      const byInterfaceRows = db.prepare(`
+      const byInterfaceRows = db
+        .prepare(
+          `
         SELECT interface_type, COUNT(*) as count 
         FROM agent_sessions 
         WHERE is_active = 1 
         GROUP BY interface_type
-      `).all() as { interface_type: string; count: number }[];
+      `,
+        )
+        .all() as { interface_type: string; count: number }[];
 
       const sessions_by_interface: Record<string, number> = {};
       for (const row of byInterfaceRows) {

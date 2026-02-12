@@ -232,6 +232,7 @@ function ThinkingBlock({ content, isThinking }: { content: string; isThinking?: 
 
 export function ChatMessage({ message, isLast }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const isSystem = message.role === "system";
   const parsedContent = useMemo(
     () => (isUser ? null : parseMarkdown(message.content)),
     [message.content, isUser]
@@ -247,31 +248,34 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
         isLast ? "animate-fade-in" : ""
       }`}
     >
-      {/* Avatar */}
-      <div
-        className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-          isUser
-            ? "bg-[var(--color-accent)]"
-            : "bg-[var(--color-accent)]"
-        }`}
-      >
-        {isUser ? (
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-        ) : (
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-        )}
-      </div>
+      {!isSystem && (
+        <div
+          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+            isUser
+              ? "bg-[var(--color-accent)]"
+              : "bg-[var(--color-accent)]"
+          }`}
+        >
+          {isUser ? (
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          )}
+        </div>
+      )}
 
       {/* Content */}
-      <div className={`flex-1 ${isUser ? "text-right" : ""} max-w-[80%]`}>
+      <div className={`flex-1 ${isUser ? "text-right" : ""} ${isSystem ? "max-w-[95%]" : "max-w-[80%]"}`}>
         {/* Message bubble */}
         <div
           className={`inline-block text-left px-4 py-3 rounded-lg ${
-            isUser
+            isSystem
+              ? "bg-blue-500/10 text-blue-200 border border-blue-500/30"
+              : isUser
               ? "bg-[var(--color-accent)] text-black"
               : "bg-[var(--color-surface-overlay)] text-[var(--color-text-primary)]"
           }`}
@@ -298,16 +302,24 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
               )}
             </div>
           )}
-        </div>
 
-        {/* Tool calls */}
-        {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="mt-2 space-y-2">
-            {message.toolCalls.map((toolCall) => (
-              <ChatToolCall key={toolCall.id} toolCall={toolCall} />
-            ))}
-          </div>
-        )}
+          {!isUser && !isSystem && message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
+              <div className="text-xs uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
+                Execution timeline
+              </div>
+              <div className="relative pl-4 space-y-2">
+                <div className="absolute left-1.5 top-0 bottom-0 w-px bg-[var(--color-border)]" />
+                {message.toolCalls.map((toolCall) => (
+                  <div key={toolCall.id} className="relative">
+                    <span className="absolute -left-3.5 top-3 w-2 h-2 rounded-full bg-[var(--color-accent)]" />
+                    <ChatToolCall toolCall={toolCall} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Metadata */}
         <div
