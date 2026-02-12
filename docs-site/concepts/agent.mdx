@@ -1,0 +1,50 @@
+---
+title: "Agent"
+description: "How the AI agent works"
+---
+
+# Agent Core
+
+The Overseer agent is the brain of the platform — an autonomous AI system that can plan, reason, and execute multi-step tasks.
+
+## How It Works
+
+Overseer uses [Vercel AI SDK](https://sdk.vercel.ai/) with a **tool loop** pattern:
+
+1. User sends a message (via Telegram, Discord, Web, or API)
+2. Agent receives the message with conversation context
+3. Agent decides whether to respond directly or use tools
+4. If tools are needed, the agent executes them and processes results
+5. The agent may loop multiple times for complex, multi-step tasks
+6. Final response is streamed back to the user
+
+## Tool Loop
+
+Unlike simple chatbots, Overseer uses **agentic tool loops** where the AI can:
+
+- Execute multiple tools in sequence
+- Use tool outputs to inform next decisions
+- Retry or adjust approach on failures
+- Chain complex workflows automatically
+
+```typescript
+// Simplified agent flow
+const result = await generateText({
+  model: provider(modelId),
+  system: soulPrompt,
+  messages: conversationHistory,
+  tools: availableTools,
+  maxSteps: 10, // Allow up to 10 tool calls per turn
+});
+```
+
+## Personality (SOUL.md)
+
+The agent's behavior is defined by SOUL.md — a Markdown file that acts as the system prompt:
+
+- **Expertise** — What the agent is good at
+- **Personality** — Communication style and tone
+- **Guardrails** — Things the agent should never do
+- **Preferences** — Default behaviors and approaches
+
+See [SOUL.md guide](/concepts/soul) for details.

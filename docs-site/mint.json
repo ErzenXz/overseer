@@ -1,0 +1,112 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Overseer",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#47a8e1",
+    "light": "#79c4f0",
+    "dark": "#2d7aab",
+    "anchors": {
+      "from": "#47a8e1",
+      "to": "#c6750c"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Website",
+      "url": "https://overseer.sh"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "GitHub",
+    "url": "https://github.com/ErzenXz/overseer"
+  },
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/ErzenXz/overseer"
+    },
+    {
+      "name": "Community",
+      "icon": "discord",
+      "url": "https://discord.gg/overseer"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "introduction",
+        "quickstart",
+        "installation"
+      ]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "concepts/architecture",
+        "concepts/agent",
+        "concepts/providers",
+        "concepts/tools",
+        "concepts/skills",
+        "concepts/soul"
+      ]
+    },
+    {
+      "group": "Chat Interfaces",
+      "pages": [
+        "interfaces/telegram",
+        "interfaces/discord",
+        "interfaces/web-dashboard"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/deployment",
+        "guides/security",
+        "guides/mcp-servers",
+        "guides/sub-agents",
+        "guides/custom-skills"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api-reference/overview",
+        "api-reference/authentication",
+        "api-reference/chat",
+        "api-reference/providers",
+        "api-reference/conversations",
+        "api-reference/tools",
+        "api-reference/skills",
+        "api-reference/health"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/ErzenXz/overseer",
+    "discord": "https://discord.gg/overseer"
+  },
+  "feedback": {
+    "thumbsRating": true,
+    "suggestEdit": true,
+    "raiseIssue": true
+  },
+  "analytics": {},
+  "modeToggle": {
+    "default": "dark"
+  },
+  "backgroundImage": "/images/background.png"
+}

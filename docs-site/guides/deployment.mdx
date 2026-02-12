@@ -1,0 +1,76 @@
+---
+title: "Deployment"
+description: "Production deployment guide"
+---
+
+# Deployment Guide
+
+Deploy Overseer to production with confidence.
+
+## Recommended Setup
+
+<CardGroup cols={2}>
+  <Card title="VPS (Recommended)" icon="server">
+    Any VPS with 2GB+ RAM running Ubuntu 22.04+. DigitalOcean, Hetzner, AWS EC2,
+    etc.
+  </Card>
+  <Card title="Docker" icon="docker">
+    Use the included Docker Compose configuration for containerized deployment.
+  </Card>
+</CardGroup>
+
+## VPS Deployment
+
+### 1. Install
+
+```bash
+curl -fsSL https://overseer.sh/install | bash
+```
+
+### 2. Configure Nginx (Optional)
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+### 3. SSL with Certbot
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com
+```
+
+### 4. Systemd Services
+
+```bash
+sudo cp systemd/*.service /etc/systemd/system/
+sudo systemctl enable --now overseer
+sudo systemctl enable --now overseer-discord
+```
+
+## Docker Deployment
+
+```bash
+docker compose up -d
+```
+
+## Environment Checklist
+
+<Check>Strong admin password (16+ characters)</Check>
+<Check>Unique encryption key (`openssl rand -hex 32`)</Check>
+<Check>Unique session secret (`openssl rand -hex 32`)</Check>
+<Check>SSL/TLS enabled (HTTPS)</Check>
+<Check>Firewall configured (only expose 443)</Check>
+<Check>Automated backups for `data/` directory</Check>

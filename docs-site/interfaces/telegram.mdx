@@ -1,0 +1,34 @@
+---
+title: "Telegram"
+description: "Telegram bot integration guide"
+---
+
+# Telegram Bot
+
+Connect Overseer to Telegram for a rich chat experience with streaming responses, file uploads, and inline formatting.
+
+## Setup
+
+<Steps>
+  <Step title="Create Bot">
+    Message [@BotFather](https://t.me/BotFather) on Telegram and send `/newbot`
+    to create a new bot. Save the token.
+  </Step>
+  <Step title="Get Your User ID">
+    Message [@userinfobot](https://t.me/userinfobot) to get your Telegram user
+    ID.
+  </Step>
+  <Step title="Configure">
+    Add to your `.env`: ```env TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+    TELEGRAM_ALLOWED_USERS=your-user-id ```
+  </Step>
+  <Step title="Start Bot">```bash pnpm bot:dev ```</Step>
+</Steps>
+
+## Features
+
+- **Streaming Responses** — See responses as they're generated
+- **Rich Formatting** — Markdown, code blocks, inline code
+- **File Uploads** — Send and receive files
+- **User Whitelisting** — Only approved users can interact
+- **Conversation History** — Full history preserved across sessions

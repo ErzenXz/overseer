@@ -1,0 +1,39 @@
+---
+title: "Web Dashboard"
+description: "Built-in web admin interface"
+---
+
+# Web Dashboard
+
+Overseer includes a **beautiful Next.js web dashboard** for configuration, monitoring, and direct chat.
+
+## Features
+
+- **Real-time Chat** — Chat with your agent directly in the browser
+- **Conversation History** — Browse and search past conversations
+- **Provider Management** — Add, configure, and switch LLM providers
+- **SOUL.md Editor** — Rich Markdown editor for agent personality
+- **Skills Manager** — Browse, install, and configure skills
+- **MCP Connections** — Manage MCP server connections
+- **Tool Browser** — View all available tools and their usage stats
+- **System Metrics** — CPU, memory, disk, and network monitoring
+- **Audit Logs** — Real-time system log viewer
+- **User Management** — Create and manage admin accounts
+
+## Access
+
+```bash
+pnpm dev  # Development: http://localhost:3000
+pnpm start  # Production: https://your-domain.com
+```
+
+## Authentication
+
+The dashboard uses session-based authentication with bcrypt password hashing. Default credentials are set in your `.env` file:
+
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your-secure-password
+```
+
+<Warning>Change the default credentials immediately after first login.</Warning>

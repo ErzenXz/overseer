@@ -1,0 +1,41 @@
+---
+title: "MCP Servers"
+description: "Connect Model Context Protocol servers for unlimited tools"
+---
+
+# MCP Server Integration
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) allows you to connect external tool servers for unlimited capability expansion.
+
+## Connecting MCP Servers
+
+### Via CLI
+
+```bash
+# Filesystem access
+overseer mcp connect npx -y @modelcontextprotocol/server-filesystem /path
+
+# GitHub integration
+overseer mcp connect npx -y @modelcontextprotocol/server-github
+
+# Custom servers via stdio or SSE
+overseer mcp connect your-custom-server
+```
+
+### Via Web Dashboard
+
+Navigate to **Settings → MCP Servers** to add and manage connections.
+
+## Popular MCP Servers
+
+| Server           | Description                        |
+| ---------------- | ---------------------------------- |
+| **Filesystem**   | Extended file system access        |
+| **GitHub**       | Repository management, PRs, issues |
+| **PostgreSQL**   | Database queries and management    |
+| **Brave Search** | Web search capabilities            |
+| **Puppeteer**    | Browser automation                 |
+
+## Custom MCP Servers
+
+You can connect any MCP-compatible server. See the [MCP specification](https://modelcontextprotocol.io/) for building custom servers.

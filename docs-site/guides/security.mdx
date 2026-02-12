@@ -1,0 +1,49 @@
+---
+title: "Security"
+description: "Security best practices and configuration"
+---
+
+# Security Guide
+
+Overseer is designed with **security-first principles**. This guide covers best practices for production deployment.
+
+## Security Features
+
+| Feature                | Description                                |
+| ---------------------- | ------------------------------------------ |
+| **AES-256-GCM**        | All API keys and secrets encrypted at rest |
+| **Bcrypt Auth**        | Password hashing with configurable rounds  |
+| **Session Management** | Secure HTTP-only cookies with expiry       |
+| **User Whitelisting**  | Only approved users can access bots        |
+| **Command Detection**  | Dangerous operations require confirmation  |
+| **Audit Logging**      | Complete action history                    |
+| **Input Validation**   | All endpoints validated                    |
+| **Rate Limiting**      | Protection against abuse                   |
+
+## Encryption
+
+All sensitive data is encrypted using AES-256-GCM:
+
+```env
+ENCRYPTION_KEY=your-64-char-hex-key  # openssl rand -hex 32
+```
+
+Encrypted data includes:
+
+- LLM provider API keys
+- Bot tokens (Telegram, Discord)
+- Any custom secrets
+
+## Command Safety
+
+The agent automatically detects dangerous commands:
+
+- `rm -rf /` and similar destructive operations
+- `DROP DATABASE` and SQL destructive operations
+- System-level commands that could compromise security
+
+These commands require explicit user confirmation before execution.
+
+<Warning>
+  Never run Overseer as root. Create a dedicated user with minimal privileges.
+</Warning>

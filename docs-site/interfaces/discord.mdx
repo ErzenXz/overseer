@@ -1,0 +1,38 @@
+---
+title: "Discord"
+description: "Discord bot integration guide"
+---
+
+# Discord Bot
+
+Integrate Overseer with your Discord server for team-based AI assistance with role-based access control.
+
+## Setup
+
+<Steps>
+  <Step title="Create Application">
+    Go to [Discord Developer
+    Portal](https://discord.com/developers/applications) and create a new
+    application.
+  </Step>
+  <Step title="Create Bot">
+    Navigate to the **Bot** tab and click **Add Bot**. Copy the token.
+  </Step>
+  <Step title="Invite Bot">
+    Use the OAuth2 URL Generator with `bot` and `applications.commands` scopes.
+    Invite to your server.
+  </Step>
+  <Step title="Configure">
+    ```env DISCORD_BOT_TOKEN=your-discord-token
+    DISCORD_ALLOWED_GUILDS=server-id-1,server-id-2 ```
+  </Step>
+  <Step title="Start Bot">```bash pnpm discord:dev ```</Step>
+</Steps>
+
+## Features
+
+- **Server Integration** — Works within your Discord server context
+- **Slash Commands** — Native Discord slash command support
+- **Role-Based Access** — Control who can interact with the bot
+- **Thread Support** — Keep conversations organized
+- **Rich Embeds** — Beautiful formatted responses

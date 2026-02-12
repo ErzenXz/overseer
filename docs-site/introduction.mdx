@@ -1,0 +1,65 @@
+---
+title: Introduction
+description: "Overseer — Self-Hosted AI Agent Platform"
+---
+
+# Welcome to Overseer
+
+Overseer is a **production-ready, self-hosted AI agent platform** that turns your server into an intelligent assistant. Chat via Telegram, Discord, or Web — manage everything through a beautiful dashboard.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get Overseer running in under 5 minutes
+  </Card>
+  <Card title="Architecture" icon="building" href="/concepts/architecture">
+    Understand how Overseer works under the hood
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/overview">
+    REST API documentation for custom integrations
+  </Card>
+  <Card title="Deploy" icon="server" href="/guides/deployment">
+    Production deployment guides for any environment
+  </Card>
+</CardGroup>
+
+## Why Overseer?
+
+<AccordionGroup>
+  <Accordion title="True Agentic Behavior">
+    Powered by Vercel AI SDK's Tool Loop for complex, multi-step autonomous
+    reasoning. Not just a chatbot — a real agent that can plan and execute
+    multi-step tasks.
+  </Accordion>
+  <Accordion title="20+ LLM Providers">
+    OpenAI, Anthropic, Google Gemini, Groq, Ollama, Azure, AWS Bedrock, Mistral,
+    xAI Grok, and many more. Switch providers on the fly.
+  </Accordion>
+  <Accordion title="Multi-Platform Chat">
+    Talk to your server via Telegram, Discord, or the built-in web interface.
+    Full streaming responses, rich formatting, and file uploads.
+  </Accordion>
+  <Accordion title="Enterprise Security">
+    AES-256 encryption, bcrypt auth, command whitelisting, dangerous command
+    detection, complete audit logging. Your data never leaves your server.
+  </Accordion>
+  <Accordion title="Extensible Skills System">
+    9+ pre-built skills for common tasks. Create custom skills or connect MCP
+    servers for unlimited capability expansion.
+  </Accordion>
+</AccordionGroup>
+
+## Quick Install
+
+```bash
+curl -fsSL https://overseer.sh/install | bash
+```
+
+Or clone manually:
+
+```bash
+git clone https://github.com/ErzenXz/overseer.git
+cd overseer
+pnpm install
+pnpm setup
+pnpm dev
+```

@@ -1,0 +1,116 @@
+---
+title: "Installation"
+description: "Detailed installation guide for all platforms"
+---
+
+# Installation
+
+Overseer runs on **Linux, macOS, and Windows**. Choose the installation method that works best for your environment.
+
+## System Requirements
+
+| Requirement | Minimum          | Recommended   |
+| ----------- | ---------------- | ------------- |
+| **Node.js** | 20.0+            | 22.x LTS      |
+| **RAM**     | 512 MB           | 2 GB+         |
+| **Disk**    | 200 MB           | 1 GB+         |
+| **OS**      | Any with Node.js | Ubuntu 22.04+ |
+
+## One-Line Install
+
+The fastest way to get started:
+
+```bash
+curl -fsSL https://overseer.sh/install | bash
+```
+
+This script will:
+
+1. Check prerequisites (Node.js, pnpm)
+2. Clone the repository
+3. Install dependencies
+4. Guide you through `.env` configuration
+5. Initialize the database
+6. Start services
+
+## Manual Installation
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/ErzenXz/overseer.git
+cd overseer
+pnpm install
+```
+
+### 2. Environment Configuration
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your configuration. See [Quick Start](/quickstart#configuration) for required variables.
+
+### 3. Database Setup
+
+```bash
+pnpm run db:init
+```
+
+### 4. Start Services
+
+```bash
+# Development mode (with hot reload)
+pnpm dev          # Web dashboard
+pnpm bots:dev     # Chat bots
+
+# Production mode
+pnpm build
+pnpm start        # Web dashboard
+pnpm bots         # Chat bots
+```
+
+## Docker Installation
+
+### Development
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+### Production
+
+```bash
+docker compose up -d
+```
+
+## Systemd Services (Linux)
+
+For production Linux servers, use the included systemd service files:
+
+```bash
+# Copy service files
+sudo cp systemd/*.service /etc/systemd/system/
+
+# Edit configuration
+sudo systemctl edit overseer
+
+# Enable and start
+sudo systemctl enable --now overseer
+sudo systemctl enable --now overseer-discord
+```
+
+## Updating
+
+```bash
+cd overseer
+git pull
+pnpm install
+pnpm build
+# Restart services
+```
+
+<Warning>
+  Always back up your `data/` directory before updating. Database migrations are
+  automatic but irreversible.
+</Warning>

@@ -1,0 +1,35 @@
+---
+title: "Tools"
+description: "Tool management API"
+---
+
+# Tools API
+
+Browse available tools and their usage statistics.
+
+## List Tools
+
+```bash
+GET /api/tools
+```
+
+**Response (200):**
+
+```json
+{
+  "tools": [
+    {
+      "name": "executeCommand",
+      "description": "Execute a shell command",
+      "source": "built-in",
+      "usageCount": 156
+    },
+    {
+      "name": "readFile",
+      "description": "Read file contents",
+      "source": "built-in",
+      "usageCount": 89
+    }
+  ]
+}
+```

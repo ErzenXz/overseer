@@ -1,0 +1,29 @@
+---
+title: "Sub-Agents"
+description: "Dynamically spawned specialized agents"
+---
+
+# Sub-Agents
+
+Overseer can dynamically spawn **specialized sub-agents** for complex tasks that benefit from focused expertise.
+
+## How It Works
+
+When the main agent encounters a complex task, it can spawn a sub-agent with specialized knowledge:
+
+```typescript
+"Deploy my app" → Spawns DeployAgent
+"Audit security" → Spawns SecurityAgent
+"Optimize database" → Spawns DatabaseAgent
+```
+
+Sub-agents have:
+
+- **Specialized system prompts** focused on their domain
+- **Relevant tools** for their task type
+- **Isolated context** to prevent confusion
+- **Results returned** to the main agent for synthesis
+
+## Configuration
+
+Sub-agents are configured in `src/agent/subagents/` and can use the same or different LLM providers as the main agent.

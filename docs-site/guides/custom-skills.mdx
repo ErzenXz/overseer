@@ -1,0 +1,67 @@
+---
+title: "Custom Skills"
+description: "Build and publish custom skills"
+---
+
+# Building Custom Skills
+
+Create custom skills to extend Overseer with new capabilities.
+
+## Skill Structure
+
+```
+skills/
+  my-skill/
+    index.ts      # Skill implementation (tools)
+    skill.json    # Metadata
+    README.md     # Documentation
+```
+
+## Step-by-Step
+
+### 1. Create Directory
+
+```bash
+mkdir -p skills/my-skill
+```
+
+### 2. Define Metadata
+
+```json title="skills/my-skill/skill.json"
+{
+  "name": "my-skill",
+  "version": "1.0.0",
+  "description": "What this skill does",
+  "author": "Your Name",
+  "tools": ["myTool"]
+}
+```
+
+### 3. Implement Tools
+
+```typescript title="skills/my-skill/index.ts"
+import { tool } from "ai";
+import { z } from "zod";
+
+export const tools = {
+  myTool: tool({
+    description: "Description of the tool",
+    parameters: z.object({
+      input: z.string().describe("Input parameter"),
+    }),
+    execute: async ({ input }) => {
+      // Your implementation
+      return { success: true, result: `Processed: ${input}` };
+    },
+  }),
+};
+```
+
+### 4. Test
+
+Restart Overseer — skills are auto-discovered from the `skills/` directory.
+
+<Tip>
+  Skills can include multiple tools. Group related functionality into a single
+  skill for better organization.
+</Tip>
