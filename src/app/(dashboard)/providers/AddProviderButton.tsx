@@ -34,6 +34,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
   const [error, setError] = useState("");
   const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogLoadError, setCatalogLoadError] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -60,8 +61,12 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
     let cancelled = false;
     const loadCatalog = async () => {
       setCatalogLoading(true);
+      setCatalogLoadError("");
       try {
         const res = await fetch("/api/providers/catalog", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`Catalog request failed (${res.status})`);
+        }
         const data = await res.json();
         const providers = (data.providers || []) as CatalogProvider[];
 
@@ -85,7 +90,8 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
         }
       } catch {
         if (!cancelled) {
-          setError("Failed to load dynamic provider catalog");
+          setCatalogLoadError("Failed to load provider catalog. Please retry.");
+          setError("Failed to load provider catalog");
         }
       } finally {
         if (!cancelled) {
@@ -100,6 +106,12 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
       cancelled = true;
     };
   }, [isOpen, catalog.length, catalogLoading]);
+
+  const retryCatalogLoad = async () => {
+    setCatalog([]);
+    setCatalogLoadError("");
+    setCatalogLoading(false);
+  };
 
   // Look up the selected model's info from the provider registry
   const selectedModelInfo: ModelInfo | undefined = useMemo(() => {
@@ -237,8 +249,17 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                 <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
                   {catalogLoading
                     ? "Loading providers from models.dev…"
-                    : selectedProvider?.description || ""}
+                    : selectedProvider?.description || catalogLoadError || ""}
                 </p>
+                {!catalogLoading && catalogLoadError && (
+                  <button
+                    type="button"
+                    onClick={retryCatalogLoad}
+                    className="mt-2 text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-light)] underline"
+                  >
+                    Retry loading catalog
+                  </button>
+                )}
               </div>
 
               <div>
@@ -427,7 +448,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || catalogLoading || !formData.name || !formData.model}
                   className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-colors disabled:opacity-50"
                 >
                   {loading ? "Adding..." : "Add Provider"}

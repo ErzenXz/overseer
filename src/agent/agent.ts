@@ -66,13 +66,40 @@ interface ModelSettings {
   temperature?: number;
 }
 
-function getConfiguredThinkingLevel(
-  modelId: string,
-): "low" | "medium" | "high" {
+function getConfiguredProviderSettings(modelId: string): {
+  thinkingLevel: "low" | "medium" | "high";
+  maxTokens?: number;
+  temperature?: number;
+} {
   const activeProviders = providersModel.findActive();
   const matchedProvider = activeProviders.find((p) => p.model === modelId);
 
-  if (!matchedProvider?.config) return "medium";
+  const result: {
+    thinkingLevel: "low" | "medium" | "high";
+    maxTokens?: number;
+    temperature?: number;
+  } = {
+    thinkingLevel: "medium",
+  };
+
+  if (matchedProvider) {
+    if (
+      typeof matchedProvider.max_tokens === "number" &&
+      Number.isFinite(matchedProvider.max_tokens) &&
+      matchedProvider.max_tokens > 0
+    ) {
+      result.maxTokens = matchedProvider.max_tokens;
+    }
+
+    if (
+      typeof matchedProvider.temperature === "number" &&
+      Number.isFinite(matchedProvider.temperature)
+    ) {
+      result.temperature = matchedProvider.temperature;
+    }
+  }
+
+  if (!matchedProvider?.config) return result;
 
   try {
     const parsed = JSON.parse(matchedProvider.config) as {
@@ -83,13 +110,13 @@ function getConfiguredThinkingLevel(
       parsed.thinking_level === "medium" ||
       parsed.thinking_level === "high"
     ) {
-      return parsed.thinking_level;
+      result.thinkingLevel = parsed.thinking_level;
     }
   } catch {
-    // ignore invalid config and fall back to medium
+    // ignore invalid config and keep defaults
   }
 
-  return "medium";
+  return result;
 }
 
 /**
@@ -120,21 +147,25 @@ function getModelSettings(model: LanguageModel): ModelSettings {
   }
 
   const { provider, model: modelInfo } = info;
-  const thinkingLevel = getConfiguredThinkingLevel(modelInfo.id);
+  const configured = getConfiguredProviderSettings(modelInfo.id);
+  const thinkingLevel = configured.thinkingLevel;
   const settings: ModelSettings = {};
 
-  // --- maxOutputTokens: use the model's known max ---
-  if (modelInfo.maxOutput) {
+  // --- maxOutputTokens: use configured cap when available, bounded by known model limit ---
+  if (configured.maxTokens) {
+    settings.maxOutputTokens = modelInfo.maxOutput
+      ? Math.min(configured.maxTokens, modelInfo.maxOutput)
+      : configured.maxTokens;
+  } else if (modelInfo.maxOutput) {
     settings.maxOutputTokens = modelInfo.maxOutput;
   }
 
-  // --- temperature: skip for reasoning models that disallow it ---
+  // --- temperature: skip for reasoning models that disallow it; otherwise prefer configured value ---
   if (!modelInfo.allowsTemperature) {
     // Don't set temperature at all — let the provider use its default
     settings.temperature = undefined;
   } else {
-    // Default temperature for non-reasoning models
-    settings.temperature = 0.7;
+    settings.temperature = configured.temperature ?? 0.7;
   }
 
   // --- providerOptions: enable thinking/reasoning per provider ---
@@ -223,18 +254,12 @@ function buildThinkingOptions(
       }
       return undefined;
 
-    // xAI Grok: thinking (uses openai-compatible format)
+    // xAI Grok provider in this installed SDK version does not expose
+    // provider-level thinking/reasoning options via providerOptions.
     case "xai":
-      if (modelInfo.supportsThinking) {
-        return {
-          xai: {
-            reasoningEffort: effortByLevel[thinkingLevel],
-          },
-        };
-      }
       return undefined;
 
-    // DeepSeek Reasoner: uses provider-specific thinking
+    // DeepSeek Reasoner: provider-specific thinking toggle
     case "deepseek":
       if (modelInfo.supportsThinking) {
         return {
@@ -245,29 +270,14 @@ function buildThinkingOptions(
       }
       return undefined;
 
-    // Mistral Magistral: reasoning models
+    // Mistral provider in this installed SDK version does not expose
+    // provider-level thinking/reasoning options via providerOptions.
     case "mistral":
-      if (modelInfo.supportsThinking) {
-        return {
-          mistral: {
-            thinking: { type: "enabled" },
-          },
-        };
-      }
       return undefined;
 
-    // Bedrock: uses anthropic-style thinking for Claude models
+    // Bedrock provider in this installed SDK version does not expose
+    // anthropic-style thinking controls via providerOptions.
     case "amazon-bedrock":
-      if (modelInfo.id.includes("anthropic") && modelInfo.supportsThinking) {
-        return {
-          "amazon-bedrock": {
-            thinking: {
-              type: "enabled",
-              budgetTokens,
-            },
-          },
-        };
-      }
       return undefined;
 
     default:

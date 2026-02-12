@@ -103,7 +103,7 @@ export function ProvidersList({ providers }: ProvidersListProps) {
     } catch {
       setTestResult({ id, success: false, message: "Test failed" });
     } finally {
-      setTestingId(false as unknown as null);
+      setTestingId(null);
     }
   };
 

@@ -8,6 +8,7 @@ import { createLogger } from "../lib/logger";
 const logger = createLogger("models-dev");
 
 const MODELS_DEV_API = "https://models.dev/api.json";
+const MODELS_DEV_TIMEOUT_MS = 8000;
 
 export interface ModelsDevModel {
   id: string;
@@ -74,14 +75,22 @@ export async function fetchModelsDevData(): Promise<ModelsDevCache> {
 
   try {
     logger.info("Fetching models from models.dev API...");
-    const response = await fetch(MODELS_DEV_API);
-    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), MODELS_DEV_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(MODELS_DEV_API, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const data = await response.json();
-    
+
     // Transform the data into our format
     const models: ModelsDevModel[] = [];
     const providers: ModelsDevProvider[] = [];
@@ -89,7 +98,7 @@ export async function fetchModelsDevData(): Promise<ModelsDevCache> {
     // Process providers and models from the API response
     for (const [providerId, providerData] of Object.entries(data)) {
       const provider = providerData as any;
-      
+
       providers.push({
         id: providerId,
         name: provider.name,
@@ -133,19 +142,26 @@ export async function fetchModelsDevData(): Promise<ModelsDevCache> {
       lastFetch: Date.now(),
     };
 
-    logger.info(`Loaded ${models.length} models from ${providers.length} providers`);
+    logger.info(
+      `Loaded ${models.length} models from ${providers.length} providers`,
+    );
     return cache;
   } catch (error) {
     logger.error("Failed to fetch models.dev data", {
-      error: error instanceof Error ? error.message : String(error),
+      error:
+        error instanceof Error && error.name === "AbortError"
+          ? `Request timed out after ${MODELS_DEV_TIMEOUT_MS}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error),
     });
-    
+
     // Return stale cache if available, otherwise empty
     if (cache) {
       logger.warn("Using stale cache");
       return cache;
     }
-    
+
     return {
       models: [],
       providers: [],
@@ -165,9 +181,11 @@ export async function getAllModels(): Promise<ModelsDevModel[]> {
 /**
  * Get models by provider
  */
-export async function getModelsByProvider(providerId: string): Promise<ModelsDevModel[]> {
+export async function getModelsByProvider(
+  providerId: string,
+): Promise<ModelsDevModel[]> {
   const data = await fetchModelsDevData();
-  return data.models.filter(m => m.provider === providerId);
+  return data.models.filter((m) => m.provider === providerId);
 }
 
 /**
@@ -181,9 +199,11 @@ export async function getAllProviders(): Promise<ModelsDevProvider[]> {
 /**
  * Get a specific model by ID
  */
-export async function getModelById(modelId: string): Promise<ModelsDevModel | null> {
+export async function getModelById(
+  modelId: string,
+): Promise<ModelsDevModel | null> {
   const data = await fetchModelsDevData();
-  return data.models.find(m => m.id === modelId) || null;
+  return data.models.find((m) => m.id === modelId) || null;
 }
 
 /**
@@ -191,18 +211,22 @@ export async function getModelById(modelId: string): Promise<ModelsDevModel | nu
  */
 export async function getToolCallingModels(): Promise<ModelsDevModel[]> {
   const data = await fetchModelsDevData();
-  return data.models.filter(m => m.tool_call === true);
+  return data.models.filter((m) => m.tool_call === true);
 }
 
 /**
  * Calculate estimated cost for a request
  */
-export function calculateCost(model: ModelsDevModel, inputTokens: number, outputTokens: number): number {
+export function calculateCost(
+  model: ModelsDevModel,
+  inputTokens: number,
+  outputTokens: number,
+): number {
   if (!model.cost) return 0;
-  
+
   const inputCost = (model.cost.input || 0) * (inputTokens / 1_000_000);
   const outputCost = (model.cost.output || 0) * (outputTokens / 1_000_000);
-  
+
   return inputCost + outputCost;
 }
 
@@ -210,13 +234,14 @@ export function calculateCost(model: ModelsDevModel, inputTokens: number, output
  * Check if a model supports a specific modality
  */
 export function modelSupportsModality(
-  model: ModelsDevModel, 
-  modality: string, 
-  type: 'input' | 'output' = 'input'
+  model: ModelsDevModel,
+  modality: string,
+  type: "input" | "output" = "input",
 ): boolean {
   if (!model.modalities) return false;
-  
-  const modalities = type === 'input' ? model.modalities.input : model.modalities.output;
+
+  const modalities =
+    type === "input" ? model.modalities.input : model.modalities.output;
   return modalities?.includes(modality) || false;
 }
 
@@ -225,23 +250,25 @@ export function modelSupportsModality(
  */
 export async function getRecommendedAgentModels(): Promise<ModelsDevModel[]> {
   const data = await fetchModelsDevData();
-  
-  return data.models.filter(m => {
-    // Must support tool calling
-    if (!m.tool_call) return false;
-    
-    // Prefer models with good context limits
-    const contextLimit = m.limit?.context || 0;
-    if (contextLimit < 8000) return false;
-    
-    // Prefer non-deprecated models
-    if (m.status === 'deprecated') return false;
-    
-    return true;
-  }).sort((a, b) => {
-    // Sort by context limit (higher is better)
-    const aLimit = a.limit?.context || 0;
-    const bLimit = b.limit?.context || 0;
-    return bLimit - aLimit;
-  });
+
+  return data.models
+    .filter((m) => {
+      // Must support tool calling
+      if (!m.tool_call) return false;
+
+      // Prefer models with good context limits
+      const contextLimit = m.limit?.context || 0;
+      if (contextLimit < 8000) return false;
+
+      // Prefer non-deprecated models
+      if (m.status === "deprecated") return false;
+
+      return true;
+    })
+    .sort((a, b) => {
+      // Sort by context limit (higher is better)
+      const aLimit = a.limit?.context || 0;
+      const bLimit = b.limit?.context || 0;
+      return bLimit - aLimit;
+    });
 }
