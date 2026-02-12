@@ -809,6 +809,30 @@ clone_repository() {
     print_success "Repository ready"
 }
 
+handoff_to_repo_script() {
+    local target_script="${OVERSEER_DIR}/scripts/install.sh"
+    if [ "${OVERSEER_SCRIPT_HANDOFF_DONE:-0}" = "1" ]; then
+        return 0
+    fi
+
+    if [ ! -f "$target_script" ]; then
+        return 0
+    fi
+
+    local current_path
+    local target_path
+    current_path=$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")
+    target_path=$(readlink -f "$target_script" 2>/dev/null || realpath "$target_script" 2>/dev/null || echo "$target_script")
+
+    if [ "$current_path" = "$target_path" ]; then
+        return 0
+    fi
+
+    print_substep "Switching to repository install script (${OVERSEER_VERSION})..."
+    export OVERSEER_SCRIPT_HANDOFF_DONE=1
+    exec bash "$target_script"
+}
+
 # =========================================
 # Secret Generation
 # =========================================
@@ -1486,6 +1510,7 @@ main() {
 
     # Main installation
     clone_repository
+    handoff_to_repo_script
     configure_environment
     install_dependencies
     init_database
