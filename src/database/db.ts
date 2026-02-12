@@ -223,6 +223,17 @@ function initializeSchema() {
     { name: "tool_calls_count", definition: "INTEGER DEFAULT 0" },
     { name: "metadata", definition: "TEXT" },
   ]);
+
+  // Migrate memory table for future column additions
+  migrateTableColumns("memory", [
+    { name: "key", definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: "value", definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: "category", definition: "TEXT NOT NULL DEFAULT 'custom'" },
+    { name: "importance", definition: "INTEGER NOT NULL DEFAULT 5" },
+    { name: "source", definition: "TEXT" },
+    { name: "created_at", definition: "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+    { name: "updated_at", definition: "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+  ]);
 }
 
 /**

@@ -32,6 +32,7 @@ import {
 } from "../database/index";
 import { initializeSchema } from "../database/db";
 import { SessionManager, estimateTokens } from "../lib/session-manager";
+import { extractMemoriesFromConversation } from "../agent/super-memory";
 import {
   createBotLogger,
   isRateLimited,
@@ -361,6 +362,11 @@ async function handleAskCommand(interaction: ChatInputCommandInteraction) {
           model: "default",
         });
       }
+
+      // Fire-and-forget: extract memories from this exchange
+      extractMemoriesFromConversation(
+        `user: ${prompt}\n\nassistant: ${finalText}`,
+      ).catch(() => {});
     } else if (!responseText) {
       await interaction.editReply(
         "I apologize, but I couldn't generate a response. Please try again.",
@@ -560,6 +566,11 @@ async function handleExecuteCommand(interaction: ChatInputCommandInteraction) {
           model: "default",
         });
       }
+
+      // Fire-and-forget: extract memories
+      extractMemoriesFromConversation(
+        `user: ${prompt}\n\nassistant: ${finalText}`,
+      ).catch(() => {});
 
       recordChannelEvent({
         channel: "discord",
@@ -919,6 +930,11 @@ async function handleMessage(message: Message) {
           model: "default",
         });
       }
+
+      // Fire-and-forget: extract memories
+      extractMemoriesFromConversation(
+        `user: ${prompt}\n\nassistant: ${finalText}`,
+      ).catch(() => {});
     } else if (!responseText) {
       await message.reply(
         "I apologize, but I couldn't generate a response. Please try again.",

@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/logger";
 import { resumableStreams } from "@/lib/resumable-streams";
 import { getRateLimiter } from "@/lib/rate-limiter";
 import { estimateTokens, SessionManager } from "@/lib/session-manager";
+import { extractMemoriesFromConversation } from "@/agent/super-memory";
 
 const logger = createLogger("chat-api");
 
@@ -271,6 +272,15 @@ export async function POST(request: NextRequest) {
             fullText: finalText,
             usage,
           });
+
+          // Fire-and-forget: extract memories from this exchange
+          extractMemoriesFromConversation(
+            `user: ${message}\n\nassistant: ${finalText}`,
+          ).catch((err) =>
+            logger.warn("Memory extraction failed", {
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
 
           resumableStreams.complete(streamId, "completed");
 

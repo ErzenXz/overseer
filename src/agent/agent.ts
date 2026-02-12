@@ -22,6 +22,11 @@ import { createLogger } from "../lib/logger";
 import type { ModelInfo, ProviderName } from "./provider-info";
 import { agentCache } from "@/lib/agent-cache";
 import { runPlanModeOrchestration } from "@/agent/orchestrator";
+import {
+  getContextSummaryForPrompt,
+  ensureContextIsSummarized,
+} from "./infinite-context";
+import { getMemoriesForPrompt } from "./super-memory";
 
 // Type alias for messages (using ModelMessage from AI SDK)
 type CoreMessage = ModelMessage;
@@ -319,6 +324,7 @@ export interface AgentResult {
 function buildSystemPrompt(
   query?: string,
   steering?: AgentOptions["steering"],
+  conversationId?: number,
 ): string {
   const soul = loadSoul();
 
@@ -334,6 +340,14 @@ function buildSystemPrompt(
 
   // Get tool counts
   const toolCounts = getToolCounts();
+
+  // Get context summary for infinite context
+  const contextSummary = conversationId
+    ? getContextSummaryForPrompt(conversationId)
+    : "";
+
+  // Get super memory (long-term persistent memory)
+  const superMemory = getMemoriesForPrompt(15);
 
   // Build MCP server section
   let mcpSection = "";
@@ -385,15 +399,24 @@ Based on the user's query, the following specialized skills are activated:
 
   // Build sub-agents section
   const subAgentsSection = `
-## Sub-Agents
+## Sub-Agents (Your Team)
 
-You can spawn delegated sub-agents for complex tasks using the spawnSubAgent tool:
-- **auto**: Routes to the generic delegated worker
-- **generic**: General delegated worker with the same tool ecosystem as the main agent
+You can spawn sub-agents to handle tasks autonomously. Each sub-agent is a generic worker that gets access to ALL your tools (shell, files, MCP, skills) — just like you.
 
-Use sub-agents when a task requires focused expertise or when you want to delegate work.
-Prefer autonomous delegation with wait_for_result=false so you can continue responding to new user requests while sub-agents run.
-Only use wait_for_result=true when the immediate next answer strictly depends on that sub-agent output.
+**How to use:**
+- Give the sub-agent a clear task description and it will execute autonomously
+- Sub-agents are ideal for parallelizable or isolated work
+- They don't pollute your main conversation context
+
+**When to delegate:**
+- Multiple independent tasks that can run in parallel
+- Long-running work that shouldn't block the conversation
+- Isolated tasks that need their own clean context
+- Work that benefits from focused, single-task execution
+
+**Execution modes:**
+- \`wait_for_result: false\` (default) — Fire and forget, continue immediately
+- \`wait_for_result: true\` — Block until complete (only when you NEED the result)
 `;
 
   const steeringSection = steering
@@ -420,6 +443,8 @@ Follow these steering instructions strictly while still completing user intent.
 - **Working Directory**: ${process.cwd()}
 - **User**: ${process.env.USER || "unknown"}
 - **Platform**: ${process.platform}
+${contextSummary}
+${superMemory}
 
 ## Available Tools
 
@@ -522,6 +547,9 @@ export async function runAgent(
   if (conversationId) {
     const dbMessages = messagesModel.getRecentForContext(conversationId, 20);
     history = formatMessagesForAI(dbMessages);
+
+    // Check if we need to summarize old messages (infinite context)
+    void ensureContextIsSummarized(conversationId, model);
   }
 
   // Build messages
@@ -617,7 +645,7 @@ export async function runAgent(
 
       const result = await generateText({
         model,
-        system: buildSystemPrompt(prompt, steering),
+        system: buildSystemPrompt(prompt, steering, conversationId),
         messages,
         tools: combinedTools,
         stopWhen: stepCountIs(maxSteps),

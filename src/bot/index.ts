@@ -6,6 +6,7 @@ import { runAgentStream } from "../agent/agent";
 import { conversationsModel, messagesModel } from "../database/index";
 import { initializeSchema } from "../database/db";
 import { SessionManager, estimateTokens } from "../lib/session-manager";
+import { extractMemoriesFromConversation } from "../agent/super-memory";
 import {
   createBotLogger,
   isRateLimited,
@@ -338,6 +339,11 @@ async function startBot() {
               model: activeModelId,
             });
           }
+
+          // Fire-and-forget: extract memories from this exchange
+          extractMemoriesFromConversation(
+            `user: ${messageText}\n\nassistant: ${finalText}`,
+          ).catch(() => {});
         } else if (!responseText) {
           await ctx.reply(
             "I apologize, but I couldn't generate a response. Please try again.",

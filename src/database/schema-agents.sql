@@ -128,3 +128,18 @@ CREATE INDEX IF NOT EXISTS idx_sub_agents_status ON sub_agents(status);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_active ON mcp_servers(is_active);
 CREATE INDEX IF NOT EXISTS idx_skills_active ON skills(is_active);
 CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);
+
+-- Super Memory table for persistent cross-conversation knowledge
+CREATE TABLE IF NOT EXISTS memory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'custom', -- 'preference', 'fact', 'project', 'context', 'custom'
+  importance INTEGER NOT NULL DEFAULT 5, -- 1-10
+  source TEXT, -- 'manual', 'auto-extracted', etc.
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);
+CREATE INDEX IF NOT EXISTS idx_memory_importance ON memory(importance);
