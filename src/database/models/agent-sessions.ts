@@ -145,15 +145,6 @@ export function initializeAgentSessionsTable(): void {
         
         FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
       );
-      
-      CREATE INDEX IF NOT EXISTS idx_agent_sessions_conversation 
-        ON agent_sessions(conversation_id);
-      
-      CREATE INDEX IF NOT EXISTS idx_agent_sessions_external 
-        ON agent_sessions(interface_type, external_chat_id, external_user_id);
-      
-      CREATE INDEX IF NOT EXISTS idx_agent_sessions_active 
-        ON agent_sessions(is_active, last_active_at);
     `);
 
     const requiredColumns: AgentSessionsColumn[] = [
@@ -293,6 +284,17 @@ export function initializeAgentSessionsTable(): void {
         `);
       }
     }
+
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_conversation
+        ON agent_sessions(conversation_id);
+
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_external
+        ON agent_sessions(interface_type, external_chat_id, external_user_id);
+
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_active
+        ON agent_sessions(is_active, last_active_at);
+    `);
 
     db.pragma("foreign_keys = ON");
     logger.info("Agent sessions table initialized");
