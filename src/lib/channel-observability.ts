@@ -118,6 +118,8 @@ export function recordChannelEvent(input: ChannelEventInput): void {
   }
 }
 
-export function getChannelObservabilitySnapshot(channel: ChannelType): ChannelState {
+export function getChannelObservabilitySnapshot(
+  channel: ChannelType,
+): ChannelState {
   return { ...channelStates[channel] };
 }
