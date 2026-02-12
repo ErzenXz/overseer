@@ -36,6 +36,22 @@ UPDATE_REMOTE_SHA=""
 UPDATE_BASE_SHA=""
 UPDATE_STATUS=""
 
+has_unmerged_conflicts() {
+    [ -n "$(git diff --name-only --diff-filter=U 2>/dev/null)" ]
+}
+
+print_unmerged_conflicts() {
+    local files
+    files=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
+    [ -z "$files" ] && return 0
+
+    echo -e "${RED}[ERROR]${NC} Unmerged files detected. Resolve these before update:"
+    while IFS= read -r file; do
+        [ -z "$file" ] && continue
+        echo "  - $file"
+    done <<< "$files"
+}
+
 resolve_tracking_ref() {
     local tracking_ref
     tracking_ref=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || true)
@@ -55,6 +71,11 @@ resolve_tracking_ref() {
 check_for_updates() {
     if [ ! -d ".git" ]; then
         UPDATE_STATUS="not-git"
+        return 0
+    fi
+
+    if has_unmerged_conflicts; then
+        UPDATE_STATUS="unmerged"
         return 0
     fi
 
@@ -247,6 +268,9 @@ cmd_update_check() {
         fetch-failed)
             echo -e "${RED}[ERROR]${NC} Failed to fetch from ${UPDATE_REMOTE}/${UPDATE_BRANCH}."
             ;;
+        unmerged)
+            print_unmerged_conflicts
+            ;;
     esac
 }
 
@@ -282,6 +306,11 @@ cmd_update() {
             echo -e "${RED}[ERROR]${NC} Could not fetch updates from ${UPDATE_REMOTE}/${UPDATE_BRANCH}."
             return 1
             ;;
+        unmerged)
+            print_unmerged_conflicts
+            echo -e "${YELLOW}[INFO]${NC} Resolve conflicts first, then run ./overseer update again."
+            return 1
+            ;;
         behind)
             echo -e "${BLUE}==>${NC} Updates detected on ${UPDATE_REMOTE}/${UPDATE_BRANCH}"
             ;;
@@ -292,21 +321,31 @@ cmd_update() {
 
     local had_stash="false"
     if [ -n "$(git status --porcelain)" ]; then
-        git stash push -u -m "overseer-auto-stash-$(date +%s)" >/dev/null 2>&1 || true
+        if ! git stash push -u -m "overseer-auto-stash-$(date +%s)" >/dev/null 2>&1; then
+            echo -e "${RED}[ERROR]${NC} Failed to stash local changes. Aborting update."
+            return 1
+        fi
         had_stash="true"
     fi
 
     local old_sha="$UPDATE_LOCAL_SHA"
     if ! git pull --ff-only "$UPDATE_REMOTE" "$UPDATE_BRANCH"; then
         echo -e "${RED}[ERROR]${NC} Failed to fast-forward. Resolve git state and retry."
+        if has_unmerged_conflicts; then
+            print_unmerged_conflicts
+        fi
         if [ "$had_stash" = "true" ]; then
-            git stash pop >/dev/null 2>&1 || true
+            echo -e "${YELLOW}[INFO]${NC} Your auto-stash was kept. Reapply manually when ready with: git stash list"
         fi
         return 1
     fi
 
     if [ "$had_stash" = "true" ]; then
-        git stash pop >/dev/null 2>&1 || true
+        if ! git stash pop >/dev/null 2>&1; then
+            echo -e "${YELLOW}[WARN]${NC} Could not auto-apply stashed changes cleanly."
+            echo -e "${YELLOW}[INFO]${NC} Resolve manually with: git stash list && git stash pop"
+            return 1
+        fi
     fi
 
     local new_sha
@@ -354,9 +393,15 @@ cmd_update() {
     if [ "$needs_install" = "true" ]; then
         echo -e "${BLUE}==>${NC} Installing dependencies..."
         if command -v pnpm &>/dev/null; then
-            pnpm install --no-frozen-lockfile
+            if ! pnpm install --no-frozen-lockfile; then
+                echo -e "${RED}[ERROR]${NC} Dependency installation failed."
+                return 1
+            fi
         else
-            npm install
+            if ! npm install; then
+                echo -e "${RED}[ERROR]${NC} Dependency installation failed."
+                return 1
+            fi
         fi
         echo ""
     else
@@ -383,14 +428,20 @@ cmd_update() {
         echo -e "${BLUE}==>${NC} Building application..."
         rm -rf .next
         if command -v pnpm &>/dev/null; then
-            pnpm run build
+            if ! pnpm run build; then
+                echo -e "${RED}[ERROR]${NC} Build failed."
+                return 1
+            fi
         else
-            npm run build
+            if ! npm run build; then
+                echo -e "${RED}[ERROR]${NC} Build failed."
+                return 1
+            fi
         fi
 
         if [ ! -d ".next" ]; then
             echo -e "${RED}Build failed!${NC}"
-            exit 1
+            return 1
         fi
         echo ""
 
