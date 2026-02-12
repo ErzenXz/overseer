@@ -8,6 +8,11 @@ import { createLogger } from "../../lib/logger";
 
 const logger = createLogger("agent-sessions");
 
+interface AgentSessionsColumn {
+  name: string;
+  definition: string;
+}
+
 // =====================================================
 // Types & Interfaces
 // =====================================================
@@ -101,6 +106,8 @@ export interface SessionStats {
  */
 export function initializeAgentSessionsTable(): void {
   try {
+    db.pragma("foreign_keys = OFF");
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS agent_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,8 +156,148 @@ export function initializeAgentSessionsTable(): void {
         ON agent_sessions(is_active, last_active_at);
     `);
 
+    const requiredColumns: AgentSessionsColumn[] = [
+      { name: "session_id", definition: "TEXT" },
+      { name: "conversation_id", definition: "INTEGER DEFAULT 0" },
+      { name: "external_user_id", definition: "TEXT NOT NULL DEFAULT ''" },
+      { name: "external_chat_id", definition: "TEXT NOT NULL DEFAULT ''" },
+      { name: "messages", definition: "TEXT NOT NULL DEFAULT '[]'" },
+      { name: "summaries", definition: "TEXT NOT NULL DEFAULT '[]'" },
+      { name: "state", definition: "TEXT NOT NULL DEFAULT '{}'" },
+      { name: "input_tokens", definition: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "output_tokens", definition: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "token_limit", definition: "INTEGER NOT NULL DEFAULT 4000" },
+      { name: "last_active_at", definition: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "created_at", definition: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "expires_at", definition: "INTEGER" },
+      { name: "is_active", definition: "BOOLEAN NOT NULL DEFAULT 1" },
+      { name: "message_count", definition: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "tool_calls_count", definition: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "error_count", definition: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "metadata", definition: "TEXT DEFAULT '{}'" },
+    ];
+
+    const readColumns = (): Set<string> => {
+      const rows = db
+        .prepare("PRAGMA table_info(agent_sessions)")
+        .all() as { name: string }[];
+      return new Set(rows.map((row) => row.name));
+    };
+
+    const existingColumns = readColumns();
+    for (const column of requiredColumns) {
+      if (existingColumns.has(column.name)) {
+        continue;
+      }
+      db.exec(
+        `ALTER TABLE agent_sessions ADD COLUMN ${column.name} ${column.definition}`,
+      );
+    }
+
+    const columnsAfterMigration = readColumns();
+
+    if (columnsAfterMigration.has("session_id")) {
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_sessions_session_id_unique
+        ON agent_sessions(session_id)
+      `);
+    }
+
+    if (columnsAfterMigration.has("conversation_id")) {
+      db.exec(`
+        UPDATE agent_sessions
+        SET conversation_id = id
+        WHERE conversation_id IS NULL OR conversation_id = 0
+      `);
+    }
+
+    if (
+      columnsAfterMigration.has("external_user_id") &&
+      columnsAfterMigration.has("user_id")
+    ) {
+      db.exec(`
+        UPDATE agent_sessions
+        SET external_user_id = COALESCE(external_user_id, user_id, '')
+        WHERE external_user_id IS NULL OR external_user_id = ''
+      `);
+    }
+
+    if (columnsAfterMigration.has("external_chat_id")) {
+      if (columnsAfterMigration.has("session_id")) {
+        db.exec(`
+          UPDATE agent_sessions
+          SET external_chat_id = COALESCE(external_chat_id, session_id, CAST(id AS TEXT))
+          WHERE external_chat_id IS NULL OR external_chat_id = ''
+        `);
+      } else {
+        db.exec(`
+          UPDATE agent_sessions
+          SET external_chat_id = CAST(id AS TEXT)
+          WHERE external_chat_id IS NULL OR external_chat_id = ''
+        `);
+      }
+    }
+
+    if (columnsAfterMigration.has("session_id")) {
+      db.exec(`
+        UPDATE agent_sessions
+        SET session_id = printf('session-%s', id)
+        WHERE session_id IS NULL OR session_id = ''
+      `);
+    }
+
+    if (columnsAfterMigration.has("messages")) {
+      db.exec(`
+        UPDATE agent_sessions
+        SET messages = '[]'
+        WHERE messages IS NULL OR messages = ''
+      `);
+    }
+
+    if (columnsAfterMigration.has("summaries")) {
+      db.exec(`
+        UPDATE agent_sessions
+        SET summaries = '[]'
+        WHERE summaries IS NULL OR summaries = ''
+      `);
+    }
+
+    if (columnsAfterMigration.has("state")) {
+      db.exec(`
+        UPDATE agent_sessions
+        SET state = '{}'
+        WHERE state IS NULL OR state = ''
+      `);
+    }
+
+    if (columnsAfterMigration.has("created_at")) {
+      db.exec(`
+        UPDATE agent_sessions
+        SET created_at = CAST(strftime('%s','now') AS INTEGER) * 1000
+        WHERE created_at IS NULL OR created_at = 0
+      `);
+    }
+
+    if (columnsAfterMigration.has("last_active_at")) {
+      if (columnsAfterMigration.has("last_activity_at")) {
+        db.exec(`
+          UPDATE agent_sessions
+          SET last_active_at = CAST(strftime('%s', COALESCE(last_activity_at, CURRENT_TIMESTAMP)) AS INTEGER) * 1000
+          WHERE last_active_at IS NULL OR last_active_at = 0
+        `);
+      } else {
+        db.exec(`
+          UPDATE agent_sessions
+          SET last_active_at = CAST(strftime('%s','now') AS INTEGER) * 1000
+          WHERE last_active_at IS NULL OR last_active_at = 0
+        `);
+      }
+    }
+
+    db.pragma("foreign_keys = ON");
     logger.info("Agent sessions table initialized");
   } catch (error) {
+    db.pragma("foreign_keys = ON");
     logger.error("Failed to initialize agent sessions table", {
       error: error instanceof Error ? error.message : String(error),
     });
