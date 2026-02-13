@@ -379,6 +379,72 @@ function createIndexIfPossible(sql: string) {
   }
 }
 
+function quoteIdent(name: string): string {
+  // SQLite identifiers can be safely quoted with double quotes; escape internal quotes.
+  return `"${name.replaceAll("\"", "\"\"")}"`;
+}
+
+/**
+ * Some very old/partial migrations could leave behind objects that reference
+ * `interfaces_old` even after the table is gone. That can break normal queries
+ * with "no such table: interfaces_old". We remove those stale objects and
+ * ensure `interfaces` is a real table.
+ */
+function cleanupLegacyInterfacesArtifacts() {
+  try {
+    const refs = db
+      .prepare(
+        "SELECT type, name, sql FROM sqlite_master WHERE sql LIKE '%interfaces_old%'",
+      )
+      .all() as Array<{ type: string; name: string; sql?: string | null }>;
+
+    for (const ref of refs) {
+      const ident = quoteIdent(ref.name);
+      try {
+        if (ref.type === "view") db.exec(`DROP VIEW IF EXISTS ${ident}`);
+        else if (ref.type === "trigger") db.exec(`DROP TRIGGER IF EXISTS ${ident}`);
+        else if (ref.type === "index") db.exec(`DROP INDEX IF EXISTS ${ident}`);
+        else if (ref.type === "table" && ref.name === "interfaces_old") {
+          db.exec(`DROP TABLE IF EXISTS ${ident}`);
+        }
+      } catch {
+        // best-effort cleanup only
+      }
+    }
+
+    const interfacesEntry = db
+      .prepare(
+        "SELECT type FROM sqlite_master WHERE name = 'interfaces' LIMIT 1",
+      )
+      .get() as { type?: string } | undefined;
+
+    if (interfacesEntry?.type && interfacesEntry.type !== "table") {
+      // If `interfaces` is a view/trigger (should not happen), drop it so we can recreate the table.
+      try {
+        db.exec("DROP VIEW IF EXISTS interfaces");
+      } catch {}
+    }
+
+    // Ensure the canonical interfaces table exists (tenant-aware).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS interfaces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_user_id INTEGER NOT NULL DEFAULT 1,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        config TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT 1,
+        allowed_users TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+  } catch {
+    // ignore
+  }
+}
+
 // Initialize schema
 function initializeSchema() {
   if (schemaInitialized) {
@@ -392,6 +458,9 @@ function initializeSchema() {
     console.log("Database schema initialized");
     console.log(`Database location: ${DB_PATH}`);
   }
+
+  // Fix/clean legacy artifacts that could break runtime queries.
+  cleanupLegacyInterfacesArtifacts();
 
   // Keep roles flexible over time.
   migrateUsersTableToDropRoleCheckConstraint();
