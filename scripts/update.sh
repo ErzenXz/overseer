@@ -413,6 +413,18 @@ main() {
         exit 0
     fi
 
+    # Windows userland shells (Git-Bash/MSYS/Cygwin) are NOT supported; use WSL2.
+    case "$(uname -s 2>/dev/null || echo "")" in
+        MINGW*|MSYS*|CYGWIN*)
+            if [ -z "${WSL_DISTRO_NAME:-}" ]; then
+                print_error "Windows detected (MSYS/Cygwin/Git-Bash)."
+                print_error "Update script support on Windows is via WSL2."
+                print_error "Please run this script inside WSL2 (Ubuntu/Debian/etc)."
+                exit 1
+            fi
+            ;;
+    esac
+
     if [ "$DRY_RUN" -eq 1 ]; then
         print_step "DRY RUN"
         echo "Overseer dir: $OVERSEER_DIR"

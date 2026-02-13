@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { resolve } = require("node:path");
-const { mkdtemp, rm, mkdir, writeFile } = require("node:fs/promises");
+const { mkdtemp, rm, mkdir, writeFile, stat } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 
 const execFileAsync = promisify(execFile);
@@ -32,6 +32,9 @@ async function run(cmd, args, opts = {}) {
 }
 
 test("install.sh and update.sh parse in bash (bash -n)", async () => {
+  if (process.platform === "win32") {
+    test.skip("WSL2-only: bash installer/update scripts are not tested on native Windows");
+  }
   {
     const res = await run("bash", ["-n", installSh]);
     assert.equal(res.code, 0, res.stderr || res.stdout);
@@ -43,6 +46,9 @@ test("install.sh and update.sh parse in bash (bash -n)", async () => {
 });
 
 test("install.sh supports --help and --dry-run", async () => {
+  if (process.platform === "win32") {
+    test.skip("WSL2-only: bash installer/update scripts are not tested on native Windows");
+  }
   const help = await run("bash", [installSh, "--help"]);
   assert.equal(help.code, 0, help.stderr || help.stdout);
   assert.match(help.stdout, /Usage:/);
@@ -50,9 +56,16 @@ test("install.sh supports --help and --dry-run", async () => {
   const dry = await run("bash", [installSh, "--dry-run"]);
   assert.equal(dry.code, 0, dry.stderr || dry.stdout);
   assert.match(dry.stdout, /DRY RUN/);
+
+  const dryYes = await run("bash", [installSh, "--dry-run", "--yes"]);
+  assert.equal(dryYes.code, 0, dryYes.stderr || dryYes.stdout);
+  assert.match(dryYes.stdout, /DRY RUN/);
 });
 
 test("update.sh supports --help and --dry-run", async () => {
+  if (process.platform === "win32") {
+    test.skip("WSL2-only: bash installer/update scripts are not tested on native Windows");
+  }
   const help = await run("bash", [updateSh, "--help"]);
   assert.equal(help.code, 0, help.stderr || help.stdout);
   assert.match(help.stdout, /Usage:/);
@@ -60,6 +73,10 @@ test("update.sh supports --help and --dry-run", async () => {
   const dry = await run("bash", [updateSh, "--dry-run"]);
   assert.equal(dry.code, 0, dry.stderr || dry.stdout);
   assert.match(dry.stdout, /DRY RUN/);
+
+  const dryYes = await run("bash", [updateSh, "--dry-run", "--yes"]);
+  assert.equal(dryYes.code, 0, dryYes.stderr || dryYes.stdout);
+  assert.match(dryYes.stdout, /DRY RUN/);
 });
 
 test("scripts/postinstall.js works in a clean directory (creates data/ and .env)", async () => {
@@ -72,15 +89,9 @@ test("scripts/postinstall.js works in a clean directory (creates data/ and .env)
     const res = await run("node", [postinstall], { cwd: tmp });
     assert.equal(res.code, 0, res.stderr || res.stdout);
 
-    const ok = await run(
-      "bash",
-      ["-lc", "test -d data && test -f .env && echo ok"],
-      { cwd: tmp },
-    );
-    assert.equal(ok.code, 0, ok.stderr || ok.stdout);
-    assert.match(ok.stdout, /ok/);
+    await assert.doesNotReject(async () => stat(resolve(tmp, "data")));
+    await assert.doesNotReject(async () => stat(resolve(tmp, ".env")));
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
 });
-

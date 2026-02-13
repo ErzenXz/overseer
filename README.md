@@ -30,7 +30,7 @@ Overseer is not just another chatbot. It's a **production-ready AI agent platfor
 - **🔧 Minimal Built-in Tools**: Shell execution and core file utilities for safe, flexible automation
 - **🧩 Extensible Architecture**: Add skills, connect MCP servers, spawn sub-agents
 - **🔐 Enterprise Security**: AES-256 encryption, user authentication, command confirmation
-- **🌍 Cross-Platform**: Works on Windows, Linux, and macOS out of the box
+- **🌍 Cross-Platform**: App runs on Windows, Linux, and macOS. The bash `install.sh`/`update.sh` scripts are supported on Linux/macOS; on Windows use WSL2 (or follow the Windows Server section in the deployment docs).
 - **🎨 Beautiful Admin Panel**: Modern Next.js web interface for configuration and monitoring
 - **🤖 20+ LLM Providers**: OpenAI, Anthropic, Google, Groq, Ollama, and more
 
@@ -219,6 +219,8 @@ Never: Execute destructive commands without confirmation
 ### Installation
 
 #### Option 1: One-Line Install (Recommended)
+
+> Windows note: `install.sh`/`update.sh` are supported via **WSL2** (Ubuntu/Debian/etc). Git-Bash/MSYS/Cygwin are not supported for these scripts. For native Windows Server deployment, see `docs/DEPLOYMENT.md` (Windows Server section).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | bash

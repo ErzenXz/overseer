@@ -62,6 +62,7 @@ ENCRYPTION_KEY=""
 SHOW_HELP=0
 DRY_RUN=0
 NON_INTERACTIVE=0
+PRODUCTION_MODE=0
 
 # =========================================
 # CLI / Flags
@@ -72,12 +73,13 @@ usage() {
 Overseer Installation Script
 
 Usage:
-  bash install.sh [--help] [--dry-run] [--yes]
+  bash install.sh [--help] [--dry-run] [--yes] [--production]
 
 Options:
   -h, --help       Show this help and exit
   --dry-run        Print what would happen, without making changes
   -y, --yes        Non-interactive mode (skip prompts where possible)
+  --production     Alias for "production install" (accepted for compatibility)
 
 Environment:
   OVERSEER_DIR=/path/to/install
@@ -105,6 +107,10 @@ parse_args() {
                 ;;
             -y|--yes)
                 NON_INTERACTIVE=1
+                shift
+                ;;
+            --production)
+                PRODUCTION_MODE=1
                 shift
                 ;;
             *)
@@ -244,7 +250,9 @@ generate_random_port() {
     done
 
     # Fallback: find any available port
-    for port in $(seq 10000 60000 | shuf | head -20); do
+    # Portable fallback (macOS bash 3.2 compatible): sequential scan.
+    # This only runs if the random attempts above all failed (extremely unlikely).
+    for port in $(seq 10000 60000); do
         if ! is_port_in_use "$port"; then
             echo "$port"
             return 0
@@ -646,32 +654,40 @@ install_nodejs() {
         print_warning "Node.js $(node -v) found - upgrading to v${NODE_VERSION}..."
     fi
 
-    case "$OS" in
-        ubuntu|debian|pop|linuxmint|wsl)
+    case "$PKG_MANAGER" in
+        pacman)
+            print_substep "Installing via pacman..."
+            sudo_cmd pacman -Syu --noconfirm --needed nodejs npm >/dev/null 2>&1
+            ;;
+        apt)
             print_substep "Installing via NodeSource..."
             curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo_cmd bash - >/dev/null 2>&1
             sudo_cmd apt-get install -y nodejs >/dev/null 2>&1
             ;;
-        centos|rhel|fedora|rocky|almalinux)
+        dnf|yum)
             print_substep "Installing via NodeSource..."
             curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION}.x | sudo_cmd bash - >/dev/null 2>&1
             sudo_cmd $PKG_MANAGER install -y nodejs >/dev/null 2>&1 || sudo_cmd yum install -y nodejs >/dev/null 2>&1
             ;;
-        macos)
-            if command_exists brew; then
-                print_substep "Installing via Homebrew..."
-                brew install node@${NODE_VERSION} 2>/dev/null
-                brew link node@${NODE_VERSION} --force --overwrite 2>/dev/null || true
-            else
-                print_substep "Installing Homebrew first..."
-                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-                brew install node@${NODE_VERSION}
-            fi
-            ;;
         *)
-            print_error "Cannot auto-install Node.js on this OS"
-            echo "Please install Node.js ${NODE_VERSION}+ manually: https://nodejs.org/"
-            exit 1
+            case "$OS" in
+                macos)
+                    if command_exists brew; then
+                        print_substep "Installing via Homebrew..."
+                        brew install node@${NODE_VERSION} 2>/dev/null
+                        brew link node@${NODE_VERSION} --force --overwrite 2>/dev/null || true
+                    else
+                        print_substep "Installing Homebrew first..."
+                        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                        brew install node@${NODE_VERSION}
+                    fi
+                    ;;
+                *)
+                    print_error "Cannot auto-install Node.js on this OS"
+                    echo "Please install Node.js ${NODE_VERSION}+ manually: https://nodejs.org/"
+                    exit 1
+                    ;;
+            esac
             ;;
     esac
 
@@ -717,23 +733,28 @@ install_pnpm() {
 install_build_deps() {
     print_step "Installing build dependencies..."
 
-    case "$OS" in
-        ubuntu|debian|pop|linuxmint|wsl)
+    case "$PKG_MANAGER" in
+        pacman)
+            sudo_cmd pacman -Syu --noconfirm --needed base-devel python git curl openssl ca-certificates >/dev/null 2>&1
+            ;;
+        apt)
             sudo_cmd apt-get update -qq >/dev/null 2>&1
             sudo_cmd apt-get install -y -qq build-essential python3 git curl openssl ca-certificates >/dev/null 2>&1
             ;;
-        centos|rhel|rocky|almalinux)
+        yum)
             sudo_cmd yum groupinstall -y "Development Tools" >/dev/null 2>&1 || true
             sudo_cmd yum install -y gcc-c++ make python3 git curl openssl >/dev/null 2>&1
             ;;
-        fedora)
+        dnf)
             sudo_cmd dnf groupinstall -y "Development Tools" >/dev/null 2>&1 || true
             sudo_cmd dnf install -y gcc-c++ make python3 git curl openssl >/dev/null 2>&1
             ;;
-        macos)
-            if ! xcode-select -p &>/dev/null; then
-                xcode-select --install 2>/dev/null || true
-                print_info "Xcode CLI tools installing - you may need to accept the dialog"
+        *)
+            if [[ "$OS" == "macos" ]]; then
+                if ! xcode-select -p &>/dev/null; then
+                    xcode-select --install 2>/dev/null || true
+                    print_info "Xcode CLI tools installing - you may need to accept the dialog"
+                fi
             fi
             ;;
     esac
@@ -1539,6 +1560,19 @@ main() {
         usage
         exit 0
     fi
+
+    # Windows userland shells (Git-Bash/MSYS/Cygwin) are NOT supported; use WSL2.
+    # We check this early before doing anything potentially disruptive.
+    case "$(uname -s 2>/dev/null || echo "")" in
+        MINGW*|MSYS*|CYGWIN*)
+            if [ -z "${WSL_DISTRO_NAME:-}" ]; then
+                echo "Windows detected (MSYS/Cygwin/Git-Bash)."
+                echo "Installer support on Windows is via WSL2."
+                echo "Please run this script inside WSL2 (Ubuntu/Debian/etc)."
+                exit 1
+            fi
+            ;;
+    esac
 
     detect_os
     print_banner

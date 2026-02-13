@@ -13,18 +13,17 @@ concurrency:
 
 jobs:
   test:
-    name: Test (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }} / Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         node: ["20", "22"]
 
     env:
       CI: "true"
       NEXT_TELEMETRY_DISABLED: "1"
-      # Keep CI runs isolated from the repo workspace; db.ts honors DATABASE_PATH.
-      DATABASE_PATH: ${{ runner.temp }}/overseer.db
 
     steps:
       - name: Checkout
@@ -42,12 +41,40 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set DATABASE_PATH (Unix)
+        if: runner.os != 'Windows'
+        run: echo "DATABASE_PATH=${{ runner.temp }}/overseer.db" >> "$GITHUB_ENV"
+
+      - name: Set DATABASE_PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_ENV -Value ("DATABASE_PATH=" + $env:RUNNER_TEMP + "\\overseer.db")
+
       - name: Tests
         run: pnpm test
 
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Init DB (migrations)
+        run: pnpm run db:init
+
+      - name: Bash Script Smoke Test (dry-run)
+        if: runner.os != 'Windows'
+        run: |
+          bash scripts/install.sh --dry-run
+          bash scripts/update.sh --dry-run
+
       - name: Build
         run: pnpm build
 
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+      - name: Lint Scripts
+        run: shellcheck scripts/install.sh scripts/update.sh skills.sh

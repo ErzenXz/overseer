@@ -33,6 +33,8 @@ Complete guide for deploying Overseer to production environments.
   - Disk: 10GB minimum
   - Node.js: 20.0.0 or higher
 
+> Note: The bash `scripts/install.sh` and `scripts/update.sh` are supported on Linux/macOS. On Windows, run them inside **WSL2** (Ubuntu/Debian/etc), or use the native Windows Server instructions in the [Environment-Specific Notes](#environment-specific-notes) section.
+
 - **Access Requirements**:
   - SSH access to server
   - sudo/administrator privileges
