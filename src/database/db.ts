@@ -384,6 +384,103 @@ function quoteIdent(name: string): string {
   return `"${name.replaceAll("\"", "\"\"")}"`;
 }
 
+function replaceAllCaseInsensitive(input: string, find: string, replaceWith: string): string {
+  // Replace all occurrences, including inside quoted identifiers.
+  return input.replace(new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), replaceWith);
+}
+
+function rewriteCreateTableName(createSql: string, newName: string): string {
+  // Works for:
+  // - CREATE TABLE foo (...
+  // - CREATE TABLE "foo" (...
+  // - CREATE TABLE IF NOT EXISTS foo (...
+  const m = createSql.match(
+    /^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(".*?"|\S+)/i,
+  );
+  if (!m) return createSql;
+  const token = m[1];
+  return createSql.replace(token, quoteIdent(newName));
+}
+
+function syncSQLiteSequence(tableName: string): void {
+  try {
+    db.exec(`DELETE FROM sqlite_sequence WHERE name = ${quoteIdent(tableName)};`);
+    db.exec(
+      `INSERT INTO sqlite_sequence(name, seq) SELECT ${JSON.stringify(tableName)}, COALESCE(MAX(id), 0) FROM ${quoteIdent(tableName)};`,
+    );
+  } catch {
+    // sqlite_sequence may not exist or table may not use autoincrement.
+  }
+}
+
+function rebuildTableWithRewrittenSql(
+  tableName: string,
+  createSql: string,
+  replacements: Record<string, string>,
+) {
+  const fixedName = `${tableName}__rebuild_new`;
+
+  const oldCols = db.pragma(`table_info(${quoteIdent(tableName)})`) as Array<{ name: string }>;
+  const oldColNames = new Set(oldCols.map((c) => c.name));
+
+  const indexSql = db
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL",
+    )
+    .all(tableName) as Array<{ sql: string }>;
+  const triggerSql = db
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ? AND sql IS NOT NULL",
+    )
+    .all(tableName) as Array<{ sql: string }>;
+
+  let rewritten = rewriteCreateTableName(createSql, fixedName);
+  for (const [from, to] of Object.entries(replacements)) {
+    rewritten = replaceAllCaseInsensitive(rewritten, from, to);
+  }
+
+  // Ensure we start clean in case of partial attempts.
+  db.exec(`DROP TABLE IF EXISTS ${quoteIdent(fixedName)}`);
+  db.exec(rewritten);
+
+  const newCols = db.pragma(`table_info(${quoteIdent(fixedName)})`) as Array<{ name: string }>;
+  const commonCols = newCols.map((c) => c.name).filter((n) => oldColNames.has(n));
+
+  if (commonCols.length > 0) {
+    const colsList = commonCols.map((c) => quoteIdent(c)).join(", ");
+    db.exec(
+      `INSERT INTO ${quoteIdent(fixedName)} (${colsList}) SELECT ${colsList} FROM ${quoteIdent(
+        tableName,
+      )};`,
+    );
+  }
+
+  db.exec(`DROP TABLE ${quoteIdent(tableName)}`);
+  db.exec(`ALTER TABLE ${quoteIdent(fixedName)} RENAME TO ${quoteIdent(tableName)}`);
+
+  // Restore indexes/triggers that were explicitly created (sql != null).
+  for (const row of indexSql) {
+    let s = row.sql;
+    for (const [from, to] of Object.entries(replacements)) {
+      s = replaceAllCaseInsensitive(s, from, to);
+    }
+    createIndexIfPossible(s);
+  }
+  for (const row of triggerSql) {
+    let s = row.sql;
+    for (const [from, to] of Object.entries(replacements)) {
+      s = replaceAllCaseInsensitive(s, from, to);
+    }
+    try {
+      db.exec(s);
+    } catch {
+      // ignore
+    }
+  }
+
+  syncSQLiteSequence(tableName);
+}
+
 /**
  * Some very old/partial migrations could leave behind objects that reference
  * `interfaces_old` even after the table is gone. That can break normal queries
@@ -404,7 +501,16 @@ function cleanupLegacyOldTableArtifacts() {
       )
       .all() as Array<{ type: string; name: string; sql?: string | null }>;
 
+    const replacements: Record<string, string> = {
+      interfaces_old: "interfaces",
+      users_old: "users",
+    };
+
     const dropped: Array<{ type: string; name: string }> = [];
+    const rebuilt: Array<{ name: string }> = [];
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec("BEGIN");
+
     for (const ref of refs) {
       const ident = quoteIdent(ref.name);
       try {
@@ -420,6 +526,10 @@ function cleanupLegacyOldTableArtifacts() {
         } else if (ref.type === "table" && targets.includes(ref.name as any)) {
           db.exec(`DROP TABLE IF EXISTS ${ident}`);
           dropped.push({ type: "table", name: ref.name });
+        } else if (ref.type === "table" && ref.sql) {
+          // Broken FK references embedded in the CREATE TABLE SQL.
+          rebuildTableWithRewrittenSql(ref.name, ref.sql, replacements);
+          rebuilt.push({ name: ref.name });
         }
       } catch {
         // best-effort cleanup only
@@ -444,6 +554,9 @@ function cleanupLegacyOldTableArtifacts() {
 
     if (dropped.length > 0) {
       console.log("  Cleanup: dropped legacy sqlite objects referencing *_old", dropped);
+    }
+    if (rebuilt.length > 0) {
+      console.log("  Cleanup: rebuilt tables with stale *_old foreign key refs", rebuilt);
     }
 
     // Ensure the canonical interfaces table exists (tenant-aware).
@@ -474,8 +587,16 @@ function cleanupLegacyOldTableArtifacts() {
         last_login_at DATETIME
       );
     `);
+
+    db.exec("COMMIT");
+    db.exec("PRAGMA foreign_keys = ON");
   } catch {
-    // ignore
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    try {
+      db.exec("PRAGMA foreign_keys = ON");
+    } catch {}
   }
 }
 
