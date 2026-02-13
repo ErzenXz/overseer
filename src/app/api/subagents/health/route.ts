@@ -4,7 +4,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getAllSubAgentTypes, getStats } from "@/agent/subagents/manager";
+import { getStats } from "@/agent/subagents/manager";
 import { circuitBreakerManager } from "@/lib/circuit-breaker";
 import { poolManager } from "@/lib/resource-pool";
 import { createLogger } from "@/lib/logger";
@@ -19,22 +19,88 @@ export async function GET() {
     const poolStatuses = poolManager.getAllStatuses();
     const poolSummary = poolManager.getSummary();
 
-    const circuitBreaker = circuitBreakerManager.getBreaker("subagent-generic");
-    const circuitMetrics = circuitBreaker.getMetrics();
+    const cbSummary = circuitBreakerManager.getSummary();
+    const cbStates = circuitBreakerManager.getAllStates();
+
+    const openCircuits = cbSummary.open;
+    const degradedAgents = stats.error;
+
+    // Simple health score: start at 100 and apply penalties.
+    let health = 100;
+    if (openCircuits > 0) health -= Math.min(60, openCircuits * 20);
+    if (degradedAgents > 0) health -= Math.min(40, degradedAgents * 10);
+    health = Math.max(0, Math.min(100, health));
+
+    const status =
+      health >= 90 ? "healthy" : health >= 70 ? "degraded" : "unhealthy";
+
+    const degradedList = [
+      ...(degradedAgents > 0
+        ? [
+            {
+              type: "subagents",
+              reasons: [`${degradedAgents} sub-agent(s) in error state`],
+            },
+          ]
+        : []),
+      ...cbStates
+        .filter((s) => s.state === "OPEN")
+        .map((s) => ({
+          type: s.name,
+          reasons: [
+            `circuit OPEN (recent failure rate: ${Math.round(
+              (s.metrics.recentFailureRate || 0) * 100,
+            )}%)`,
+          ],
+        })),
+    ];
+
+    const recommendations: string[] = [];
+    if (openCircuits > 0) {
+      recommendations.push(
+        "One or more circuit breakers are OPEN. Consider resetting circuits after addressing the underlying failures.",
+      );
+    }
+    if (degradedAgents > 0) {
+      recommendations.push(
+        "Some sub-agents are in error state. Review task results/logs for the failure cause.",
+      );
+    }
 
     return NextResponse.json({
       timestamp: new Date().toISOString(),
-      stats,
-      circuitBreaker: {
-        state: circuitMetrics.state,
-        failures: circuitMetrics.failures,
-        successes: circuitMetrics.successes,
-        recentFailureRate: circuitMetrics.recentFailureRate,
+      overall: {
+        health,
+        status,
+        degradedAgents,
+        openCircuits,
+      },
+      agents: {
+        stats,
+      },
+      circuitBreakers: {
+        summary: {
+          closed: cbSummary.closed,
+          open: cbSummary.open,
+          halfOpen: cbSummary.halfOpen,
+        },
+        states: cbStates.map((s) => ({
+          agentType: s.name,
+          state: s.state,
+          failureRate: Math.round((s.metrics.recentFailureRate || 0) * 100),
+        })),
       },
       resourcePools: {
-        summary: poolSummary,
+        summary: {
+          totalActive: poolSummary.totalActive,
+          totalQueued: poolSummary.totalQueued,
+          totalCompleted: poolSummary.totalCompleted,
+          totalFailed: poolSummary.totalFailed,
+        },
         pools: poolStatuses,
       },
+      degradedAgents: degradedList,
+      recommendations,
     });
   } catch (error) {
     logger.error("Health check failed", { error });
@@ -51,7 +117,9 @@ export async function POST(request: Request) {
     const { action } = body;
 
     if (action === "reset-circuit") {
-      circuitBreakerManager.reset("subagent-generic");
+      // Historically we reset a single breaker; but the current system creates
+      // per-task breakers. Reset all to recover quickly.
+      circuitBreakerManager.resetAll();
       logger.info("Circuit breaker reset");
       return NextResponse.json({ success: true, message: "Circuit breaker reset" });
     }

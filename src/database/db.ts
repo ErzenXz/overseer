@@ -156,26 +156,44 @@ function migrateInterfacesTableToDropTypeCheckConstraint() {
     db.exec("PRAGMA foreign_keys = OFF");
     db.exec("BEGIN");
 
-    db.exec("ALTER TABLE interfaces RENAME TO interfaces_old");
+    // Determine which columns exist in the current table so we can migrate
+    // from very old installs (no owner_user_id) without crashing.
+    const cols = db.pragma("table_info(interfaces)") as Array<{ name: string }>;
+    const hasOwner = cols.some((c) => c.name === "owner_user_id");
+    const ownerId = getFirstAdminUserId();
 
     db.exec(`
-      CREATE TABLE interfaces (
+      CREATE TABLE interfaces_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_user_id INTEGER NOT NULL DEFAULT 1,
         type TEXT NOT NULL,
         name TEXT NOT NULL,
         config TEXT NOT NULL,
         is_active BOOLEAN DEFAULT 1,
         allowed_users TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
 
-    db.exec(`
-      INSERT INTO interfaces (id, type, name, config, is_active, allowed_users, created_at, updated_at)
-      SELECT id, type, name, config, is_active, allowed_users, created_at, updated_at
-      FROM interfaces_old;
-    `);
+    if (hasOwner) {
+      db.exec(`
+        INSERT INTO interfaces_new (id, owner_user_id, type, name, config, is_active, allowed_users, created_at, updated_at)
+        SELECT id, owner_user_id, type, name, config, is_active, allowed_users, created_at, updated_at
+        FROM interfaces;
+      `);
+    } else {
+      db.exec(`
+        INSERT INTO interfaces_new (id, owner_user_id, type, name, config, is_active, allowed_users, created_at, updated_at)
+        SELECT id, ${ownerId} as owner_user_id, type, name, config, is_active, allowed_users, created_at, updated_at
+        FROM interfaces;
+      `);
+    }
+
+    // Replace the old table.
+    db.exec("DROP TABLE interfaces");
+    db.exec("ALTER TABLE interfaces_new RENAME TO interfaces");
 
     // Keep AUTOINCREMENT sequence in sync to avoid id reuse.
     try {
@@ -187,7 +205,8 @@ function migrateInterfacesTableToDropTypeCheckConstraint() {
       // sqlite_sequence may not exist (older sqlite / no autoincrement usage yet)
     }
 
-    db.exec("DROP TABLE interfaces_old");
+    // Clean up any partial legacy rebuilds.
+    db.exec("DROP TABLE IF EXISTS interfaces_old");
     db.exec("COMMIT");
     db.exec("PRAGMA foreign_keys = ON");
   } catch (err) {
