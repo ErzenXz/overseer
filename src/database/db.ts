@@ -135,6 +135,36 @@ function migrateTableColumns(
  */
 function migrateInterfacesTableToDropTypeCheckConstraint() {
   try {
+    // Recover from a partial legacy rebuild where interfaces got renamed
+    // but the new table was never created.
+    try {
+      const interfacesExists = !!db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'interfaces' LIMIT 1",
+        )
+        .get();
+      const interfacesOldExists = !!db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'interfaces_old' LIMIT 1",
+        )
+        .get();
+      if (!interfacesExists && interfacesOldExists) {
+        db.exec("PRAGMA foreign_keys = OFF");
+        db.exec("BEGIN");
+        db.exec("ALTER TABLE interfaces_old RENAME TO interfaces");
+        db.exec("COMMIT");
+        db.exec("PRAGMA foreign_keys = ON");
+      }
+    } catch {
+      // Best-effort recovery only.
+      try {
+        db.exec("ROLLBACK");
+      } catch {}
+      try {
+        db.exec("PRAGMA foreign_keys = ON");
+      } catch {}
+    }
+
     const row = db
       .prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'interfaces'",
@@ -161,6 +191,9 @@ function migrateInterfacesTableToDropTypeCheckConstraint() {
     const cols = db.pragma("table_info(interfaces)") as Array<{ name: string }>;
     const hasOwner = cols.some((c) => c.name === "owner_user_id");
     const ownerId = getFirstAdminUserId();
+
+    // Clean up any previous partial attempt.
+    db.exec("DROP TABLE IF EXISTS interfaces_new");
 
     db.exec(`
       CREATE TABLE interfaces_new (
