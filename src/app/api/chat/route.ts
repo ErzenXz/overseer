@@ -189,7 +189,8 @@ export async function POST(request: NextRequest) {
               runAgentStream(message, {
                 conversationId,
                 model: model || undefined,
-                planMode: planMode === undefined ? true : Boolean(planMode),
+                // Default to normal chat. Work/task mode is opt-in via UI (planMode=true).
+                planMode: Boolean(planMode),
                 steering,
                 sandboxRoot,
                 allowSystem,

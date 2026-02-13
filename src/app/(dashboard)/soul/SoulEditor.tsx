@@ -47,7 +47,7 @@ export function SoulEditor({ initialContent, isCustom, defaultSoul }: SoulEditor
   };
 
   const handleReset = async () => {
-    if (!confirm("Are you sure you want to reset to the default SOUL.md? Your custom changes will be lost.")) {
+    if (!confirm("Clear your personal SOUL supplement? (This does not affect the base soul.)")) {
       return;
     }
 
@@ -84,7 +84,7 @@ export function SoulEditor({ initialContent, isCustom, defaultSoul }: SoulEditor
               onClick={handleReset}
               className="px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:text-white bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
             >
-              Reset to Default
+              Clear Supplement
             </button>
           )}
           <button

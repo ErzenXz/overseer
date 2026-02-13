@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadSoul, saveSoul, resetToDefaultSoul } from "@/agent";
+import {
+  loadSoul,
+  loadUserSoulSupplement,
+  saveUserSoulSupplement,
+  resetUserSoulSupplement,
+} from "@/agent";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function GET() {
@@ -8,8 +13,10 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const soul = loadSoul();
-  return NextResponse.json({ content: soul });
+  // Return the per-user supplement for editing (effective soul is base + supplement).
+  const supplement = loadUserSoulSupplement(user.id);
+  const effective = loadSoul(user.id);
+  return NextResponse.json({ content: supplement, effective });
 }
 
 export async function POST(request: NextRequest) {
@@ -25,7 +32,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 });
     }
 
-    saveSoul(body.content);
+    saveUserSoulSupplement(user.id, body.content);
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -44,7 +51,7 @@ export async function DELETE() {
   }
 
   try {
-    resetToDefaultSoul();
+    resetUserSoulSupplement(user.id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error resetting soul:", error);

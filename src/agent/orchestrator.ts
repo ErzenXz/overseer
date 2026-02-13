@@ -283,11 +283,13 @@ ${stepOutputs.map((s) => `- ${s.step.title}: ${s.ok ? "OK" : "FAILED"}`).join("\
 Evaluator report:
 ${evalResult.result}
 
-Write a concise, human-assistant style response:
-- What was done
-- What changed (high level)
-- What was verified
-- Any remaining issues / next steps
+Write like a competent human assistant.
+
+Rules:
+- For greetings/small talk, respond naturally (e.g., greet back and ask how you can help). Do NOT mention plans, sub-agents, tasks, or verification.
+- Only summarize execution if real work was performed (e.g., files changed, commands run, services restarted).
+- If something failed, say what failed and what you recommend next.
+- Keep it concise and high-signal; use bullets only if they help.
 `;
 
     const synthesis = await generateText({

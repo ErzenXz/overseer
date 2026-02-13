@@ -1,239 +1,230 @@
 /**
- * Infinite Context Manager
- * 
- * Automatically summarizes old conversation history to enable
- * infinitely long chats without hitting context limits.
- * 
- * How it works:
- * 1. Track conversation messages and their importance
- * 2. When context grows too large, summarize the oldest messages
- * 3. Store summaries as special "context marker" messages
- * 4. The agent receives summary + recent messages
+ * Infinite Context (Persisted)
+ *
+ * Goal:
+ * - Keep conversations "infinite" without deleting history.
+ * - Persist an incremental summary in SQLite so restarts don't lose context.
+ * - Keep the most recent messages as raw context; summarize older messages.
  */
 
 import { generateText, type LanguageModel } from "ai";
 import { getDefaultModel } from "./providers";
-import { messagesModel } from "../database/index";
 import { createLogger } from "../lib/logger";
+import { db } from "../database/db";
+import { conversationSummariesModel, conversationsModel, messagesModel } from "../database";
 
 const logger = createLogger("infinite-context");
 
-// Configuration
-const MAX_MESSAGES_BEFORE_SUMMARY = 20;
-const MIN_MESSAGES_TO_SUMMARY = 10;
-const SUMMARY_MAX_TOKENS = 2000;
+// Tuning knobs
+const RECENT_WINDOW_MESSAGES = 12; // do not summarize the newest N messages
+const MIN_MESSAGES_TO_SUMMARIZE = 20; // require at least this many older messages before summarizing
+const MAX_MESSAGES_PER_RUN = 40; // cap cost per summarization run
+const SUMMARY_MAX_OUTPUT_TOKENS = 1200;
 
-// Store context summaries in memory (could be moved to DB for persistence)
-interface ContextSummary {
-  conversationId: number;
-  summary: string;
-  messageCount: number;
-  createdAt: Date;
-  lastUsedAt: Date;
-}
+export type SummaryGenerator = (input: {
+  previousSummary: string;
+  messages: Array<{ role: string; content: string }>;
+}) => Promise<string>;
 
-const contextSummaries = new Map<number, ContextSummary>();
+function defaultSummaryGenerator(model: LanguageModel): SummaryGenerator {
+  return async ({ previousSummary, messages }) => {
+    const chunkText = messages
+      .map((m) => `${m.role}: ${String(m.content).slice(0, 800)}`)
+      .join("\n\n");
 
-/**
- * Check if a conversation needs summarization
- */
-export function needsSummarization(conversationId: number): boolean {
-  const count = messagesModel.count();
-  if (count < MIN_MESSAGES_TO_SUMMARY) return false;
-  
-  // Get message count for this conversation
-  const messages = messagesModel.findByConversation(conversationId, 1000);
-  return messages.length >= MAX_MESSAGES_BEFORE_SUMMARY;
-}
+    const prompt = `You are maintaining a running, factual summary of a conversation. Do not invent facts.
 
-/**
- * Generate a summary of old messages
- */
-export async function summarizeOldMessages(
-  conversationId: number,
-  model?: LanguageModel
-): Promise<string | null> {
-  const llm = model || getDefaultModel();
-  if (!llm) {
-    logger.warn("No model available for summarization");
-    return null;
-  }
+You will be given:
+1) The previous running summary (may be empty)
+2) A new chunk of older conversation messages to fold into the summary
 
-  // Get all messages for this conversation
-  const allMessages = messagesModel.findByConversation(conversationId, 1000);
-  
-  if (allMessages.length < MIN_MESSAGES_TO_SUMMARY) {
-    return null;
-  }
+Update the summary to include ONLY information present in the messages. Keep it compact, structured, and actionable.
 
-  // Keep the most recent messages, summarize the rest
-  const recentCount = 10;
-  const toSummarize = allMessages.slice(0, allMessages.length - recentCount);
-  const recentMessages = allMessages.slice(allMessages.length - recentCount);
+Use this structure (omit sections that are empty):
+- Who the user is / preferences
+- Current goal
+- Decisions made
+- Open tasks
+- Key technical facts (commands run, files changed, services, ports, tokens, ids)
 
-  if (toSummarize.length < 5) {
-    return null;
-  }
+Constraints:
+- Max ~350 words.
+- Prefer bullets.
+- If messages conflict, note the conflict briefly.
 
-  // Build conversation for summarization
-  const conversationText = toSummarize
-    .map((m: { role: string; content: string }) => `${m.role}: ${m.content.substring(0, 500)}`)
-    .join("\n\n");
+Previous summary:
+${previousSummary || "(empty)"}
 
-  logger.info("Generating context summary", {
-    conversationId,
-    messagesSummarized: toSummarize.length,
-    messagesKept: recentMessages.length,
-  });
-
-  try {
-    const summaryPrompt = `Summarize this conversation concisely but completely. Include:
-- Key topics discussed
-- Important decisions made
-- Tasks completed or in progress
-- Any constraints or preferences mentioned
-
-Keep the summary under 500 words. Use bullet points for clarity.
-
-Conversation to summarize:
-${conversationText}`;
+New messages to incorporate:
+${chunkText}`;
 
     const result = await generateText({
-      model: llm,
-      prompt: summaryPrompt,
-      maxOutputTokens: SUMMARY_MAX_TOKENS,
+      model,
+      prompt,
+      maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
+      maxRetries: 1,
     });
 
-    const summary = result.text.trim();
-
-    // Store the summary
-    const contextSummary: ContextSummary = {
-      conversationId,
-      summary,
-      messageCount: toSummarize.length,
-      createdAt: new Date(),
-      lastUsedAt: new Date(),
-    };
-
-    contextSummaries.set(conversationId, contextSummary);
-
-    // Delete the old messages that were summarized
-    for (const msg of toSummarize) {
-      messagesModel.delete(msg.id);
-    }
-
-    // Add a context marker message
-    messagesModel.create({
-      conversation_id: conversationId,
-      role: "system",
-      content: `[Context Summary - ${toSummarize.length} messages summarized]\n\n${summary}`,
-      metadata: {
-        is_summary: true,
-        messages_count: toSummarize.length,
-      },
-    });
-
-    logger.info("Context summarized successfully", {
-      conversationId,
-      summaryLength: summary.length,
-    });
-
-    return summary;
-  } catch (error) {
-    logger.error("Failed to generate summary", {
-      conversationId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+    return result.text.trim();
+  };
 }
 
-/**
- * Get context summary for a conversation
- */
-export function getContextSummary(conversationId: number): ContextSummary | null {
-  const summary = contextSummaries.get(conversationId);
-  if (summary) {
-    summary.lastUsedAt = new Date();
-  }
-  return summary || null;
+function getOwnerUserId(conversationId: number, ownerUserId?: number): number | null {
+  if (typeof ownerUserId === "number" && Number.isFinite(ownerUserId)) return ownerUserId;
+  const conv = conversationsModel.findById(conversationId);
+  if (!conv) return null;
+  return conv.owner_user_id ?? null;
 }
 
-/**
- * Get formatted context summary for the system prompt
- */
 export function getContextSummaryForPrompt(conversationId: number): string {
-  const summary = getContextSummary(conversationId);
-  
-  if (!summary) {
-    return "";
-  }
+  const row = conversationSummariesModel.get(conversationId);
+  if (!row || !row.summary.trim()) return "";
 
   return `
 ---
 
-## Previous Conversation Summary
+## Previous Conversation Summary (Persisted)
 
-This is a summary of earlier messages in this conversation:
-
-${summary.summary}
-
----
-
-*This summary covers ${summary.messageCount} messages from earlier in the conversation.
-The recent messages follow below.*
+${row.summary.trim()}
 `;
 }
 
-/**
- * Check if summarization is needed and trigger it
- */
 export async function ensureContextIsSummarized(
   conversationId: number,
-  model?: LanguageModel
+  ownerUserId?: number,
+  model?: LanguageModel,
+  generator?: SummaryGenerator,
 ): Promise<void> {
-  if (needsSummarization(conversationId)) {
-    await summarizeOldMessages(conversationId, model);
+  const actualOwner = getOwnerUserId(conversationId, ownerUserId);
+  if (!actualOwner) return;
+
+  // If a generator is provided (tests), we can run without a real LLM provider.
+  let gen: SummaryGenerator | undefined = generator;
+  if (!gen) {
+    const llm = model || getDefaultModel();
+    if (!llm) {
+      // No model configured; skip silently.
+      return;
+    }
+    gen = defaultSummaryGenerator(llm);
+  }
+
+  const existing = conversationSummariesModel.get(conversationId);
+  const lastMessageId = existing?.last_message_id ?? 0;
+  const previousSummary = existing?.summary ?? "";
+
+  // Fetch messages since last summarized.
+  // We never delete messages. Instead, we only summarize older messages, leaving a recent window raw.
+  const allSince = messagesModel
+    .findByConversation(conversationId, 2000)
+    .filter((m) => m.id > lastMessageId);
+
+  if (allSince.length <= RECENT_WINDOW_MESSAGES + MIN_MESSAGES_TO_SUMMARIZE) {
+    return;
+  }
+
+  const older = allSince.slice(0, Math.max(0, allSince.length - RECENT_WINDOW_MESSAGES));
+  if (older.length < MIN_MESSAGES_TO_SUMMARIZE) return;
+
+  const chunk = older.slice(0, Math.min(MAX_MESSAGES_PER_RUN, older.length));
+  const newLastMessageId = chunk[chunk.length - 1]?.id;
+  if (!newLastMessageId) return;
+
+  const messagesForSummary = chunk
+    .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+    .map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+  try {
+    logger.info("Updating persisted conversation summary", {
+      conversationId,
+      ownerUserId: actualOwner,
+      previousSummaryLen: previousSummary.length,
+      chunkCount: messagesForSummary.length,
+      fromMessageId: lastMessageId,
+      toMessageId: newLastMessageId,
+    });
+
+    const nextSummary = await gen({
+      previousSummary,
+      messages: messagesForSummary,
+    });
+
+    if (!nextSummary.trim()) return;
+
+    conversationSummariesModel.upsert({
+      conversation_id: conversationId,
+      owner_user_id: actualOwner,
+      summary: nextSummary,
+      last_message_id: newLastMessageId,
+    });
+  } catch (error) {
+    logger.warn("Failed to update conversation summary", {
+      conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
-/**
- * Clear context summary for a conversation
- */
 export function clearContextSummary(conversationId: number): void {
-  contextSummaries.delete(conversationId);
+  conversationSummariesModel.clear(conversationId);
 }
 
-/**
- * Get stats about context summaries
- */
-export function getContextStats(): {
+export function getContextStats(ownerUserId?: number): {
   totalSummaries: number;
   conversations: Array<{
     conversationId: number;
-    messageCount: number;
-    createdAt: Date;
-    lastUsedAt: Date;
+    ownerUserId: number;
+    lastMessageId: number;
+    updatedAt: string;
+    summaryLength: number;
   }>;
 } {
-  const conversations: Array<{
-    conversationId: number;
-    messageCount: number;
-    createdAt: Date;
-    lastUsedAt: Date;
-  }> = [];
+  try {
+    const totalSummaries =
+      typeof ownerUserId === "number"
+        ? (db
+            .prepare(
+              "SELECT COUNT(*) as count FROM conversation_summaries WHERE owner_user_id = ?",
+            )
+            .get(ownerUserId) as { count: number }).count
+        : (db
+            .prepare("SELECT COUNT(*) as count FROM conversation_summaries")
+            .get() as { count: number }).count;
 
-  for (const [id, summary] of contextSummaries) {
-    conversations.push({
-      conversationId: id,
-      messageCount: summary.messageCount,
-      createdAt: summary.createdAt,
-      lastUsedAt: summary.lastUsedAt,
-    });
+    const rows =
+      typeof ownerUserId === "number"
+        ? (db
+            .prepare(
+              `SELECT conversation_id, owner_user_id, last_message_id, updated_at, LENGTH(summary) as summary_length
+               FROM conversation_summaries
+               WHERE owner_user_id = ?
+               ORDER BY updated_at DESC
+               LIMIT 50`,
+            )
+            .all(ownerUserId) as any[])
+        : (db
+            .prepare(
+              `SELECT conversation_id, owner_user_id, last_message_id, updated_at, LENGTH(summary) as summary_length
+               FROM conversation_summaries
+               ORDER BY updated_at DESC
+               LIMIT 50`,
+            )
+            .all() as any[]);
+
+    return {
+      totalSummaries,
+      conversations: rows.map((r) => ({
+        conversationId: Number(r.conversation_id),
+        ownerUserId: Number(r.owner_user_id),
+        lastMessageId: Number(r.last_message_id),
+        updatedAt: String(r.updated_at),
+        summaryLength: Number(r.summary_length ?? 0),
+      })),
+    };
+  } catch {
+    return { totalSummaries: 0, conversations: [] };
   }
-
-  return {
-    totalSummaries: contextSummaries.size,
-    conversations,
-  };
 }

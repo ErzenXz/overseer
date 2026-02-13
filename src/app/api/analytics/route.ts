@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
     // Context stats
     let contextStats: ReturnType<typeof getContextStats> = { totalSummaries: 0, conversations: [] };
     try {
-      contextStats = getContextStats();
+      contextStats = getContextStats(ownerId);
     } catch {
       // OK
     }

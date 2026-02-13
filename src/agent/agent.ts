@@ -335,7 +335,7 @@ function buildSystemPrompt(
   sandbox?: { root?: string; allowSystem?: boolean },
   ownerUserId?: number,
 ): string {
-  const soul = loadSoul();
+  const soul = loadSoul(ownerUserId);
 
   // Get MCP server info
   const mcpServers = getActiveMCPServers();
@@ -478,7 +478,7 @@ Built-in capabilities include:
 ${mcpSection}${skillsSection}${matchedSkillsSection}${subAgentsSection}
 ${steeringSection}
 
-Use these tools to help the user with their requests. Always explain what you're doing and why.
+  Use these tools to help the user with their requests. Explain actions when you used tools, changed state, or when the user asks. Otherwise respond naturally and directly.
 
 ## Tool Safety Policy (Non-Negotiable)
 
@@ -582,7 +582,7 @@ export async function runAgent(
     history = formatMessagesForAI(dbMessages);
 
     // Check if we need to summarize old messages (infinite context)
-    void ensureContextIsSummarized(conversationId, model);
+    void ensureContextIsSummarized(conversationId, ownerUserId, model);
   }
 
   // Build messages
@@ -859,6 +859,9 @@ export async function runAgentStream(
   if (conversationId) {
     const dbMessages = messagesModel.getRecentForContext(conversationId, 20);
     history = formatMessagesForAI(dbMessages);
+
+    // Fire-and-forget: update persisted conversation summary in the background.
+    void ensureContextIsSummarized(conversationId, ownerUserId, model);
   }
 
   const messages: CoreMessage[] = [

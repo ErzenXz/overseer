@@ -63,6 +63,7 @@ interface ActiveStreamState {
 }
 
 const ACTIVE_STREAM_STORAGE_KEY = "overseer.chat.active-stream";
+const LAST_CONVERSATION_STORAGE_KEY = "overseer.chat.last-conversation-id";
 
 function getStorage(): Storage | null {
   if (typeof window === "undefined") return null;
@@ -116,6 +117,42 @@ export function useChat(options: ChatOptions = {}) {
       loadConversation(options.conversationId);
     }
   }, [options.conversationId]);
+
+  // Restore last conversation after refresh (when no explicit conversation is selected)
+  useEffect(() => {
+    if (options.conversationId !== undefined && options.conversationId !== null) return;
+    if (conversationId !== null) return;
+
+    // If there's an in-flight stream to resume, prefer that state over restoring a completed conversation.
+    if (loadActiveStream()) return;
+
+    const storage = getStorage();
+    if (!storage) return;
+    const raw = storage.getItem(LAST_CONVERSATION_STORAGE_KEY);
+    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+
+    setConversationId(parsed);
+    void loadConversation(parsed).catch(() => {
+      // If the conversation no longer exists / is forbidden, clear the stored id.
+      storage.removeItem(LAST_CONVERSATION_STORAGE_KEY);
+      setConversationId(null);
+    });
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist last active conversation id (durable across refresh)
+  useEffect(() => {
+    const storage = getStorage();
+    if (!storage) return;
+    if (!conversationId) return;
+    try {
+      storage.setItem(LAST_CONVERSATION_STORAGE_KEY, String(conversationId));
+    } catch {
+      // ignore storage errors (quota/private mode)
+    }
+  }, [conversationId]);
 
   // Resume an active stream after refresh/navigation
   useEffect(() => {
@@ -333,8 +370,12 @@ export function useChat(options: ChatOptions = {}) {
           err instanceof Error ? err.message : "Failed to resume stream",
         );
       } finally {
-        if (saved.conversationId) {
-          void loadConversation(saved.conversationId);
+        const convId =
+          activeStreamRef.current?.conversationId ??
+          saved.conversationId ??
+          null;
+        if (convId) {
+          void loadConversation(convId);
         }
         setIsLoading(false);
         currentAssistantMessageIdRef.current = null;
@@ -654,8 +695,12 @@ export function useChat(options: ChatOptions = {}) {
                           : msg,
                       ),
                     );
-                    if (conversationId) {
-                      void loadConversation(conversationId);
+                    {
+                      const convId =
+                        activeStreamRef.current?.conversationId ?? conversationId;
+                      if (convId) {
+                        void loadConversation(convId);
+                      }
                     }
                     break;
                 }
@@ -731,6 +776,10 @@ export function useChat(options: ChatOptions = {}) {
     setError(null);
     clearActiveStream();
     activeStreamRef.current = null;
+    const storage = getStorage();
+    if (storage) {
+      storage.removeItem(LAST_CONVERSATION_STORAGE_KEY);
+    }
   }, []);
 
   const regenerateLastMessage = useCallback(async () => {

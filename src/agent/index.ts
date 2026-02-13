@@ -18,10 +18,15 @@ export {
 // Soul management
 export {
   loadSoul,
+  loadBaseSoul,
+  loadUserSoulSupplement,
   saveSoul,
+  saveUserSoulSupplement,
   getSoulPath,
   isUsingCustomSoul,
+  isUsingUserSoulSupplement,
   resetToDefaultSoul,
+  resetUserSoulSupplement,
   getDefaultSoul,
 } from "./soul";
 

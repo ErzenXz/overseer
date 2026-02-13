@@ -264,18 +264,34 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
 
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Model</label>
-                <select
-                  value={formData.model}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                  disabled={!selectedProvider || selectedProvider.models.length === 0}
-                >
-                  {(selectedProvider?.models || []).map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name} {model.reasoning ? "(reasoning)" : ""}
-                    </option>
-                  ))}
-                </select>
+                {selectedProvider && selectedProvider.models.length === 0 ? (
+                  <>
+                    <input
+                      type="text"
+                      value={formData.model}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, model: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                      placeholder="Enter model id (manual)"
+                      required
+                    />
+                    <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                      No models were returned for this provider. You can still add it by typing a model id manually.
+                    </p>
+                  </>
+                ) : (
+                  <select
+                    value={formData.model}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                    disabled={!selectedProvider || selectedProvider.models.length === 0}
+                  >
+                    {(selectedProvider?.models || []).map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} {model.reasoning ? "(reasoning)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* --- Model info panel --- */}

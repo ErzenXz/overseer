@@ -1,27 +1,34 @@
-import { readFileSync, existsSync, writeFileSync } from "fs";
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  mkdirSync,
+  unlinkSync,
+} from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { ensureDir, getUserSandboxRoot } from "../lib/userfs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SOUL_PATH = join(__dirname, "soul.md");
-const CUSTOM_SOUL_PATH = join(process.cwd(), "data", "soul.md");
 
-/**
- * Load the SOUL.md document
- * Tries custom soul first, then falls back to default
- */
-export function loadSoul(): string {
-  // Try custom soul first
-  if (existsSync(CUSTOM_SOUL_PATH)) {
-    return readFileSync(CUSTOM_SOUL_PATH, "utf-8");
+// Base soul (global): default is src/agent/soul.md, optional override is data/soul.md
+const BASE_SOUL_PATH = join(__dirname, "soul.md");
+const CUSTOM_BASE_SOUL_PATH = join(process.cwd(), "data", "soul.md");
+
+function getUserSoulSupplementPath(ownerUserId: number): string {
+  const root = getUserSandboxRoot({ kind: "web", id: String(ownerUserId) });
+  return join(root, "agent", "soul.md");
+}
+
+export function loadBaseSoul(): string {
+  if (existsSync(CUSTOM_BASE_SOUL_PATH)) {
+    return readFileSync(CUSTOM_BASE_SOUL_PATH, "utf-8");
   }
 
-  // Fall back to default soul
-  if (existsSync(SOUL_PATH)) {
-    return readFileSync(SOUL_PATH, "utf-8");
+  if (existsSync(BASE_SOUL_PATH)) {
+    return readFileSync(BASE_SOUL_PATH, "utf-8");
   }
 
-  // Return a minimal default if no soul file exists
   return `# Overseer
 I am Overseer, a personal AI assistant that helps a human user get real work done using this computer.
 
@@ -33,51 +40,73 @@ I am Overseer, a personal AI assistant that helps a human user get real work don
 `;
 }
 
+export function loadUserSoulSupplement(ownerUserId: number): string {
+  const path = getUserSoulSupplementPath(ownerUserId);
+  if (!existsSync(path)) return "";
+  return readFileSync(path, "utf-8");
+}
+
 /**
- * Save a custom SOUL.md document
+ * Load the effective SOUL.md (base + optional per-user supplement).
+ */
+export function loadSoul(ownerUserId?: number): string {
+  const base = loadBaseSoul();
+  if (typeof ownerUserId !== "number") return base;
+
+  const supplement = loadUserSoulSupplement(ownerUserId).trim();
+  if (!supplement) return base;
+
+  return `${base}\n\n---\n\n${supplement}\n`;
+}
+
+/**
+ * Save a custom BASE soul override (global).
+ * Note: per-user customization is handled via saveUserSoulSupplement().
  */
 export function saveSoul(content: string): void {
-  const dataDir = dirname(CUSTOM_SOUL_PATH);
+  const dataDir = dirname(CUSTOM_BASE_SOUL_PATH);
   if (!existsSync(dataDir)) {
-    const { mkdirSync } = require("fs");
     mkdirSync(dataDir, { recursive: true });
   }
-  writeFileSync(CUSTOM_SOUL_PATH, content, "utf-8");
+  writeFileSync(CUSTOM_BASE_SOUL_PATH, content, "utf-8");
+}
+
+export function saveUserSoulSupplement(ownerUserId: number, content: string): void {
+  const path = getUserSoulSupplementPath(ownerUserId);
+  ensureDir(dirname(path));
+  writeFileSync(path, content, "utf-8");
+}
+
+export function resetUserSoulSupplement(ownerUserId: number): void {
+  const path = getUserSoulSupplementPath(ownerUserId);
+  if (existsSync(path)) {
+    unlinkSync(path);
+  }
+}
+
+export function isUsingUserSoulSupplement(ownerUserId: number): boolean {
+  const path = getUserSoulSupplementPath(ownerUserId);
+  return existsSync(path);
 }
 
 /**
- * Get the path to the current soul file
+ * Get the path to the current BASE soul file.
  */
 export function getSoulPath(): string {
-  if (existsSync(CUSTOM_SOUL_PATH)) {
-    return CUSTOM_SOUL_PATH;
-  }
-  return SOUL_PATH;
+  return existsSync(CUSTOM_BASE_SOUL_PATH) ? CUSTOM_BASE_SOUL_PATH : BASE_SOUL_PATH;
 }
 
-/**
- * Check if using custom soul
- */
 export function isUsingCustomSoul(): boolean {
-  return existsSync(CUSTOM_SOUL_PATH);
+  return existsSync(CUSTOM_BASE_SOUL_PATH);
 }
 
-/**
- * Reset to default soul (delete custom)
- */
 export function resetToDefaultSoul(): void {
-  if (existsSync(CUSTOM_SOUL_PATH)) {
-    const { unlinkSync } = require("fs");
-    unlinkSync(CUSTOM_SOUL_PATH);
+  if (existsSync(CUSTOM_BASE_SOUL_PATH)) {
+    unlinkSync(CUSTOM_BASE_SOUL_PATH);
   }
 }
 
-/**
- * Get the default soul content
- */
 export function getDefaultSoul(): string {
-  if (existsSync(SOUL_PATH)) {
-    return readFileSync(SOUL_PATH, "utf-8");
-  }
-  return "";
+  return existsSync(BASE_SOUL_PATH) ? readFileSync(BASE_SOUL_PATH, "utf-8") : "";
 }
+

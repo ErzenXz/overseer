@@ -110,6 +110,21 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
 
 -- =====================================================
+-- CONVERSATION SUMMARIES (Infinite Context, persisted)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    conversation_id INTEGER PRIMARY KEY,
+    owner_user_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    last_message_id INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_summaries_owner ON conversation_summaries(owner_user_id, updated_at);
+
+-- =====================================================
 -- TOOL EXECUTIONS LOG
 -- =====================================================
 CREATE TABLE IF NOT EXISTS tool_executions (
