@@ -390,12 +390,17 @@ function quoteIdent(name: string): string {
  * with "no such table: interfaces_old". We remove those stale objects and
  * ensure `interfaces` is a real table.
  */
-function cleanupLegacyInterfacesArtifacts() {
+function cleanupLegacyOldTableArtifacts() {
   try {
+    const targets = ["interfaces_old", "users_old"] as const;
+    const where = targets
+      .map((t) => `instr(lower(sql), '${t}') > 0`)
+      .join(" OR ");
+
     const refs = db
       .prepare(
         // Use instr(lower(sql), ...) to avoid being affected by PRAGMA case_sensitive_like.
-        "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND instr(lower(sql), 'interfaces_old') > 0",
+        `SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND (${where})`,
       )
       .all() as Array<{ type: string; name: string; sql?: string | null }>;
 
@@ -405,7 +410,7 @@ function cleanupLegacyInterfacesArtifacts() {
         if (ref.type === "view") db.exec(`DROP VIEW IF EXISTS ${ident}`);
         else if (ref.type === "trigger") db.exec(`DROP TRIGGER IF EXISTS ${ident}`);
         else if (ref.type === "index") db.exec(`DROP INDEX IF EXISTS ${ident}`);
-        else if (ref.type === "table" && ref.name === "interfaces_old") {
+        else if (ref.type === "table" && targets.includes(ref.name as any)) {
           db.exec(`DROP TABLE IF EXISTS ${ident}`);
         }
       } catch {
@@ -413,17 +418,19 @@ function cleanupLegacyInterfacesArtifacts() {
       }
     }
 
-    const interfacesEntry = db
-      .prepare(
-        "SELECT type FROM sqlite_master WHERE name = 'interfaces' LIMIT 1",
-      )
-      .get() as { type?: string } | undefined;
+    // Ensure core tables are real tables (not a leftover view from old installs).
+    for (const tableName of ["interfaces", "users"] as const) {
+      const entry = db
+        .prepare(
+          "SELECT type FROM sqlite_master WHERE name = ? LIMIT 1",
+        )
+        .get(tableName) as { type?: string } | undefined;
 
-    if (interfacesEntry?.type && interfacesEntry.type !== "table") {
-      // If `interfaces` is a view/trigger (should not happen), drop it so we can recreate the table.
-      try {
-        db.exec("DROP VIEW IF EXISTS interfaces");
-      } catch {}
+      if (entry?.type && entry.type !== "table") {
+        try {
+          db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tableName)}`);
+        } catch {}
+      }
     }
 
     // Ensure the canonical interfaces table exists (tenant-aware).
@@ -439,6 +446,19 @@ function cleanupLegacyInterfacesArtifacts() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Ensure users table exists (roles are intentionally unconstrained).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT DEFAULT 'admin',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_login_at DATETIME
       );
     `);
   } catch {
@@ -461,7 +481,7 @@ function initializeSchema() {
   }
 
   // Fix/clean legacy artifacts that could break runtime queries.
-  cleanupLegacyInterfacesArtifacts();
+  cleanupLegacyOldTableArtifacts();
 
   // Keep roles flexible over time.
   migrateUsersTableToDropRoleCheckConstraint();
