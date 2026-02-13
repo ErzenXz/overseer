@@ -188,15 +188,14 @@ sudo_cmd() {
 detect_os() {
     OS="unknown"
     OS_VERSION=""
-    OS_FAMILY=""
     PKG_MANAGER="unknown"
 
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         if [ -f /etc/os-release ]; then
+            # shellcheck disable=SC1091
             . /etc/os-release
             OS=$ID
             OS_VERSION=$VERSION_ID
-            OS_FAMILY="${ID_LIKE:-$ID}"
         elif [ -f /etc/redhat-release ]; then
             OS="rhel"
         elif [ -f /etc/debian_version ]; then
@@ -210,6 +209,7 @@ detect_os() {
     elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
         OS="wsl"
         if [ -f /etc/os-release ]; then
+            # shellcheck disable=SC1091
             . /etc/os-release
             OS=$ID
         fi
@@ -282,6 +282,9 @@ detect_existing_services() {
     print_step "Detecting existing services on this VPS..."
     
     local services_found=0
+    local containers
+    local pm2_apps
+    local ufw_status
 
     # Check common web servers
     if command_exists nginx && systemctl is-active --quiet nginx 2>/dev/null; then
@@ -301,7 +304,7 @@ detect_existing_services() {
 
     # Check for Docker
     if command_exists docker && systemctl is-active --quiet docker 2>/dev/null; then
-        local containers=$(docker ps -q 2>/dev/null | wc -l)
+        containers=$(docker ps -q 2>/dev/null | wc -l)
         print_info "Found: Docker (${containers} running containers)"
         services_found=$((services_found + 1))
     fi
@@ -324,7 +327,7 @@ detect_existing_services() {
 
     # Check for existing Node.js apps (PM2)
     if command_exists pm2; then
-        local pm2_apps=$(pm2 list 2>/dev/null | grep -c "online" || echo "0")
+        pm2_apps=$(pm2 list 2>/dev/null | grep -c "online" || echo "0")
         if [ "$pm2_apps" -gt 0 ]; then
             print_info "Found: PM2 with ${pm2_apps} running apps"
             services_found=$((services_found + 1))
@@ -333,7 +336,7 @@ detect_existing_services() {
 
     # Check for existing UFW rules
     if command_exists ufw; then
-        local ufw_status=$(sudo_cmd ufw status 2>/dev/null | head -1 || echo "unknown")
+        ufw_status=$(sudo_cmd ufw status 2>/dev/null | head -1 || echo "unknown")
         print_info "UFW status: ${ufw_status}"
     fi
 
@@ -369,7 +372,8 @@ configure_ufw_safe() {
     print_success "Port 22 (SSH) - allowed"
 
     # Also allow SSH on any custom port if sshd is configured differently
-    local ssh_port=$(grep -E "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+    local ssh_port
+    ssh_port=$(grep -E "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
     if [ "$ssh_port" != "22" ] && [ -n "$ssh_port" ]; then
         sudo_cmd ufw allow "${ssh_port}/tcp" comment "Custom SSH port" 2>/dev/null || true
         print_success "Port ${ssh_port} (custom SSH) - allowed"
@@ -380,7 +384,8 @@ configure_ufw_safe() {
     print_success "Port ${OVERSEER_PORT} (Overseer Admin) - allowed"
 
     # Check if UFW is already enabled
-    local ufw_status=$(sudo_cmd ufw status 2>/dev/null | head -1 || echo "")
+    local ufw_status
+    ufw_status=$(sudo_cmd ufw status 2>/dev/null | head -1 || echo "")
     
     if echo "$ufw_status" | grep -qi "active"; then
         print_info "UFW is already active - only added Overseer rules"
@@ -390,7 +395,8 @@ configure_ufw_safe() {
         print_substep "Enabling UFW..."
         
         # Double-check SSH is in the rules before enabling
-        local ssh_rule=$(sudo_cmd ufw status 2>/dev/null | grep "22/tcp" || echo "")
+        local ssh_rule
+        ssh_rule=$(sudo_cmd ufw status 2>/dev/null | grep "22/tcp" || echo "")
         if [ -z "$ssh_rule" ]; then
             print_error "SSH rule not found! Aborting UFW enable for safety."
             print_warning "Please manually run: sudo ufw allow 22/tcp && sudo ufw enable"
@@ -573,8 +579,10 @@ configure_auto_app_updates() {
     print_step "Configuring automatic Overseer app updates..."
 
     local update_script="/usr/local/bin/overseer-auto-update"
-    local pnpm_path=$(which pnpm 2>/dev/null || echo "")
-    local npm_path=$(which npm)
+    local pnpm_path
+    local npm_path
+    pnpm_path=$(command -v pnpm 2>/dev/null || echo "")
+    npm_path=$(command -v npm 2>/dev/null || echo "")
 
     sudo_cmd tee "$update_script" > /dev/null << EOF
 #!/bin/bash
@@ -774,7 +782,8 @@ check_requirements() {
 
     # Check Node.js
     if command_exists node; then
-        local node_ver=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+        local node_ver
+        node_ver=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
         if [ "$node_ver" -ge "$NODE_VERSION" ]; then
             print_success "Node.js $(node -v)"
         else
@@ -945,7 +954,8 @@ configure_environment() {
         
         # But update the PORT if needed
         if grep -q "^PORT=" .env; then
-            local existing_port=$(grep "^PORT=" .env | cut -d'=' -f2)
+            local existing_port
+            existing_port=$(grep "^PORT=" .env | cut -d'=' -f2)
             OVERSEER_PORT="$existing_port"
             print_info "Using existing port: ${OVERSEER_PORT}"
         fi
@@ -961,7 +971,8 @@ configure_environment() {
     fi
 
     # Detect public IP for BASE_URL
-    local public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "localhost")
+    local public_ip
+    public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "localhost")
     local base_url
     if [ -n "${OVERSEER_DOMAIN}" ]; then
         if [ "${OVERSEER_ENABLE_TLS}" = "true" ]; then
@@ -987,24 +998,24 @@ configure_environment() {
         echo ""
 
         # Admin
-        read -p "  Admin username [${OVERSEER_ADMIN_USERNAME}]: " input_admin
+        read -r -p "  Admin username [${OVERSEER_ADMIN_USERNAME}]: " input_admin
         admin_username=${input_admin:-${OVERSEER_ADMIN_USERNAME}}
 
         # LLM Provider
         echo ""
         echo -e "  ${DIM}Configure an LLM provider (required for AI features):${NC}"
-        read -p "  OpenAI API Key (Enter to skip): " openai_key
+        read -r -p "  OpenAI API Key (Enter to skip): " openai_key
         if [ -z "$openai_key" ]; then
-            read -p "  Anthropic API Key (Enter to skip): " anthropic_key
+            read -r -p "  Anthropic API Key (Enter to skip): " anthropic_key
         fi
 
         # Channels
         echo ""
         echo -e "  ${DIM}Configure chat channels (can be done later in admin panel):${NC}"
-        read -p "  Telegram Bot Token (Enter to skip): " telegram_token
-        read -p "  Discord Bot Token (Enter to skip): " discord_token
+        read -r -p "  Telegram Bot Token (Enter to skip): " telegram_token
+        read -r -p "  Discord Bot Token (Enter to skip): " discord_token
         if [ -n "$discord_token" ]; then
-            read -p "  Discord Client ID: " discord_client_id
+            read -r -p "  Discord Client ID: " discord_client_id
         fi
     fi
 
@@ -1270,17 +1281,8 @@ create_systemd_services() {
 
     print_step "Creating systemd services..."
 
-    local node_path=$(which node)
-    local npx_path=$(which npx)
-    local pnpm_path=$(which pnpm 2>/dev/null || echo "")
-
-    # Determine the start command: prefer pnpm, fallback to npx
-    local start_cmd
-    if [ -n "$pnpm_path" ]; then
-        start_cmd="${pnpm_path} start -- -H 0.0.0.0 -p \${PORT}"
-    else
-        start_cmd="${npx_path} next start -H 0.0.0.0 -p \${PORT}"
-    fi
+    local npx_path
+    npx_path=$(command -v npx 2>/dev/null || echo "npx")
 
     # Main web admin service - uses 'next start' (NOT standalone)
     sudo_cmd tee /etc/systemd/system/overseer.service > /dev/null << EOF
@@ -1493,7 +1495,8 @@ create_management_script() {
 # =========================================
 
 print_final_success() {
-    local public_ip=$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || echo "your-server-ip")
+    local public_ip
+    public_ip=$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || echo "your-server-ip")
 
     echo ""
     echo -e "${GREEN}"
@@ -1559,6 +1562,11 @@ main() {
     if [ "$SHOW_HELP" -eq 1 ]; then
         usage
         exit 0
+    fi
+
+    if [ "$PRODUCTION_MODE" -eq 1 ]; then
+        # Compatibility flag used by docs/DEPLOYMENT.md. Keep behavior safe and explicit.
+        print_info "Production mode enabled (--production)."
     fi
 
     # Windows userland shells (Git-Bash/MSYS/Cygwin) are NOT supported; use WSL2.

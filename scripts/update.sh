@@ -246,8 +246,10 @@ start_services() {
 
     # If systemd, update the service file to use next start (in case upgrading from standalone)
     if [ "$INSTALL_TYPE" == "systemd" ]; then
-        local npx_path=$(which npx)
-        local PORT=$(grep "^PORT=" "$OVERSEER_DIR/.env" 2>/dev/null | cut -d'=' -f2)
+        local npx_path
+        local PORT
+        npx_path=$(command -v npx 2>/dev/null || echo "npx")
+        PORT=$(grep "^PORT=" "$OVERSEER_DIR/.env" 2>/dev/null | cut -d'=' -f2)
         PORT=${PORT:-3000}
 
         sudo tee /etc/systemd/system/overseer.service > /dev/null << SVCEOF
@@ -341,7 +343,8 @@ verify_update() {
     esac
 
     # Try to reach the health endpoint
-    local PORT=$(grep "^PORT=" "$OVERSEER_DIR/.env" 2>/dev/null | cut -d'=' -f2)
+    local PORT
+    PORT=$(grep "^PORT=" "$OVERSEER_DIR/.env" 2>/dev/null | cut -d'=' -f2)
     PORT=${PORT:-3000}
 
     if curl -sf "http://localhost:$PORT/api/health" &>/dev/null; then
