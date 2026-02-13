@@ -1,10 +1,24 @@
 import { StatsCard } from "@/components/StatsCard";
 import * as skillsRegistry from "@/agent/skills/registry";
 import { SkillsList } from "./SkillsList";
+import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission } from "@/lib/permissions";
 
-export default function SkillsPage() {
-  const allSkills = skillsRegistry.getAllSkills();
-  const activeSkills = skillsRegistry.getActiveSkills();
+export const dynamic = "force-dynamic";
+
+export default async function SkillsPage() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return <div className="text-sm text-[var(--color-text-secondary)]">Unauthorized</div>;
+  }
+
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  const allSkills = canViewAll
+    ? skillsRegistry.getAllSkills()
+    : skillsRegistry.getAllSkillsForUser(user.id);
+  const activeSkills = canViewAll
+    ? skillsRegistry.getActiveSkills()
+    : skillsRegistry.getActiveSkillsForUser(user.id);
   const builtinCount = allSkills.filter(s => s.is_builtin).length;
   const totalUses = allSkills.reduce((acc, s) => acc + s.use_count, 0);
 

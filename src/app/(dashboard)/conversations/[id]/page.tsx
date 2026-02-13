@@ -1,16 +1,30 @@
 import { conversationsModel, messagesModel } from "@/database";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission } from "@/lib/permissions";
+
+export const dynamic = "force-dynamic";
 
 export default async function ConversationDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await getCurrentUser();
+  if (!user) {
+    notFound();
+  }
+
   const { id } = await params;
   const conversation = conversationsModel.findById(parseInt(id));
 
   if (!conversation) {
+    notFound();
+  }
+
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && (conversation as any).owner_user_id !== user.id) {
     notFound();
   }
 

@@ -7,6 +7,7 @@ import { CronExpressionParser } from "cron-parser";
 // =====================================================
 
 export interface CronJobInput {
+  owner_user_id?: number;
   name: string;
   description?: string;
   cron_expression: string;
@@ -21,6 +22,7 @@ export interface CronJobInput {
 
 export interface CronExecutionInput {
   cron_job_id: number;
+  owner_user_id?: number;
   conversation_id?: number;
   status?: string;
   prompt: string;
@@ -101,10 +103,26 @@ export const cronJobsModel = {
       .all(limit, offset) as CronJob[];
   },
 
+  findAllByOwner(ownerUserId: number, limit = 100, offset = 0): CronJob[] {
+    return db
+      .prepare(
+        "SELECT * FROM cron_jobs WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      )
+      .all(ownerUserId, limit, offset) as CronJob[];
+  },
+
   findEnabled(): CronJob[] {
     return db
       .prepare("SELECT * FROM cron_jobs WHERE enabled = 1 ORDER BY next_run_at ASC")
       .all() as CronJob[];
+  },
+
+  findEnabledByOwner(ownerUserId: number): CronJob[] {
+    return db
+      .prepare(
+        "SELECT * FROM cron_jobs WHERE owner_user_id = ? AND enabled = 1 ORDER BY next_run_at ASC",
+      )
+      .all(ownerUserId) as CronJob[];
   },
 
   findDue(now?: string): CronJob[] {
@@ -116,15 +134,25 @@ export const cronJobsModel = {
       .all(currentTime) as CronJob[];
   },
 
+  findDueByOwner(ownerUserId: number, now?: string): CronJob[] {
+    const currentTime = now || new Date().toISOString();
+    return db
+      .prepare(
+        "SELECT * FROM cron_jobs WHERE owner_user_id = ? AND enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?",
+      )
+      .all(ownerUserId, currentTime) as CronJob[];
+  },
+
   create(input: CronJobInput): CronJob {
     const nextRun = calculateNextRun(input.cron_expression, input.timezone || "UTC");
 
     const result = db
       .prepare(
-        `INSERT INTO cron_jobs (name, description, cron_expression, prompt, enabled, created_by, timezone, max_retries, timeout_ms, next_run_at, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO cron_jobs (owner_user_id, name, description, cron_expression, prompt, enabled, created_by, timezone, max_retries, timeout_ms, next_run_at, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
+        input.owner_user_id ?? 1,
         input.name,
         input.description || null,
         input.cron_expression,
@@ -221,6 +249,16 @@ export const cronJobsModel = {
     return this.findById(id);
   },
 
+  /**
+   * Mark a job as currently running without incrementing run_count.
+   * (run_count increments when a run finishes successfully/failed)
+   */
+  markRunning(id: number): void {
+    db.prepare(
+      "UPDATE cron_jobs SET last_status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).run(id);
+  },
+
   updateLastRun(id: number, status: string): void {
     db.prepare(
       `UPDATE cron_jobs 
@@ -238,14 +276,26 @@ export const cronJobsModel = {
     ).run(nextRunAt, id);
   },
 
-  count(): number {
+  count(ownerUserId?: number): number {
+    if (typeof ownerUserId === "number") {
+      const result = db
+        .prepare("SELECT COUNT(*) as count FROM cron_jobs WHERE owner_user_id = ?")
+        .get(ownerUserId) as { count: number };
+      return result.count;
+    }
     const result = db
       .prepare("SELECT COUNT(*) as count FROM cron_jobs")
       .get() as { count: number };
     return result.count;
   },
 
-  countEnabled(): number {
+  countEnabled(ownerUserId?: number): number {
+    if (typeof ownerUserId === "number") {
+      const result = db
+        .prepare("SELECT COUNT(*) as count FROM cron_jobs WHERE owner_user_id = ? AND enabled = 1")
+        .get(ownerUserId) as { count: number };
+      return result.count;
+    }
     const result = db
       .prepare("SELECT COUNT(*) as count FROM cron_jobs WHERE enabled = 1")
       .get() as { count: number };
@@ -272,6 +322,14 @@ export const cronExecutionsModel = {
       .all(jobId, limit) as CronExecution[];
   },
 
+  findByJobIdForOwner(ownerUserId: number, jobId: number, limit = 20): CronExecution[] {
+    return db
+      .prepare(
+        "SELECT * FROM cron_executions WHERE owner_user_id = ? AND cron_job_id = ? ORDER BY started_at DESC LIMIT ?",
+      )
+      .all(ownerUserId, jobId, limit) as CronExecution[];
+  },
+
   findRecent(limit = 50): CronExecution[] {
     return db
       .prepare(
@@ -286,11 +344,12 @@ export const cronExecutionsModel = {
   create(input: CronExecutionInput): CronExecution {
     const result = db
       .prepare(
-        `INSERT INTO cron_executions (cron_job_id, conversation_id, status, prompt, metadata)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO cron_executions (cron_job_id, owner_user_id, conversation_id, status, prompt, metadata)
+         VALUES (?, ?, ?, ?, ?, ?)`
       )
       .run(
         input.cron_job_id,
+        input.owner_user_id ?? 1,
         input.conversation_id || null,
         input.status || "running",
         input.prompt,

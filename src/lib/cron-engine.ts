@@ -7,9 +7,14 @@
 import { cronJobsModel, cronExecutionsModel } from "../database/models/cron";
 import { calculateNextRun } from "../database/models/cron";
 import { conversationsModel } from "../database/index";
-import { executeAgent } from "../agent/runner";
+import { messagesModel, usersModel } from "../database/index";
+import { runAgent } from "../agent";
 import { createLogger } from "./logger";
 import type { CronJob } from "../types/database";
+import { withToolContext } from "./tool-context";
+import { ensureDir, getUserSandboxRoot } from "./userfs";
+import { hasAnyPermission, Permission } from "./permissions";
+import { extractMemoriesFromConversation } from "../agent/super-memory";
 
 const logger = createLogger("cron-engine");
 
@@ -130,6 +135,7 @@ async function checkDueJobs(): Promise<void> {
 async function executeJob(job: CronJob): Promise<void> {
   activeJobs++;
   const startTime = Date.now();
+  const ownerUserId = job.owner_user_id ?? 1;
 
   logger.info("Executing cron job", {
     jobId: job.id,
@@ -137,11 +143,12 @@ async function executeJob(job: CronJob): Promise<void> {
     cronExpression: job.cron_expression,
   });
 
-  // Mark job as running
-  cronJobsModel.updateLastRun(job.id, "running");
+  // Mark job as running (does not increment run_count)
+  cronJobsModel.markRunning(job.id);
 
   // Create a conversation for this cron execution
   const conversation = conversationsModel.findOrCreate({
+    owner_user_id: ownerUserId,
     interface_type: "cron",
     external_chat_id: `cron-job-${job.id}`,
     external_user_id: "cron-engine",
@@ -152,29 +159,78 @@ async function executeJob(job: CronJob): Promise<void> {
   // Create execution record
   const execution = cronExecutionsModel.create({
     cron_job_id: job.id,
+    owner_user_id: ownerUserId,
     conversation_id: conversation.id,
     prompt: job.prompt,
   });
 
   try {
-    // Execute the agent with the job's prompt
+    // Persist the prompt as a user message to keep conversation history consistent.
+    messagesModel.create({
+      conversation_id: conversation.id,
+      role: "user",
+      content: job.prompt,
+      metadata: { source: "cron-engine", cronJobId: job.id },
+    });
+
+    // Execute the agent with the job's prompt under the owning user's sandbox.
     const timeout = job.timeout_ms || JOB_TIMEOUT_DEFAULT;
+
+    const owner = usersModel.findById(ownerUserId);
+    const allowSystem = hasAnyPermission(owner ?? null, [
+      Permission.SYSTEM_SHELL,
+      Permission.SYSTEM_FILES_READ,
+      Permission.SYSTEM_FILES_WRITE,
+      Permission.SYSTEM_FILES_DELETE,
+    ]);
+    const sandboxRoot = getUserSandboxRoot({
+      kind: "web",
+      id: String(ownerUserId),
+    });
+    ensureDir(sandboxRoot);
+
     const result = await Promise.race([
-      executeAgent(job.prompt, {
-        conversationId: conversation.id,
-        onToolCall: (toolName) => {
-          logger.info("Cron job tool call", {
-            jobId: job.id,
-            tool: toolName,
-          });
+      withToolContext(
+        {
+          sandboxRoot,
+          allowSystem,
+          actor: { kind: "web", id: String(ownerUserId), interfaceType: "cron" },
         },
-      }),
+        () =>
+          runAgent(job.prompt, {
+            conversationId: conversation.id,
+            planMode: true,
+            sandboxRoot,
+            allowSystem,
+            actor: { kind: "web", id: String(ownerUserId), interfaceType: "cron" },
+            onToolCall: (toolName) => {
+              logger.info("Cron job tool call", {
+                jobId: job.id,
+                tool: toolName,
+              });
+            },
+          }),
+      ),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Cron job timed out after ${timeout}ms`)), timeout)
+        setTimeout(() => reject(new Error(`Cron job timed out after ${timeout}ms`)), timeout),
       ),
     ]);
 
     const durationMs = Date.now() - startTime;
+
+    messagesModel.create({
+      conversation_id: conversation.id,
+      role: "assistant",
+      content: result.text ?? "",
+      input_tokens: result.inputTokens,
+      output_tokens: result.outputTokens,
+      metadata: { source: "cron-engine", cronJobId: job.id },
+    });
+
+    extractMemoriesFromConversation(
+      ownerUserId,
+      `user: ${job.prompt}\n\nassistant: ${result.text ?? ""}`,
+    ).catch(() => {});
 
     // Update execution record with results
     cronExecutionsModel.update(execution.id, {
@@ -196,7 +252,6 @@ async function executeJob(job: CronJob): Promise<void> {
       jobName: job.name,
       success: result.success,
       durationMs,
-      steps: result.steps,
       tokens: (result.inputTokens || 0) + (result.outputTokens || 0),
     });
   } catch (err) {

@@ -5,12 +5,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-type InterfaceType = "telegram" | "discord" | "slack" | "web";
+type InterfaceType = string;
 
 function getServiceName(type: InterfaceType): string | null {
   if (type === "telegram") return "overseer-telegram";
   if (type === "discord") return "overseer-discord";
   if (type === "slack") return "overseer-slack";
+  if (type === "whatsapp") return "overseer-whatsapp";
+  if (type === "matrix") return "overseer-matrix";
   return null;
 }
 

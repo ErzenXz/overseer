@@ -24,25 +24,16 @@ export {
   runCronJobNow,
 } from "./cron";
 
+// Search tools
+export { searchCodebase } from "./search";
+
 // All tools in a single object
-import {
-  executeShellCommand,
-  executeShellCommandConfirmed,
-  getShellInfo,
-} from "./shell";
-import { readFile, writeFile, listDirectory } from "./files";
+import { builtinTools } from "./builtin-tools";
 import {
   spawnSubAgent,
   checkSubAgentStatus,
   resumeSubAgent,
 } from "./subagent-tool";
-import {
-  createCronJob,
-  listCronJobs,
-  deleteCronJob,
-  toggleCronJob,
-  runCronJobNow,
-} from "./cron";
 
 // Import MCP and Skills for combined tools
 import { getAllMCPTools } from "../mcp/client";
@@ -53,27 +44,12 @@ import type { Tool } from "ai";
  * Built-in tools - always available
  */
 export const allTools = {
-  // Shell
-  executeShellCommand,
-  executeShellCommandConfirmed,
-  getShellInfo,
+  ...builtinTools,
 
-  // Files
-  readFile,
-  writeFile,
-  listDirectory,
-
-  // Sub-agents
+  // Sub-agents (these depend on the built-in toolset; keep them last)
   spawnSubAgent,
   checkSubAgentStatus,
   resumeSubAgent,
-
-  // Cron
-  createCronJob,
-  listCronJobs,
-  deleteCronJob,
-  toggleCronJob,
-  runCronJobNow,
 };
 
 export type ToolName = keyof typeof allTools;
@@ -134,6 +110,7 @@ export const toolCategories = {
   ],
   files: ["readFile", "writeFile", "listDirectory"],
   subagents: ["spawnSubAgent", "checkSubAgentStatus", "resumeSubAgent"],
+  search: ["searchCodebase"],
   cron: [
     "createCronJob",
     "listCronJobs",
@@ -150,6 +127,7 @@ export const toolDescriptions: Record<string, string> = {
   readFile: "Read file contents (cross-platform)",
   writeFile: "Write/create files",
   listDirectory: "List directory contents",
+  searchCodebase: "Search the codebase using ripgrep (rg)",
   spawnSubAgent: "Spawn specialized sub-agents for complex tasks",
   checkSubAgentStatus: "Check status of a spawned sub-agent",
   resumeSubAgent:

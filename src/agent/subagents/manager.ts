@@ -12,16 +12,24 @@ import { poolManager } from "../../lib/resource-pool";
 import { agentCache } from "@/lib/agent-cache";
 import { v4 as uuidv4 } from "uuid";
 import { generateText, stepCountIs, type LanguageModel, type Tool } from "ai";
+import { withToolContext, type ToolContext } from "../../lib/tool-context";
 
 const logger = createLogger("sub-agents");
 
-export type SubAgentType = "generic";
+export type SubAgentType =
+  | "generic"
+  | "planner"
+  | "code"
+  | "system"
+  | "security"
+  | "evaluator";
 
 export interface SubAgent {
   id: number;
   parent_session_id: string;
   sub_agent_id: string;
   agent_type: SubAgentType;
+  owner_user_id: number;
   name: string;
   description: string | null;
   status: "idle" | "working" | "completed" | "error";
@@ -38,6 +46,7 @@ export interface SubAgent {
 export interface CreateSubAgentInput {
   parent_session_id: string;
   agent_type: SubAgentType;
+  owner_user_id: number;
   name?: string;
   description?: string;
   assigned_task?: string;
@@ -55,16 +64,25 @@ export interface TaskResult {
   resumed?: boolean;
 }
 
-const SUB_AGENT_CONFIG = {
-  name: "Worker",
-  description: "Generic worker with full tool access",
-  system_prompt: `You are a capable assistant working under Overseer.
+const SUB_AGENT_CONFIGS: Record<
+  SubAgentType,
+  { name: string; description: string; system_prompt: string; priority: number }
+> = {
+  generic: {
+    name: "Worker",
+    description: "Generic worker with full tool access",
+    system_prompt: `You are a capable assistant working under Overseer.
 
 YOUR ROLE:
 - You receive a specific task from Overseer (the main agent)
 - You have FULL access to all tools: shell, files, MCP tools, skill tools
 - Your job is to complete the task thoroughly and return a useful result
 - You work autonomously — figure out what needs to be done and do it
+
+SAFETY:
+- Shell commands may be blocked or require explicit confirmation.
+- Do not attempt to bypass safety checks or hide risky intent.
+- Prefer reversible actions; if a step is risky, propose a safer alternative.
 
 TOOLS YOU HAVE:
 - Shell: run any command (bash, git, npm, docker, etc.)
@@ -86,10 +104,91 @@ STYLE:
 - Verify important results
 
 You're a trusted teammate. Overseer is counting on you.`,
-  priority: 5,
+    priority: 5,
+  },
+  planner: {
+    name: "Planner",
+    description: "Planning-only agent: decomposes tasks into actionable steps",
+    system_prompt: `You are a planning assistant working under Overseer.
+
+You must produce a concrete, execution-ready plan with clear steps and verification.
+
+Rules:
+- Do NOT execute shell commands or modify files.
+- If you need repo context, use searchCodebase and readFile only.
+- Output must be concise, unambiguous, and directly usable by an executor.
+`,
+    priority: 8,
+  },
+  code: {
+    name: "Coder",
+    description: "Code changes + tests within the tenant sandbox",
+    system_prompt: `You are a software engineer sub-agent working under Overseer.
+
+Rules:
+- Implement the requested change end-to-end.
+- Prefer small verified changes. Run tests/checks when possible.
+- Use the sandbox filesystem by default. Do not attempt to access outside sandbox unless explicitly allowed by system permissions.
+- Return a concise report: what changed + how verified.
+`,
+    priority: 6,
+  },
+  system: {
+    name: "Operator",
+    description: "VPS/system operations (permission-gated)",
+    system_prompt: `You are a systems operator sub-agent working under Overseer.
+
+Rules:
+- Use safe, reversible ops first. Prefer inspection before change.
+- Do not run destructive commands. If a step is risky, stop and propose a safer approach.
+- You may have sandbox restrictions. Respect them and report blockers.
+- Return: actions taken, commands run, and observed results.
+`,
+    priority: 6,
+  },
+  security: {
+    name: "Security",
+    description: "Security review and hardening checks (read-mostly)",
+    system_prompt: `You are a security-focused sub-agent working under Overseer.
+
+Rules:
+- Prioritize least privilege, secret safety, and tenant isolation.
+- Prefer read-only inspection. Avoid modifications unless explicitly requested.
+- If you identify high risk issues, call them out clearly with mitigation steps.
+`,
+    priority: 7,
+  },
+  evaluator: {
+    name: "Evaluator",
+    description: "Verification agent: runs checks/tests and reports pass/fail",
+    system_prompt: `You are a verification sub-agent working under Overseer.
+
+Rules:
+- Your job is to validate the work: run tests, builds, linters, sanity checks.
+- Do not introduce new features. Focus on correctness, regressions, and gaps.
+- Return a crisp report with: what you ran + results + any failures.
+`,
+    priority: 7,
+  },
 };
 
 export function selectAgentForTask(taskDescription: string): SubAgentType {
+  const t = taskDescription.toLowerCase();
+  if (t.includes("plan") || t.includes("decompose") || t.includes("break down")) {
+    return "planner";
+  }
+  if (t.includes("security") || t.includes("vulnerability") || t.includes("hardening")) {
+    return "security";
+  }
+  if (t.includes("test") || t.includes("verify") || t.includes("lint") || t.includes("build")) {
+    return "evaluator";
+  }
+  if (t.includes("deploy") || t.includes("server") || t.includes("nginx") || t.includes("systemd")) {
+    return "system";
+  }
+  if (t.includes("refactor") || t.includes("typescript") || t.includes("next.js") || t.includes("code")) {
+    return "code";
+  }
   return "generic";
 }
 
@@ -98,17 +197,20 @@ export function createSubAgent(input: CreateSubAgentInput): SubAgent {
 
   const stmt = db.prepare(`
     INSERT INTO sub_agents (
-      parent_session_id, sub_agent_id, agent_type, name, description,
+      parent_session_id, sub_agent_id, agent_type, owner_user_id, name, description,
       status, assigned_task, metadata
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+
+  const cfg = SUB_AGENT_CONFIGS[input.agent_type] ?? SUB_AGENT_CONFIGS.generic;
 
   const result = stmt.run(
     input.parent_session_id,
     subAgentId,
     input.agent_type,
-    input.name || SUB_AGENT_CONFIG.name,
-    input.description || SUB_AGENT_CONFIG.description,
+    input.owner_user_id,
+    input.name || cfg.name,
+    input.description || cfg.description,
     "idle",
     input.assigned_task || null,
     input.metadata ? JSON.stringify(input.metadata) : null,
@@ -190,6 +292,7 @@ export async function executeTask(
     priority?: number;
     timeout?: number;
     bypassCircuitBreaker?: boolean;
+    toolContext?: ToolContext;
   } = {},
 ): Promise<TaskResult> {
   const startTime = Date.now();
@@ -220,6 +323,7 @@ export async function executeTask(
   const cacheKey = [
     "subagent:v3",
     (model as { modelId?: string }).modelId ?? "unknown",
+    `owner:${subAgent.owner_user_id}`,
     subAgent.assigned_task ?? "",
     Object.keys(availableTools).length,
   ].join("|");
@@ -243,13 +347,19 @@ export async function executeTask(
     const executeWithProtection = async (): Promise<TaskResult> => {
       updateStatus(subAgentId, "working");
 
-      const result = await generateText({
-        model,
-        system: SUB_AGENT_CONFIG.system_prompt,
-        prompt: subAgent.assigned_task || "",
-        tools: availableTools,
-        stopWhen: stepCountIs(25),
-      });
+      const cfg = SUB_AGENT_CONFIGS[subAgent.agent_type] ?? SUB_AGENT_CONFIGS.generic;
+      const runner = () =>
+        generateText({
+          model,
+          system: cfg.system_prompt,
+          prompt: subAgent.assigned_task || "",
+          tools: availableTools,
+          stopWhen: stepCountIs(25),
+        });
+
+      const result = options.toolContext
+        ? await withToolContext(options.toolContext, runner)
+        : await runner();
 
       const executionTime = Date.now() - startTime;
 
@@ -278,7 +388,8 @@ export async function executeTask(
     };
 
     const poolKey = `subagent-${subAgentId}`;
-    const priority = options.priority ?? SUB_AGENT_CONFIG.priority ?? 5;
+    const cfg = SUB_AGENT_CONFIGS[subAgent.agent_type] ?? SUB_AGENT_CONFIGS.generic;
+    const priority = options.priority ?? cfg.priority ?? 5;
 
     let output: TaskResult;
     
@@ -340,6 +451,7 @@ export async function resumeTask(
     bypassCircuitBreaker?: boolean;
     timeout?: number;
     reason?: string;
+    toolContext?: ToolContext;
   } = {},
 ): Promise<TaskResult> {
   const subAgent = findBySubAgentId(subAgentId);
@@ -375,6 +487,7 @@ export async function resumeTask(
   const result = await executeTask(subAgentId, model, availableTools, {
     bypassCircuitBreaker: options.bypassCircuitBreaker,
     timeout: options.timeout,
+    toolContext: options.toolContext,
   });
 
   return {
@@ -384,11 +497,11 @@ export async function resumeTask(
 }
 
 export function getSubAgentConfig(type: SubAgentType) {
-  return SUB_AGENT_CONFIG;
+  return SUB_AGENT_CONFIGS[type] ?? SUB_AGENT_CONFIGS.generic;
 }
 
 export function getAllSubAgentTypes(): SubAgentType[] {
-  return ["generic"];
+  return ["generic", "planner", "code", "system", "security", "evaluator"];
 }
 
 export function getStats(): {

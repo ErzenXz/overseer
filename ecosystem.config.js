@@ -100,6 +100,8 @@ module.exports = {
       
       // Auto-restart on crashes
       autorestart: true,
+      // If the bot exits cleanly (e.g., not configured / disabled), don't keep restarting it.
+      stop_exit_codes: [0],
       
       // Watch (development only)
       watch: false,
@@ -117,6 +119,8 @@ module.exports = {
       args: 'tsx src/bot/discord.ts',
       instances: 1, // Single instance
       exec_mode: 'fork',
+      // Optional interface: only start when explicitly enabled/configured.
+      autostart: false,
       env: {
         NODE_ENV: 'production',
       },
@@ -141,6 +145,86 @@ module.exports = {
       kill_timeout: 5000,
       autorestart: true,
       watch: false,
+      // If the bot exits cleanly (e.g., not configured / disabled), don't keep restarting it.
+      stop_exit_codes: [0],
+    },
+
+    // ======================
+    // Slack Bot (Optional)
+    // ======================
+    {
+      name: 'overseer-slack',
+      script: 'npx',
+      args: 'tsx src/bot/slack.ts',
+      instances: 1,
+      exec_mode: 'fork',
+      autostart: false,
+      env: {
+        NODE_ENV: 'production',
+      },
+      max_restarts: 10,
+      min_uptime: '10s',
+      max_memory_restart: '300M',
+      restart_delay: 4000,
+      error_file: './logs/slack-error.log',
+      out_file: './logs/slack-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      kill_timeout: 5000,
+      autorestart: true,
+      watch: false,
+      stop_exit_codes: [0],
+    },
+
+    // ======================
+    // WhatsApp Bot (Optional)
+    // ======================
+    {
+      name: 'overseer-whatsapp',
+      script: 'npx',
+      args: 'tsx src/bot/whatsapp.ts',
+      instances: 1,
+      exec_mode: 'fork',
+      autostart: false,
+      env: {
+        NODE_ENV: 'production',
+      },
+      max_restarts: 10,
+      min_uptime: '10s',
+      max_memory_restart: '400M',
+      restart_delay: 4000,
+      error_file: './logs/whatsapp-error.log',
+      out_file: './logs/whatsapp-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      kill_timeout: 5000,
+      autorestart: true,
+      watch: false,
+      stop_exit_codes: [0],
+    },
+
+    // ======================
+    // Matrix Bot (Optional)
+    // ======================
+    {
+      name: 'overseer-matrix',
+      script: 'npx',
+      args: 'tsx src/bot/matrix.ts',
+      instances: 1,
+      exec_mode: 'fork',
+      autostart: false,
+      env: {
+        NODE_ENV: 'production',
+      },
+      max_restarts: 10,
+      min_uptime: '10s',
+      max_memory_restart: '400M',
+      restart_delay: 4000,
+      error_file: './logs/matrix-error.log',
+      out_file: './logs/matrix-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      kill_timeout: 5000,
+      autorestart: true,
+      watch: false,
+      stop_exit_codes: [0],
     },
 
     // ======================

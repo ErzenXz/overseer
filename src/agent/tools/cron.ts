@@ -10,12 +10,21 @@ import {
   cronExecutionsModel,
   isValidCronExpression,
   describeCronExpression,
-  calculateNextRun,
 } from "../../database/models/cron";
 import { triggerJob } from "../../lib/cron-engine";
 import { createLogger } from "../../lib/logger";
+import { getToolContext } from "../../lib/tool-context";
 
 const logger = createLogger("tools:cron");
+
+function getOwnerUserIdFromContext(): number | null {
+  const ctx = getToolContext();
+  if (ctx?.actor?.kind === "web" && ctx.actor.id) {
+    const n = Number.parseInt(ctx.actor.id, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
 
 // =====================================================
 // createCronJob
@@ -75,6 +84,11 @@ IMPORTANT:
     const startTime = Date.now();
 
     try {
+      const ownerUserId = getOwnerUserIdFromContext();
+      if (!ownerUserId) {
+        return { success: false, error: "No authenticated user context for cron job creation." };
+      }
+
       // Validate cron expression
       if (!isValidCronExpression(cron_expression)) {
         return {
@@ -84,12 +98,13 @@ IMPORTANT:
       }
 
       const job = cronJobsModel.create({
+        owner_user_id: ownerUserId,
         name,
         cron_expression,
         prompt,
         description,
         timezone: timezone || "UTC",
-        created_by: "agent",
+        created_by: `user:${ownerUserId}`,
       });
 
       const schedule = describeCronExpression(cron_expression);
@@ -145,9 +160,14 @@ WHEN TO USE:
 
   execute: async ({ enabled_only, include_history }) => {
     try {
+      const ownerUserId = getOwnerUserIdFromContext();
+      if (!ownerUserId) {
+        return { success: false, error: "No authenticated user context for cron listing." };
+      }
+
       const jobs = enabled_only
-        ? cronJobsModel.findEnabled()
-        : cronJobsModel.findAll();
+        ? cronJobsModel.findEnabledByOwner(ownerUserId)
+        : cronJobsModel.findAllByOwner(ownerUserId);
 
       const result = jobs.map((job) => {
         const base = {
@@ -167,7 +187,11 @@ WHEN TO USE:
         };
 
         if (include_history) {
-          const executions = cronExecutionsModel.getRecentByJob(job.id, 3);
+          const executions = cronExecutionsModel.findByJobIdForOwner(
+            ownerUserId,
+            job.id,
+            3,
+          );
           return {
             ...base,
             recent_executions: executions.map((e) => ({
@@ -216,9 +240,17 @@ WHEN TO USE:
 
   execute: async ({ job_id }) => {
     try {
+      const ownerUserId = getOwnerUserIdFromContext();
+      if (!ownerUserId) {
+        return { success: false, error: "No authenticated user context for cron deletion." };
+      }
+
       const job = cronJobsModel.findById(job_id);
       if (!job) {
         return { success: false, error: `Cron job with ID ${job_id} not found` };
+      }
+      if (job.owner_user_id !== ownerUserId) {
+        return { success: false, error: "Forbidden: cron job belongs to a different user." };
       }
 
       const deleted = cronJobsModel.delete(job_id);
@@ -262,9 +294,20 @@ WHEN TO USE:
 
   execute: async ({ job_id, enabled }) => {
     try {
-      const job = enabled
-        ? cronJobsModel.enable(job_id)
-        : cronJobsModel.disable(job_id);
+      const ownerUserId = getOwnerUserIdFromContext();
+      if (!ownerUserId) {
+        return { success: false, error: "No authenticated user context for cron toggle." };
+      }
+
+      const existing = cronJobsModel.findById(job_id);
+      if (!existing) {
+        return { success: false, error: `Cron job with ID ${job_id} not found` };
+      }
+      if (existing.owner_user_id !== ownerUserId) {
+        return { success: false, error: "Forbidden: cron job belongs to a different user." };
+      }
+
+      const job = enabled ? cronJobsModel.enable(job_id) : cronJobsModel.disable(job_id);
 
       if (!job) {
         return { success: false, error: `Cron job with ID ${job_id} not found` };
@@ -311,9 +354,17 @@ WHEN TO USE:
 
   execute: async ({ job_id }) => {
     try {
+      const ownerUserId = getOwnerUserIdFromContext();
+      if (!ownerUserId) {
+        return { success: false, error: "No authenticated user context for cron run-now." };
+      }
+
       const job = cronJobsModel.findById(job_id);
       if (!job) {
         return { success: false, error: `Cron job with ID ${job_id} not found` };
+      }
+      if (job.owner_user_id !== ownerUserId) {
+        return { success: false, error: "Forbidden: cron job belongs to a different user." };
       }
 
       logger.info("Cron job manually triggered by agent", {

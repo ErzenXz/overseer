@@ -3,25 +3,45 @@
 -- Agent sessions table
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- Canonical session identifier used by sub-agents and orchestration.
   session_id TEXT UNIQUE NOT NULL,
-  interface_type TEXT NOT NULL DEFAULT 'web',
+  owner_user_id INTEGER NOT NULL,
+  conversation_id INTEGER NOT NULL,
+  interface_type TEXT NOT NULL,
   interface_id INTEGER,
-  user_id TEXT,
-  username TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
-  provider_id INTEGER,
-  model_name TEXT,
-  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_activity_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  ended_at TEXT,
-  context_data TEXT,
-  current_task TEXT,
-  step_count INTEGER DEFAULT 0,
-  total_tokens INTEGER DEFAULT 0,
-  estimated_cost REAL DEFAULT 0,
-  metadata TEXT,
-  FOREIGN KEY (interface_id) REFERENCES interfaces(id),
-  FOREIGN KEY (provider_id) REFERENCES providers(id)
+  external_user_id TEXT NOT NULL,
+  external_chat_id TEXT NOT NULL,
+
+  -- Session data (JSON)
+  messages TEXT NOT NULL DEFAULT '[]',
+  summaries TEXT NOT NULL DEFAULT '[]',
+  state TEXT NOT NULL DEFAULT '{}',
+
+  -- Token tracking
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  token_limit INTEGER NOT NULL DEFAULT 4000,
+
+  -- Timestamps
+  last_active_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER,
+
+  -- Status
+  is_active BOOLEAN NOT NULL DEFAULT 1,
+
+  -- Statistics
+  message_count INTEGER NOT NULL DEFAULT 0,
+  tool_calls_count INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+
+  -- Additional metadata
+  metadata TEXT NOT NULL DEFAULT '{}',
+
+  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (interface_id) REFERENCES interfaces(id) ON DELETE SET NULL
 );
 
 -- Sub-agents table
@@ -30,6 +50,7 @@ CREATE TABLE IF NOT EXISTS sub_agents (
   parent_session_id TEXT NOT NULL,
   sub_agent_id TEXT UNIQUE NOT NULL,
   agent_type TEXT NOT NULL,
+  owner_user_id INTEGER NOT NULL DEFAULT 1,
   name TEXT NOT NULL,
   description TEXT,
   status TEXT NOT NULL DEFAULT 'idle',
@@ -41,7 +62,8 @@ CREATE TABLE IF NOT EXISTS sub_agents (
   step_count INTEGER DEFAULT 0,
   tokens_used INTEGER DEFAULT 0,
   metadata TEXT,
-  FOREIGN KEY (parent_session_id) REFERENCES agent_sessions(session_id)
+  FOREIGN KEY (parent_session_id) REFERENCES agent_sessions(session_id),
+  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- MCP Servers table
@@ -67,6 +89,7 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 CREATE TABLE IF NOT EXISTS skills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   skill_id TEXT UNIQUE NOT NULL,
+  owner_user_id INTEGER NOT NULL DEFAULT 1,
   name TEXT NOT NULL,
   description TEXT,
   version TEXT DEFAULT '1.0.0',
@@ -120,9 +143,7 @@ INSERT OR IGNORE INTO platform_settings (platform, shell_command, package_manage
 ('macos', 'zsh', 'brew', 'launchctl', '/', 'HOME', '/tmp');
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions(status);
-CREATE INDEX IF NOT EXISTS idx_agent_sessions_user ON agent_sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_agent_sessions_started ON agent_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_session_id_unique ON agent_sessions(session_id);
 CREATE INDEX IF NOT EXISTS idx_sub_agents_parent ON sub_agents(parent_session_id);
 CREATE INDEX IF NOT EXISTS idx_sub_agents_status ON sub_agents(status);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_active ON mcp_servers(is_active);
@@ -132,6 +153,8 @@ CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);
 -- Super Memory table for persistent cross-conversation knowledge
 CREATE TABLE IF NOT EXISTS memory (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_user_id INTEGER NOT NULL DEFAULT 1,
+  scope TEXT NOT NULL DEFAULT 'private', -- 'private' | 'shared'
   key TEXT NOT NULL,
   value TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT 'custom', -- 'preference', 'fact', 'project', 'context', 'custom'

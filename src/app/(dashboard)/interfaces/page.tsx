@@ -1,9 +1,19 @@
 import { interfacesModel } from "@/database";
 import { InterfacesList } from "./InterfacesList";
 import { AddInterfaceButton } from "./AddInterfaceButton";
+import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission } from "@/lib/permissions";
 
-export default function InterfacesPage() {
-  const interfaces = interfacesModel.findAll();
+export const dynamic = "force-dynamic";
+
+export default async function InterfacesPage() {
+  const user = await getCurrentUser();
+  const canViewAll = user ? hasPermission(user, Permission.TENANT_VIEW_ALL) : false;
+  const interfaces = user
+    ? canViewAll
+      ? interfacesModel.findAll()
+      : interfacesModel.findAllByOwner(user.id)
+    : [];
 
   return (
     <div>

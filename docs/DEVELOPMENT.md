@@ -156,7 +156,7 @@ overseer/
 │   │   ├── database.ts        # Database types
 │   │   └── ...
 │   │
-│   └── middleware.ts           # Next.js middleware
+│   └── proxy.ts                # Next.js proxy (replaces deprecated middleware.ts convention)
 │
 ├── skills/                     # Skill Plugins
 │   ├── security-audit/

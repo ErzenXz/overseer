@@ -3,6 +3,7 @@ import { cronJobsModel, cronExecutionsModel } from "@/database";
 import { isValidCronExpression, describeCronExpression } from "@/database/models/cron";
 import { getCurrentUser } from "@/lib/auth";
 import { getCronEngineStatus } from "@/lib/cron-engine";
+import { hasPermission, Permission } from "@/lib/permissions";
 
 /**
  * GET /api/cron — List all cron jobs + engine status
@@ -18,9 +19,14 @@ export async function GET(request: NextRequest) {
   const includeHistory = url.searchParams.get("history") === "true";
   const limit = parseInt(url.searchParams.get("limit") || "100", 10);
 
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
   const jobs = enabledOnly
-    ? cronJobsModel.findEnabled()
-    : cronJobsModel.findAll(limit);
+    ? canViewAll
+      ? cronJobsModel.findEnabled()
+      : cronJobsModel.findEnabledByOwner(user.id)
+    : canViewAll
+      ? cronJobsModel.findAll(limit)
+      : cronJobsModel.findAllByOwner(user.id, limit);
 
   const jobsWithMeta = jobs.map((job) => {
     const base = {
@@ -40,8 +46,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     jobs: jobsWithMeta,
-    total: cronJobsModel.count(),
-    enabled: cronJobsModel.countEnabled(),
+    total: cronJobsModel.count(canViewAll ? undefined : user.id),
+    enabled: cronJobsModel.countEnabled(canViewAll ? undefined : user.id),
     engine: engineStatus,
   });
 }
@@ -75,6 +81,7 @@ export async function POST(request: NextRequest) {
     }
 
     const job = cronJobsModel.create({
+      owner_user_id: user.id,
       name: body.name,
       description: body.description,
       cron_expression: body.cron_expression,

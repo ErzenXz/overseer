@@ -20,6 +20,52 @@ BOLD='\033[1m'
 OVERSEER_DIR="${OVERSEER_DIR:-$HOME/overseer}"
 BACKUP_DIR="${OVERSEER_DIR}/backups"
 
+# Flags
+SHOW_HELP=0
+DRY_RUN=0
+ASSUME_YES=0
+
+usage() {
+    cat <<'EOF'
+Overseer Update Script
+
+Usage:
+  bash update.sh [--help] [--dry-run] [--yes]
+
+Options:
+  -h, --help       Show this help and exit
+  --dry-run        Print what would happen, without making changes
+  -y, --yes        Skip interactive confirmation prompt
+
+Environment:
+  OVERSEER_DIR=/path/to/overseer (default: $HOME/overseer)
+EOF
+}
+
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                SHOW_HELP=1
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=1
+                shift
+                ;;
+            -y|--yes)
+                ASSUME_YES=1
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                usage >&2
+                exit 2
+                ;;
+        esac
+    done
+}
+
 # Print helpers
 print_step() {
     echo -e "${BLUE}==>${NC} ${GREEN}$1${NC}"
@@ -361,6 +407,28 @@ main() {
     echo -e "${BOLD}Overseer Update Script${NC}"
     echo ""
 
+    parse_args "$@"
+    if [ "$SHOW_HELP" -eq 1 ]; then
+        usage
+        exit 0
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        print_step "DRY RUN"
+        echo "Overseer dir: $OVERSEER_DIR"
+        echo ""
+        echo "Planned steps:"
+        echo "  - Create backup (data/ + .env)"
+        echo "  - Stop services (docker/systemd/launchd/manual)"
+        echo "  - Pull updates (git pull origin main)"
+        echo "  - Update dependencies (pnpm/npm or docker build)"
+        echo "  - Run migrations (db:init)"
+        echo "  - Build app (next build)"
+        echo "  - Start services and verify health"
+        echo ""
+        exit 0
+    fi
+
     # Check if in correct directory
     if [ ! -d "$OVERSEER_DIR" ]; then
         print_error "Overseer directory not found: $OVERSEER_DIR"
@@ -375,11 +443,13 @@ main() {
     echo ""
 
     # Confirm update
-    read -p "Continue with update? (Y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Nn]$ ]]; then
-        echo "Update cancelled"
-        exit 0
+    if [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
+        read -p "Continue with update? (Y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            echo "Update cancelled"
+            exit 0
+        fi
     fi
 
     # Set up error handling for rollback

@@ -85,6 +85,9 @@ export enum Permission {
   // Audit log permissions
   AUDIT_VIEW = "audit:view",
   AUDIT_EXPORT = "audit:export",
+
+  // Tenant permissions
+  TENANT_VIEW_ALL = "tenant:view_all",
 }
 
 /**
@@ -942,6 +945,11 @@ export function getPermissionMetadata(permission: Permission): PermissionMetadat
       category: "Audit",
       description: "Export audit logs",
       riskLevel: "medium",
+    },
+    [Permission.TENANT_VIEW_ALL]: {
+      category: "Tenant",
+      description: "View all tenant data (multi-tenant admin)",
+      riskLevel: "critical",
     },
   };
 

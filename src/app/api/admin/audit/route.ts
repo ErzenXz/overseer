@@ -19,6 +19,9 @@ import {
 } from "@/lib/permissions";
 import { usersModel } from "@/database";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/admin/audit
  * Get security audit logs with optional filtering

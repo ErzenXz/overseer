@@ -34,9 +34,20 @@ export interface Provider {
   updated_at: string;
 }
 
+// Interface types are extensible (new integrations can be added without DB migrations).
+export type InterfaceType =
+  | "telegram"
+  | "discord"
+  | "slack"
+  | "whatsapp"
+  | "matrix"
+  | "web"
+  | (string & {});
+
 export interface Interface {
   id: number;
-  type: "telegram" | "discord" | "slack" | "web";
+  owner_user_id?: number;
+  type: InterfaceType;
   name: string;
   config: string;
   is_active: number;
@@ -47,6 +58,7 @@ export interface Interface {
 
 export interface Conversation {
   id: number;
+  owner_user_id?: number;
   interface_id: number | null;
   interface_type: string;
   external_chat_id: string;
@@ -97,6 +109,7 @@ export interface Setting {
 
 export interface Log {
   id: number;
+  owner_user_id?: number | null;
   level: "debug" | "info" | "warn" | "error";
   category: string;
   message: string;
@@ -145,6 +158,7 @@ export interface Migration {
 
 export interface CronJob {
   id: number;
+  owner_user_id?: number;
   name: string;
   description: string | null;
   cron_expression: string;
@@ -166,6 +180,7 @@ export interface CronJob {
 export interface CronExecution {
   id: number;
   cron_job_id: number;
+  owner_user_id?: number;
   conversation_id: number | null;
   status: "running" | "success" | "failed";
   started_at: string;
@@ -178,4 +193,23 @@ export interface CronExecution {
   output_tokens: number;
   tool_calls_count: number;
   metadata: string | null;
+}
+
+export interface AgentTask {
+  id: number;
+  owner_user_id: number;
+  conversation_id: number | null;
+  parent_task_id: number | null;
+  title: string;
+  input: string;
+  status: "queued" | "running" | "completed" | "failed" | "canceled" | string;
+  priority: number;
+  assigned_sub_agent_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  result_summary: string | null;
+  result_full: string | null;
+  error: string | null;
+  artifacts: string | null;
 }

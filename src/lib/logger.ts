@@ -1,4 +1,5 @@
 import { logsModel } from "../database/index";
+import { getToolContext } from "./tool-context";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -57,7 +58,10 @@ export function createLogger(category: string) {
       if (shouldLog("debug")) {
         logToConsole("debug", category, message, metadata);
         try {
-          logsModel.debug(category, message, metadata);
+          const ctx = getToolContext();
+          const ownerUserId =
+            ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
+          logsModel.create("debug", category, message, metadata, ownerUserId);
         } catch {
           // Ignore database errors in logging
         }
@@ -68,7 +72,10 @@ export function createLogger(category: string) {
       if (shouldLog("info")) {
         logToConsole("info", category, message, metadata);
         try {
-          logsModel.info(category, message, metadata);
+          const ctx = getToolContext();
+          const ownerUserId =
+            ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
+          logsModel.create("info", category, message, metadata, ownerUserId);
         } catch {
           // Ignore database errors in logging
         }
@@ -79,7 +86,10 @@ export function createLogger(category: string) {
       if (shouldLog("warn")) {
         logToConsole("warn", category, message, metadata);
         try {
-          logsModel.warn(category, message, metadata);
+          const ctx = getToolContext();
+          const ownerUserId =
+            ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
+          logsModel.create("warn", category, message, metadata, ownerUserId);
         } catch {
           // Ignore database errors in logging
         }
@@ -90,7 +100,10 @@ export function createLogger(category: string) {
       if (shouldLog("error")) {
         logToConsole("error", category, message, metadata);
         try {
-          logsModel.error(category, message, metadata);
+          const ctx = getToolContext();
+          const ownerUserId =
+            ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
+          logsModel.create("error", category, message, metadata, ownerUserId);
         } catch {
           // Ignore database errors in logging
         }

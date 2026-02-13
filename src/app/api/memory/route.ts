@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
 import {
-  getAllMemories,
   createMemory,
   updateMemory,
   deleteMemory,
   getMemoryById,
-  searchMemories,
-  getMemoryStats,
+  getAllMemoriesForUser,
+  searchMemoriesForUser,
+  getMemoryStatsForUser,
 } from "@/agent/super-memory";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action");
@@ -20,7 +26,7 @@ export async function GET(request: Request) {
     const query = searchParams.get("q");
 
     if (action === "stats") {
-      return NextResponse.json(getMemoryStats());
+      return NextResponse.json(getMemoryStatsForUser(user.id));
     }
 
     if (id) {
@@ -28,14 +34,17 @@ export async function GET(request: Request) {
       if (!memory) {
         return NextResponse.json({ error: "Memory not found" }, { status: 404 });
       }
+      if (memory.owner_user_id !== user.id && memory.scope !== "shared") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
       return NextResponse.json(memory);
     }
 
     if (query) {
-      return NextResponse.json(searchMemories(query));
+      return NextResponse.json(searchMemoriesForUser(user.id, query));
     }
 
-    return NextResponse.json(getAllMemories(category || undefined));
+    return NextResponse.json(getAllMemoriesForUser(user.id, category || undefined));
   } catch (error) {
     console.error("Memory API error:", error);
     return NextResponse.json(
@@ -46,9 +55,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
-    const { key, value, category, importance, source } = body;
+    const { key, value, category, importance, source, scope } = body;
 
     if (!key || !value) {
       return NextResponse.json(
@@ -58,11 +72,13 @@ export async function POST(request: Request) {
     }
 
     const memory = createMemory(
+      user.id,
       key,
       value,
       category as "preference" | "fact" | "project" | "context" | "custom",
       importance,
-      source
+      source,
+      scope
     );
     return NextResponse.json(memory);
   } catch (error) {
@@ -75,15 +91,28 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
-    const { id, key, value, category, importance } = body;
+    const { id, key, value, category, importance, scope } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const memory = updateMemory(id, { key, value, category, importance });
+    const existing = getMemoryById(id);
+    if (!existing) {
+      return NextResponse.json({ error: "Memory not found" }, { status: 404 });
+    }
+    if (existing.owner_user_id !== user.id && existing.scope !== "shared") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const memory = updateMemory(id, { key, value, category, importance, scope });
     if (!memory) {
       return NextResponse.json({ error: "Memory not found" }, { status: 404 });
     }
@@ -99,12 +128,25 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const existing = getMemoryById(parseInt(id));
+    if (!existing) {
+      return NextResponse.json({ error: "Memory not found" }, { status: 404 });
+    }
+    if (existing.owner_user_id !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const deleted = deleteMemory(parseInt(id));

@@ -1,6 +1,12 @@
 /**
- * Discord Bot Implementation for Overseer
- * Full-featured Discord bot with slash commands, streaming, and multi-modal support
+ * Discord Bot Runner (Multi-Instance, Per-User)
+ *
+ * Loads all active `interfaces` rows of type "discord" and starts one discord.js
+ * client per row. Each interface row belongs to a web user (owner_user_id), and
+ * all executions run inside that tenant's sandbox root: data/userfs/web/<owner>.
+ *
+ * Note: This is a pragmatic implementation (DMs + !ask). It intentionally avoids
+ * global slash-command registration to keep multi-instance behavior reliable.
  */
 
 import {
@@ -8,1129 +14,279 @@ import {
   GatewayIntentBits,
   Partials,
   Events,
-  SlashCommandBuilder,
-  REST,
-  Routes,
-  EmbedBuilder,
-  AttachmentBuilder,
-  ChannelType,
-  MessageFlags,
-  type Interaction,
-  type ChatInputCommandInteraction,
   type Message,
-  type TextChannel,
-  type DMChannel,
-  type Attachment,
 } from "discord.js";
 import { config } from "dotenv";
 import { resolve } from "path";
+
 import { runAgentStream } from "../agent/agent";
 import {
   conversationsModel,
   messagesModel,
   interfacesModel,
+  usersModel,
 } from "../database/index";
 import { initializeSchema } from "../database/db";
-import { SessionManager, estimateTokens } from "../lib/session-manager";
+import { SessionManager } from "../lib/session-manager";
 import { extractMemoriesFromConversation } from "../agent/super-memory";
-import {
-  createBotLogger,
-  isRateLimited,
-  isUserAllowed,
-  isGuildAllowed,
-  getBotToken,
-  getAllowedUsers,
-  getAllowedGuilds,
-  truncateText,
-  splitText,
-  formatToolCall,
-  getSystemStatus,
-  getHelpMessage,
-  getWelcomeMessage,
-} from "./shared";
+import { createBotLogger, isRateLimited, splitText } from "./shared";
+import { withToolContext } from "../lib/tool-context";
+import { ensureDir, getUserSandboxRoot } from "../lib/userfs";
 import { getRateLimiter } from "../lib/rate-limiter";
+import { hasAnyPermission, Permission } from "../lib/permissions";
 import { recordChannelEvent } from "../lib/channel-observability";
 
-// Load environment
 config({ path: resolve(process.cwd(), ".env") });
-
-// Initialize database
 initializeSchema();
 
-const logger = createBotLogger("discord");
-
-// Discord message length limits
-const MAX_MESSAGE_LENGTH = 2000;
-const MAX_EMBED_DESCRIPTION = 4096;
-
-// Rate limiting config
 const COOLDOWN_MS = 2000;
+const MAX_MESSAGE_LEN = 1900;
 
-// Get Discord configuration
-function getDiscordToken(): string | null {
-  return getBotToken("discord", "DISCORD_BOT_TOKEN");
+function getFallbackOwnerUserId(): number {
+  const admin = usersModel.findAll().find((u) => u.role === "admin");
+  return admin?.id ?? usersModel.findAll()[0]?.id ?? 1;
 }
 
-function getClientId(): string | null {
-  // First try database
-  const discordInterface = interfacesModel.findByType("discord");
-  if (discordInterface && discordInterface.is_active) {
-    const config = interfacesModel.getDecryptedConfig(discordInterface.id);
-    if (config?.client_id) {
-      return config.client_id as string;
-    }
-  }
-  return process.env.DISCORD_CLIENT_ID || null;
-}
-
-function getDiscordAllowedUsers(): string[] {
-  return getAllowedUsers("discord", "DISCORD_ALLOWED_USERS");
-}
-
-function getDiscordAllowedGuilds(): string[] {
-  return getAllowedGuilds("DISCORD_ALLOWED_GUILDS");
-}
-
-function isDiscordUserAllowed(userId: string): boolean {
-  return isUserAllowed(userId, "discord", "DISCORD_ALLOWED_USERS");
-}
-
-function isDiscordGuildAllowed(guildId: string | null): boolean {
-  if (!guildId) return true; // DMs are always allowed if user is allowed
-  return isGuildAllowed(guildId, "DISCORD_ALLOWED_GUILDS");
-}
-
-// Define slash commands
-const commands = [
-  new SlashCommandBuilder()
-    .setName("ask")
-    .setDescription("Ask the AI assistant a question")
-    .addStringOption((option) =>
-      option
-        .setName("prompt")
-        .setDescription("Your question or request")
-        .setRequired(true),
-    ),
-
-  new SlashCommandBuilder()
-    .setName("execute")
-    .setDescription("Execute a shell command")
-    .addStringOption((option) =>
-      option
-        .setName("command")
-        .setDescription("The shell command to execute")
-        .setRequired(true),
-    ),
-
-  new SlashCommandBuilder()
-    .setName("status")
-    .setDescription("Check system status"),
-
-  new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("Show help information"),
-
-  new SlashCommandBuilder()
-    .setName("reset")
-    .setDescription("Clear your conversation history"),
-];
-
-// Register slash commands
-async function registerCommands(token: string, clientId: string) {
-  const rest = new REST({ version: "10" }).setToken(token);
-
-  try {
-    logger.info("Registering slash commands...");
-
-    await rest.put(Routes.applicationCommands(clientId), {
-      body: commands.map((cmd) => cmd.toJSON()),
-    });
-
-    logger.info("Slash commands registered successfully");
-  } catch (error) {
-    logger.error("Failed to register slash commands", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-}
-
-// Process attachments for multi-modal
-async function processAttachments(
-  attachments: Attachment[],
-): Promise<{ type: "image" | "file"; url: string; name: string }[]> {
-  const processed: { type: "image" | "file"; url: string; name: string }[] = [];
-
-  for (const attachment of attachments) {
-    const isImage =
-      attachment.contentType?.startsWith("image/") ||
-      /\.(png|jpg|jpeg|gif|webp)$/i.test(attachment.name || "");
-
-    processed.push({
-      type: isImage ? "image" : "file",
-      url: attachment.url,
-      name: attachment.name || "attachment",
-    });
-  }
-
-  return processed;
-}
-
-// Get or create conversation for a Discord interaction
-function getOrCreateConversation(
-  channelId: string,
-  userId: string,
-  username?: string,
-) {
-  return conversationsModel.findOrCreate({
-    interface_type: "discord",
-    external_chat_id: channelId,
-    external_user_id: userId,
-    external_username: username,
-  });
-}
-
-// Handle /ask command
-async function handleAskCommand(interaction: ChatInputCommandInteraction) {
-  const userId = interaction.user.id;
-  const username = interaction.user.username;
-  const channelId = interaction.channelId;
-  const guildId = interaction.guildId;
-
-  // Check authorization
-  if (!isDiscordUserAllowed(userId)) {
-    await interaction.reply({
-      content: "⛔ You are not authorized to use this bot.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  if (!isDiscordGuildAllowed(guildId)) {
-    await interaction.reply({
-      content: "⛔ This bot is not available in this server.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  // Check rate limiting
-  if (isRateLimited(userId, { cooldownMs: COOLDOWN_MS })) {
-    await interaction.reply({
-      content: "⏳ Please wait a moment before sending another request.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const prompt = interaction.options.getString("prompt", true);
-  const rateLimiter = getRateLimiter();
-  const estimatedTokenCount = estimateTokens(prompt);
-
-  const preCheck = await rateLimiter.checkLimit({
-    userId,
-    interfaceType: "discord",
-    tokens: estimatedTokenCount,
-  });
-
-  if (!preCheck.allowed) {
-    recordChannelEvent({
-      channel: "discord",
-      event: "rate_limit",
-      ok: false,
-      details: {
-        userId,
-        reason: preCheck.reason,
-        command: "ask",
-      },
-    });
-
-    await interaction.reply({
-      content:
-        rateLimiter.getErrorMessage(preCheck) ||
-        preCheck.reason ||
-        "Rate limit exceeded",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-  logger.info("Ask command received", {
-    userId,
-    username,
-    promptLength: prompt.length,
-  });
-
-  // Defer reply for long operations
-  await interaction.deferReply();
-
-  // Get or create conversation
-  const conversation = getOrCreateConversation(channelId, userId, username);
-
-  // Get or create session
-  const session = SessionManager.getOrCreateSession({
-    conversation_id: conversation.id,
-    interface_type: "discord",
-    external_user_id: userId,
-    external_chat_id: channelId,
-  });
-
-  // Add user message to session
-  SessionManager.addMessage(session.id, "user", prompt);
-
-  // Save user message to database
-  messagesModel.create({
-    conversation_id: conversation.id,
-    role: "user",
-    content: prompt,
-  });
-
-  try {
-    // Run agent with streaming
-    const { textStream, fullText, usage } = await runAgentStream(prompt, {
-      conversationId: conversation.id,
-      onToolCall: (toolName) => {
-        logger.info("Tool called", {
-          toolName,
-          conversationId: conversation.id,
-        });
-        SessionManager.recordToolCall(session.id);
-      },
-    });
-
-    // Stream response
-    let responseText = "";
-    let lastUpdate = 0;
-    const UPDATE_INTERVAL = 1500; // Update every 1.5 seconds
-
-    for await (const chunk of textStream) {
-      responseText += chunk;
-
-      // Update message periodically
-      const now = Date.now();
-      if (now - lastUpdate > UPDATE_INTERVAL && responseText.length > 0) {
-        try {
-          const displayText = truncateText(
-            responseText + "▌",
-            MAX_MESSAGE_LENGTH,
-          );
-          await interaction.editReply(displayText);
-          lastUpdate = now;
-        } catch {
-          // Ignore edit errors
-        }
-      }
-    }
-
-    // Final update
-    const finalText = await fullText;
-    if (finalText) {
-      // Split long messages
-      const chunks = splitText(finalText, MAX_MESSAGE_LENGTH);
-
-      if (chunks.length === 1) {
-        await interaction.editReply(chunks[0]);
-      } else {
-        // Edit with first chunk
-        await interaction.editReply(chunks[0]);
-
-        // Send remaining chunks as follow-up
-        for (let i = 1; i < chunks.length; i++) {
-          await interaction.followUp(chunks[i]);
-        }
-      }
-
-      // Add assistant message to session
-      SessionManager.addMessage(session.id, "assistant", finalText);
-
-      // Save assistant message to database
-      const usageData = await usage;
-      messagesModel.create({
-        conversation_id: conversation.id,
-        role: "assistant",
-        content: finalText,
-        input_tokens: usageData?.inputTokens,
-        output_tokens: usageData?.outputTokens,
-      });
-
-      if (usageData) {
-        rateLimiter.recordRequest({
-          userId,
-          conversationId: conversation.id,
-          interfaceType: "discord",
-          inputTokens: usageData.inputTokens,
-          outputTokens: usageData.outputTokens,
-          model: "default",
-        });
-      }
-
-      // Fire-and-forget: extract memories from this exchange
-      extractMemoriesFromConversation(
-        `user: ${prompt}\n\nassistant: ${finalText}`,
-      ).catch(() => {});
-    } else if (!responseText) {
-      await interaction.editReply(
-        "I apologize, but I couldn't generate a response. Please try again.",
-      );
-    }
-
-    logger.info("Response sent", {
-      conversationId: conversation.id,
-      length: finalText?.length,
-    });
-
-    recordChannelEvent({
-      channel: "discord",
-      event: "command_processing",
-      ok: true,
-      details: {
-        command: "ask",
-        userId,
-        conversationId: conversation.id,
-        responseLength: finalText?.length,
-      },
-    });
-  } catch (error) {
-    // Record error in session
-    SessionManager.recordError(session.id);
-
-    logger.error("Error processing ask command", {
-      error: error instanceof Error ? error.message : String(error),
-      userId,
-    });
-
-    recordChannelEvent({
-      channel: "discord",
-      event: "command_processing",
-      ok: false,
-      details: {
-        command: "ask",
-        userId,
-        conversationId: conversation.id,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
-
-    await interaction.editReply(
-      "❌ I encountered an error processing your request. Please try again.\n\n" +
-        "If this persists, check the admin panel for provider configuration.",
-    );
-  }
-}
-
-// Handle /execute command
-async function handleExecuteCommand(interaction: ChatInputCommandInteraction) {
-  const userId = interaction.user.id;
-  const username = interaction.user.username;
-  const channelId = interaction.channelId;
-  const guildId = interaction.guildId;
-
-  // Check authorization
-  if (!isDiscordUserAllowed(userId)) {
-    await interaction.reply({
-      content: "⛔ You are not authorized to use this bot.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  if (!isDiscordGuildAllowed(guildId)) {
-    await interaction.reply({
-      content: "⛔ This bot is not available in this server.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  // Check rate limiting
-  if (isRateLimited(userId, { cooldownMs: COOLDOWN_MS })) {
-    await interaction.reply({
-      content: "⏳ Please wait a moment before sending another request.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const command = interaction.options.getString("command", true);
-  const rateLimiter = getRateLimiter();
-  const estimatedTokenCount = estimateTokens(command);
-
-  const preCheck = await rateLimiter.checkLimit({
-    userId,
-    interfaceType: "discord",
-    tokens: estimatedTokenCount,
-  });
-
-  if (!preCheck.allowed) {
-    recordChannelEvent({
-      channel: "discord",
-      event: "rate_limit",
-      ok: false,
-      details: {
-        userId,
-        reason: preCheck.reason,
-        command: "execute",
-      },
-    });
-
-    await interaction.reply({
-      content:
-        rateLimiter.getErrorMessage(preCheck) ||
-        preCheck.reason ||
-        "Rate limit exceeded",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-  logger.info("Execute command received", { userId, username, command });
-
-  // Defer reply for long operations
-  await interaction.deferReply();
-
-  // Get or create conversation
-  const conversation = getOrCreateConversation(channelId, userId, username);
-
-  // Create a prompt for shell execution
-  const prompt = `Execute this shell command and show me the output: \`${command}\``;
-
-  // Save user message
-  messagesModel.create({
-    conversation_id: conversation.id,
-    role: "user",
-    content: prompt,
-  });
-
-  try {
-    const { textStream, fullText, usage } = await runAgentStream(prompt, {
-      conversationId: conversation.id,
-      onToolCall: (toolName) => {
-        logger.info("Tool called", {
-          toolName,
-          conversationId: conversation.id,
-        });
-      },
-    });
-
-    // Stream response
-    let responseText = "";
-    let lastUpdate = 0;
-    const UPDATE_INTERVAL = 1500;
-
-    for await (const chunk of textStream) {
-      responseText += chunk;
-
-      const now = Date.now();
-      if (now - lastUpdate > UPDATE_INTERVAL && responseText.length > 0) {
-        try {
-          const displayText = truncateText(
-            responseText + "▌",
-            MAX_MESSAGE_LENGTH,
-          );
-          await interaction.editReply(displayText);
-          lastUpdate = now;
-        } catch {
-          // Ignore edit errors
-        }
-      }
-    }
-
-    // Final update
-    const finalText = await fullText;
-    if (finalText) {
-      const chunks = splitText(finalText, MAX_MESSAGE_LENGTH);
-
-      if (chunks.length === 1) {
-        await interaction.editReply(chunks[0]);
-      } else {
-        await interaction.editReply(chunks[0]);
-        for (let i = 1; i < chunks.length; i++) {
-          await interaction.followUp(chunks[i]);
-        }
-      }
-
-      const usageData = await usage;
-      messagesModel.create({
-        conversation_id: conversation.id,
-        role: "assistant",
-        content: finalText,
-        input_tokens: usageData?.inputTokens,
-        output_tokens: usageData?.outputTokens,
-      });
-
-      if (usageData) {
-        rateLimiter.recordRequest({
-          userId,
-          conversationId: conversation.id,
-          interfaceType: "discord",
-          inputTokens: usageData.inputTokens,
-          outputTokens: usageData.outputTokens,
-          model: "default",
-        });
-      }
-
-      // Fire-and-forget: extract memories
-      extractMemoriesFromConversation(
-        `user: ${prompt}\n\nassistant: ${finalText}`,
-      ).catch(() => {});
-
-      recordChannelEvent({
-        channel: "discord",
-        event: "command_processing",
-        ok: true,
-        details: {
-          command: "execute",
-          userId,
-          conversationId: conversation.id,
-          responseLength: finalText.length,
+function getActiveDiscordInterfaces(): Array<{
+  id: number;
+  owner_user_id: number;
+  name: string;
+  config: Record<string, unknown>;
+  allowed_users: string[];
+}> {
+  const rows = interfacesModel.findActiveByType("discord");
+  if (rows.length === 0 && process.env.DISCORD_BOT_TOKEN) {
+    return [
+      {
+        id: -1,
+        owner_user_id: getFallbackOwnerUserId(),
+        name: "Discord (env)",
+        config: {
+          bot_token: process.env.DISCORD_BOT_TOKEN,
+          allowed_guilds: (process.env.DISCORD_ALLOWED_GUILDS || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
         },
-      });
-    } else {
-      await interaction.editReply(
-        "I couldn't execute the command. Please try again.",
-      );
-    }
-  } catch (error) {
-    logger.error("Error processing execute command", {
-      error: error instanceof Error ? error.message : String(error),
-      userId,
-    });
-
-    recordChannelEvent({
-      channel: "discord",
-      event: "command_processing",
-      ok: false,
-      details: {
-        command: "execute",
-        userId,
-        conversationId: conversation.id,
-        error: error instanceof Error ? error.message : String(error),
+        allowed_users: (process.env.DISCORD_ALLOWED_USERS || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
       },
-    });
-
-    await interaction.editReply(
-      "❌ Error executing command. Please try again.",
-    );
+    ];
   }
+
+  return rows
+    .map((r) => {
+      const cfg =
+        (interfacesModel.getDecryptedConfig(r.id) || {}) as Record<string, unknown>;
+      return {
+        id: r.id,
+        owner_user_id: (r as any).owner_user_id ?? 1,
+        name: r.name,
+        config: cfg,
+        allowed_users: interfacesModel.getAllowedUsers(r.id),
+      };
+    })
+    .filter((r) => typeof r.config.bot_token === "string" && r.config.bot_token.length > 0);
 }
 
-// Handle /status command
-async function handleStatusCommand(interaction: ChatInputCommandInteraction) {
-  const userId = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  if (!isDiscordUserAllowed(userId)) {
-    await interaction.reply({
-      content: "⛔ You are not authorized to use this bot.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  if (!isDiscordGuildAllowed(guildId)) {
-    await interaction.reply({
-      content: "⛔ This bot is not available in this server.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const status = await getSystemStatus();
-
-  const embed = new EmbedBuilder()
-    .setTitle("📊 System Status")
-    .setDescription(status)
-    .setColor(0x00ff00)
-    .setTimestamp();
-
-  await interaction.reply({ embeds: [embed] });
+function isAllowedGuild(
+  cfg: Record<string, unknown>,
+  guildId: string | null,
+): boolean {
+  const allowed = Array.isArray(cfg.allowed_guilds)
+    ? cfg.allowed_guilds.filter((x): x is string => typeof x === "string" && x.length > 0)
+    : [];
+  if (allowed.length === 0) return true;
+  if (!guildId) return true; // DMs ok
+  return allowed.includes(guildId);
 }
 
-// Handle /help command
-async function handleHelpCommand(interaction: ChatInputCommandInteraction) {
-  const helpText = getHelpMessage("Overseer Discord");
+async function startDiscordInstance(instance: {
+  id: number;
+  owner_user_id: number;
+  name: string;
+  config: Record<string, unknown>;
+  allowed_users: string[];
+}) {
+  const owner = usersModel.findById(instance.owner_user_id);
+  const allowSystem = owner
+    ? hasAnyPermission(owner, [
+        Permission.SYSTEM_SHELL,
+        Permission.SYSTEM_FILES_READ,
+        Permission.SYSTEM_FILES_WRITE,
+        Permission.SYSTEM_FILES_DELETE,
+      ])
+    : false;
+  const logger = createBotLogger("discord", instance.owner_user_id);
 
-  const embed = new EmbedBuilder()
-    .setTitle("🤖 Overseer Help")
-    .setDescription(helpText)
-    .setColor(0x5865f2)
-    .addFields(
-      { name: "/ask", value: "Ask the AI assistant a question", inline: true },
-      { name: "/execute", value: "Execute a shell command", inline: true },
-      { name: "/status", value: "Check system status", inline: true },
-      { name: "/reset", value: "Clear conversation history", inline: true },
-    )
-    .setFooter({ text: "You can also mention me or DM me directly!" });
+  const token = String(instance.config.bot_token || "");
+  if (!token) return;
 
-  await interaction.reply({ embeds: [embed] });
-}
-
-// Handle /reset command
-async function handleResetCommand(interaction: ChatInputCommandInteraction) {
-  const userId = interaction.user.id;
-  const channelId = interaction.channelId;
-
-  if (!isDiscordUserAllowed(userId)) {
-    await interaction.reply({
-      content: "⛔ You are not authorized to use this bot.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const conversation = conversationsModel.findOrCreate({
-    interface_type: "discord",
-    external_chat_id: channelId,
-    external_user_id: userId,
-    external_username: interaction.user.username,
+  const sandboxRoot = getUserSandboxRoot({
+    kind: "web",
+    id: String(instance.owner_user_id),
   });
+  ensureDir(sandboxRoot);
 
-  // Clear both database messages and session
-  conversationsModel.clearMessages(conversation.id);
-
-  // Get or create session and clear it
-  const session = SessionManager.getOrCreateSession({
-    conversation_id: conversation.id,
-    interface_type: "discord",
-    external_user_id: userId,
-    external_chat_id: channelId,
-  });
-  SessionManager.clearMessages(session.id);
-
-  await interaction.reply({
-    content: "🔄 Conversation history cleared. Let's start fresh!",
-    flags: MessageFlags.Ephemeral,
-  });
-}
-
-// Handle direct messages and mentions
-async function handleMessage(message: Message) {
-  // Ignore bot messages
-  if (message.author.bot) return;
-
-  const userId = message.author.id;
-  const username = message.author.username;
-  const channelId = message.channelId;
-  const guildId = message.guildId;
-  const isDM = message.channel.type === ChannelType.DM;
-  const client = message.client;
-
-  // Check if bot was mentioned or if it's a DM
-  const isMentioned = message.mentions.has(client.user!);
-
-  if (!isDM && !isMentioned) return;
-
-  // Check authorization
-  if (!isDiscordUserAllowed(userId)) {
-    await message.reply("⛔ You are not authorized to use this bot.");
-    return;
-  }
-
-  if (!isDiscordGuildAllowed(guildId)) {
-    await message.reply("⛔ This bot is not available in this server.");
-    return;
-  }
-
-  // Check rate limiting
-  if (isRateLimited(userId, { cooldownMs: COOLDOWN_MS })) {
-    return; // Silently ignore rate-limited messages
-  }
-
-  // Extract message content (remove mention if present)
-  let content = message.content;
-  if (isMentioned && client.user) {
-    content = content
-      .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
-      .trim();
-  }
-
-  // If no content after removing mention, send help
-  if (!content && message.attachments.size === 0) {
-    const welcomeEmbed = new EmbedBuilder()
-      .setTitle("👋 Hello!")
-      .setDescription(getWelcomeMessage())
-      .setColor(0x5865f2)
-      .addFields({
-        name: "Commands",
-        value:
-          "`/ask` - Ask a question\n`/execute` - Run a command\n`/status` - System status\n`/help` - Show help",
-      });
-
-    await message.reply({ embeds: [welcomeEmbed] });
-    return;
-  }
-
-  logger.info("Message received", {
-    userId,
-    username,
-    isDM,
-    length: content.length,
-    attachments: message.attachments.size,
-  });
-
-  // Process attachments
-  const attachments = await processAttachments(
-    Array.from(message.attachments.values()),
-  );
-
-  // Build prompt with attachment context
-  let prompt = content;
-  if (attachments.length > 0) {
-    const attachmentInfo = attachments
-      .map((a) => `[${a.type}: ${a.name}](${a.url})`)
-      .join("\n");
-    prompt = `${content}\n\nAttachments:\n${attachmentInfo}`;
-  }
-
-  // Get or create conversation
-  const conversation = getOrCreateConversation(channelId, userId, username);
-
-  const rateLimiter = getRateLimiter();
-  const estimatedTokenCount = estimateTokens(prompt);
-  const preCheck = await rateLimiter.checkLimit({
-    userId,
-    interfaceType: "discord",
-    tokens: estimatedTokenCount,
-  });
-
-  if (!preCheck.allowed) {
-    recordChannelEvent({
-      channel: "discord",
-      event: "rate_limit",
-      ok: false,
-      details: {
-        userId,
-        reason: preCheck.reason,
-        source: isDM ? "dm" : "mention",
-      },
-    });
-
-    await message.reply(
-      rateLimiter.getErrorMessage(preCheck) ||
-        preCheck.reason ||
-        "Rate limit exceeded",
-    );
-    return;
-  }
-
-  // Get or create session
-  const session = SessionManager.getOrCreateSession({
-    conversation_id: conversation.id,
-    interface_type: "discord",
-    external_user_id: userId,
-    external_chat_id: channelId,
-  });
-
-  // Add user message to session
-  SessionManager.addMessage(session.id, "user", prompt);
-
-  // Save user message to database
-  messagesModel.create({
-    conversation_id: conversation.id,
-    role: "user",
-    content: prompt,
-    metadata: attachments.length > 0 ? { attachments } : undefined,
-  });
-
-  // Show typing indicator
-  const channel = message.channel as TextChannel | DMChannel;
-  await channel.sendTyping();
-
-  // Keep typing indicator active
-  const typingInterval = setInterval(() => {
-    channel.sendTyping().catch(() => {});
-  }, 5000);
-
-  try {
-    const { textStream, fullText, usage } = await runAgentStream(prompt, {
-      conversationId: conversation.id,
-      onToolCall: (toolName) => {
-        logger.info("Tool called", {
-          toolName,
-          conversationId: conversation.id,
-        });
-        SessionManager.recordToolCall(session.id);
-      },
-    });
-
-    // Stream response
-    let responseText = "";
-    let sentMessage: Message | null = null;
-    let lastUpdate = 0;
-    const UPDATE_INTERVAL = 1500;
-
-    for await (const chunk of textStream) {
-      responseText += chunk;
-
-      const now = Date.now();
-      if (now - lastUpdate > UPDATE_INTERVAL && responseText.length > 0) {
-        try {
-          const displayText = truncateText(
-            responseText + "▌",
-            MAX_MESSAGE_LENGTH,
-          );
-          if (!sentMessage) {
-            sentMessage = await message.reply(displayText);
-          } else {
-            await sentMessage.edit(displayText);
-          }
-          lastUpdate = now;
-        } catch {
-          // Ignore edit errors
-        }
-      }
-    }
-
-    clearInterval(typingInterval);
-
-    // Final update
-    const finalText = await fullText;
-    if (finalText) {
-      const chunks = splitText(finalText, MAX_MESSAGE_LENGTH);
-
-      if (chunks.length === 1) {
-        if (!sentMessage) {
-          await message.reply(chunks[0]);
-        } else {
-          await sentMessage.edit(chunks[0]);
-        }
-      } else {
-        // Handle multiple chunks
-        if (!sentMessage) {
-          sentMessage = await message.reply(chunks[0]);
-        } else {
-          await sentMessage.edit(chunks[0]);
-        }
-
-        for (let i = 1; i < chunks.length; i++) {
-          await channel.send(chunks[i]);
-        }
-      }
-
-      // Save assistant message
-      const usageData = await usage;
-
-      // Add to session
-      SessionManager.addMessage(session.id, "assistant", finalText);
-
-      // Save to database
-      messagesModel.create({
-        conversation_id: conversation.id,
-        role: "assistant",
-        content: finalText,
-        input_tokens: usageData?.inputTokens,
-        output_tokens: usageData?.outputTokens,
-      });
-
-      if (usageData) {
-        rateLimiter.recordRequest({
-          userId,
-          conversationId: conversation.id,
-          interfaceType: "discord",
-          inputTokens: usageData.inputTokens,
-          outputTokens: usageData.outputTokens,
-          model: "default",
-        });
-      }
-
-      // Fire-and-forget: extract memories
-      extractMemoriesFromConversation(
-        `user: ${prompt}\n\nassistant: ${finalText}`,
-      ).catch(() => {});
-    } else if (!responseText) {
-      await message.reply(
-        "I apologize, but I couldn't generate a response. Please try again.",
-      );
-    }
-
-    logger.info("Response sent", {
-      conversationId: conversation.id,
-      length: finalText?.length,
-    });
-
-    recordChannelEvent({
-      channel: "discord",
-      event: "message_processing",
-      ok: true,
-      details: {
-        userId,
-        conversationId: conversation.id,
-        responseLength: finalText?.length,
-      },
-    });
-  } catch (error) {
-    clearInterval(typingInterval);
-
-    // Record error in session
-    SessionManager.recordError(session.id);
-
-    logger.error("Error processing message", {
-      error: error instanceof Error ? error.message : String(error),
-      userId,
-    });
-
-    recordChannelEvent({
-      channel: "discord",
-      event: "message_processing",
-      ok: false,
-      details: {
-        userId,
-        conversationId: conversation.id,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
-
-    await message.reply(
-      "❌ I encountered an error processing your request. Please try again.",
-    );
-  }
-}
-
-// Main function to start the bot
-async function startBot() {
-  const token = getDiscordToken();
-  if (!token) {
-    logger.error(
-      "No Discord bot token configured. Add it in the admin panel or set DISCORD_BOT_TOKEN.",
-    );
-    console.log("\n⚠️  No Discord bot token found!");
-    console.log("   Configure it at: http://localhost:3000/interfaces");
-    console.log("   Or set DISCORD_BOT_TOKEN in .env\n");
-    process.exit(1);
-  }
-
-  const clientId = getClientId();
-  if (!clientId) {
-    logger.error(
-      "No Discord client ID configured. Set DISCORD_CLIENT_ID in .env.",
-    );
-    console.log("\n⚠️  No Discord client ID found!");
-    console.log("   Set DISCORD_CLIENT_ID in .env\n");
-    process.exit(1);
-  }
-
-  // Register slash commands
-  await registerCommands(token, clientId);
-
-  // Create client with necessary intents
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.DirectMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.DirectMessages,
     ],
-    partials: [Partials.Channel, Partials.Message],
+    partials: [Partials.Channel],
   });
 
-  // Handle ready event
-  client.once(Events.ClientReady, (readyClient) => {
-    logger.info(`Discord bot ready! Logged in as ${readyClient.user.tag}`);
-    console.log(`🤖 Discord bot is running!`);
-    console.log(`   Logged in as: ${readyClient.user.tag}`);
-    console.log(`   Servers: ${readyClient.guilds.cache.size}`);
-    console.log(`   Use /ask to start a conversation\n`);
-
-    recordChannelEvent({
-      channel: "discord",
-      event: "startup",
-      ok: true,
-      details: {
-        userTag: readyClient.user.tag,
-        guildCount: readyClient.guilds.cache.size,
-      },
+  client.once(Events.ClientReady, (c) => {
+    logger.info("Discord client ready", {
+      interfaceId: instance.id,
+      ownerUserId: instance.owner_user_id,
+      botUser: c.user?.tag,
     });
   });
 
-  // Handle slash commands
-  client.on(Events.InteractionCreate, async (interaction: Interaction) => {
-    if (!interaction.isChatInputCommand()) return;
+  client.on(Events.MessageCreate, async (msg: Message) => {
+    if (msg.author.bot) return;
+    const externalUserId = msg.author.id;
+    const guildId = msg.guild?.id ?? null;
 
-    const { commandName } = interaction;
+    if (!isAllowedGuild(instance.config, guildId)) return;
+    if (instance.allowed_users.length > 0 && !instance.allowed_users.includes(externalUserId)) {
+      return;
+    }
+
+    if (isRateLimited(`${instance.id}:${externalUserId}`, { cooldownMs: COOLDOWN_MS })) {
+      return;
+    }
+
+    const content = msg.content?.trim() || "";
+    const isDm = msg.channel.isDMBased();
+    const isAsk = content.startsWith("!ask ");
+    const shouldRespond = isDm || isAsk;
+    if (!shouldRespond) return;
+
+    const prompt = isAsk ? content.slice("!ask ".length).trim() : content;
+    if (!prompt) return;
+
+    const conversation = conversationsModel.findOrCreate({
+      owner_user_id: instance.owner_user_id,
+      interface_id: instance.id > 0 ? instance.id : undefined,
+      interface_type: "discord",
+      external_chat_id: isDm ? `dm:${externalUserId}` : String(msg.channelId),
+      external_user_id: externalUserId,
+      external_username: msg.author.username,
+      metadata: { interfaceName: instance.name, guildId },
+    });
+
+    const session = SessionManager.getOrCreateSession({
+      conversation_id: conversation.id,
+      interface_type: "discord",
+      external_user_id: externalUserId,
+      external_chat_id: isDm ? `dm:${externalUserId}` : String(msg.channelId),
+      metadata: { interfaceId: instance.id, ownerUserId: instance.owner_user_id },
+    });
+
+    SessionManager.addMessage(session.id, "user", prompt);
+    messagesModel.create({ conversation_id: conversation.id, role: "user", content: prompt });
 
     try {
-      switch (commandName) {
-        case "ask":
-          await handleAskCommand(interaction);
-          break;
-        case "execute":
-          await handleExecuteCommand(interaction);
-          break;
-        case "status":
-          await handleStatusCommand(interaction);
-          break;
-        case "help":
-          await handleHelpCommand(interaction);
-          break;
-        case "reset":
-          await handleResetCommand(interaction);
-          break;
-        default:
-          await interaction.reply({
-            content: "Unknown command.",
-            ephemeral: true,
-          });
+      if ("sendTyping" in msg.channel) {
+        await (msg.channel as any).sendTyping();
       }
-    } catch (error) {
-      logger.error("Error handling interaction", {
-        error: error instanceof Error ? error.message : String(error),
-        commandName,
-      });
+    } catch {}
 
-      recordChannelEvent({
-        channel: "discord",
-        event: "command_processing",
-        ok: false,
-        details: {
-          command: commandName,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
+    const rateLimiter = getRateLimiter();
 
-      const errorReply = {
-        content: "❌ An error occurred while processing your command.",
-        ephemeral: true,
-      };
-
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(errorReply);
-      } else {
-        await interaction.reply(errorReply);
-      }
-    }
-  });
-
-  // Handle messages (DMs and mentions)
-  client.on(Events.MessageCreate, handleMessage);
-
-  // Handle errors
-  client.on(Events.Error, (error) => {
-    logger.error("Discord client error", { error: error.message });
-
-    recordChannelEvent({
-      channel: "discord",
-      event: "runtime_error",
-      ok: false,
-      details: {
-        error: error.message,
+    await withToolContext(
+      {
+        sandboxRoot,
+        allowSystem,
+        actor: { kind: "web", id: String(instance.owner_user_id) },
       },
-    });
+      async () => {
+        const result = await runAgentStream(prompt, {
+          conversationId: conversation.id,
+          planMode: true,
+          sandboxRoot,
+          allowSystem,
+          actor: { kind: "web", id: String(instance.owner_user_id) },
+        });
+
+        let fullText = "";
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+        }
+
+        const finalText = await result.fullText;
+        const usage = await result.usage;
+
+        const chunks = splitText(finalText || "No response.", MAX_MESSAGE_LEN);
+        for (const ch of chunks) {
+          await msg.reply(ch);
+        }
+
+        if (usage) {
+          rateLimiter.recordRequest({
+            userId: String(instance.owner_user_id),
+            conversationId: conversation.id,
+            interfaceType: "discord",
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            model: "default",
+          });
+        }
+
+        messagesModel.create({
+          conversation_id: conversation.id,
+          role: "assistant",
+          content: finalText,
+          input_tokens: usage?.inputTokens,
+          output_tokens: usage?.outputTokens,
+        });
+
+        extractMemoriesFromConversation(
+          instance.owner_user_id,
+          `user: ${prompt}\n\nassistant: ${finalText}`,
+        ).catch(() => {});
+
+        recordChannelEvent({
+          channel: "discord",
+          event: "message_processing",
+          ok: true,
+          details: {
+            interfaceId: instance.id,
+            ownerUserId: String(instance.owner_user_id),
+            conversationId: conversation.id,
+            responseLength: finalText?.length,
+          },
+        });
+      },
+    );
   });
 
-  // Login
   await client.login(token);
-
-  // Graceful shutdown
-  const shutdown = () => {
-    logger.info("Shutting down Discord bot...");
-    client.destroy();
-    process.exit(0);
-  };
-
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
 }
 
-// Run
-startBot().catch((error) => {
-  console.error("Failed to start Discord bot:", error);
+async function main() {
+  const instances = getActiveDiscordInterfaces();
+  if (instances.length === 0) {
+    const logger = createBotLogger("discord");
+    logger.info(
+      "Discord interface not enabled; no active interface rows found. Enable it in the admin panel.",
+    );
+    process.exit(0);
+  }
+
+  await Promise.all(instances.map((i) => startDiscordInstance(i)));
+}
+
+main().catch((err) => {
+  const logger = createBotLogger("discord");
+  logger.error("Discord runner failed", {
+    error: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });

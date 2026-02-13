@@ -1,24 +1,31 @@
+/**
+ * Telegram Bot Runner (Multi-Instance, Per-User)
+ *
+ * Loads all active `interfaces` rows of type "telegram" and starts one Telegraf
+ * bot per row. Each interface row belongs to a web user (owner_user_id), and
+ * all executions run inside that tenant's sandbox root: data/userfs/web/<owner>.
+ */
+
 import { Telegraf } from "telegraf";
 import { message } from "telegraf/filters";
 import { config } from "dotenv";
 import { resolve } from "path";
+
 import { runAgentStream } from "../agent/agent";
-import { conversationsModel, messagesModel } from "../database/index";
-import { initializeSchema } from "../database/db";
-import { SessionManager, estimateTokens } from "../lib/session-manager";
-import { extractMemoriesFromConversation } from "../agent/super-memory";
 import {
-  createBotLogger,
-  isRateLimited,
-  isUserAllowed as checkUserAllowed,
-  getBotToken as getToken,
-  getSystemStatus,
-  getHelpMessage,
-  getWelcomeMessage,
-} from "./shared";
+  conversationsModel,
+  messagesModel,
+  interfacesModel,
+  usersModel,
+} from "../database/index";
+import { initializeSchema } from "../database/db";
+import { SessionManager } from "../lib/session-manager";
+import { extractMemoriesFromConversation } from "../agent/super-memory";
+import { createBotLogger, isRateLimited } from "./shared";
+import { withToolContext } from "../lib/tool-context";
+import { ensureDir, getUserSandboxRoot } from "../lib/userfs";
 import { getRateLimiter } from "../lib/rate-limiter";
-import { poolManager } from "../lib/resource-pool";
-import { getDefaultModel } from "../agent/providers";
+import { hasAnyPermission, Permission } from "../lib/permissions";
 import { recordChannelEvent } from "../lib/channel-observability";
 
 // Load environment
@@ -27,64 +34,102 @@ config({ path: resolve(process.cwd(), ".env") });
 // Initialize database
 initializeSchema();
 
-const logger = createBotLogger("telegram");
-
-// Rate limiting config
 const COOLDOWN_MS = 2000;
 
-// Get bot token from database or environment
-function getBotToken(): string | null {
-  return getToken("telegram", "TELEGRAM_BOT_TOKEN");
+function getFallbackOwnerUserId(): number {
+  const admin = usersModel.findAll().find((u) => u.role === "admin");
+  return admin?.id ?? usersModel.findAll()[0]?.id ?? 1;
 }
 
-// Check if user is allowed
-function isUserAllowed(userId: string): boolean {
-  return checkUserAllowed(userId, "telegram", "TELEGRAM_ALLOWED_USERS");
+function getActiveTelegramInterfaces(): Array<{
+  id: number;
+  owner_user_id: number;
+  name: string;
+  config: Record<string, unknown>;
+  allowed_users: string[];
+}> {
+  const rows = interfacesModel.findActiveByType("telegram");
+  if (rows.length === 0 && process.env.TELEGRAM_BOT_TOKEN) {
+    // Backwards-compat: allow a single env-based bot.
+    return [
+      {
+        id: -1,
+        owner_user_id: getFallbackOwnerUserId(),
+        name: "Telegram (env)",
+        config: { bot_token: process.env.TELEGRAM_BOT_TOKEN },
+        allowed_users: (process.env.TELEGRAM_ALLOWED_USERS || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      },
+    ];
+  }
+
+  return rows
+    .map((r) => {
+      const cfg =
+        (interfacesModel.getDecryptedConfig(r.id) || {}) as Record<string, unknown>;
+      return {
+        id: r.id,
+        owner_user_id: (r as any).owner_user_id ?? 1,
+        name: r.name,
+        config: cfg,
+        allowed_users: interfacesModel.getAllowedUsers(r.id),
+      };
+    })
+    .filter((r) => typeof r.config.bot_token === "string" && r.config.bot_token.length > 0);
 }
 
-// Start the bot
-async function startBot() {
-  const token = getBotToken();
+async function startTelegramInstance(instance: {
+  id: number;
+  owner_user_id: number;
+  name: string;
+  config: Record<string, unknown>;
+  allowed_users: string[];
+}) {
+  const owner = usersModel.findById(instance.owner_user_id);
+  const allowSystem = owner
+    ? hasAnyPermission(owner, [
+        Permission.SYSTEM_SHELL,
+        Permission.SYSTEM_FILES_READ,
+        Permission.SYSTEM_FILES_WRITE,
+        Permission.SYSTEM_FILES_DELETE,
+      ])
+    : false;
+  const logger = createBotLogger("telegram", instance.owner_user_id);
+
+  const token = String(instance.config.bot_token || "");
   if (!token) {
-    logger.error(
-      "No Telegram bot token configured. Add it in the admin panel or set TELEGRAM_BOT_TOKEN.",
-    );
-    console.log("\n⚠️  No Telegram bot token found!");
-    console.log("   Configure it at: http://localhost:3000/interfaces");
-    console.log("   Or set TELEGRAM_BOT_TOKEN in .env\n");
-    process.exit(1);
+    logger.warn("No bot token; skipping instance", {
+      interfaceId: instance.id,
+      name: instance.name,
+    });
+    return;
   }
 
   const bot = new Telegraf(token);
+  const sandboxRoot = getUserSandboxRoot({
+    kind: "web",
+    id: String(instance.owner_user_id),
+  });
+  ensureDir(sandboxRoot);
 
   try {
     const me = await bot.telegram.getMe();
     logger.info("Telegram bot authenticated", {
+      interfaceId: instance.id,
+      ownerUserId: instance.owner_user_id,
       botId: me.id,
       username: me.username,
     });
-
-    const webhookInfo = await bot.telegram.getWebhookInfo();
-    if (webhookInfo.url) {
-      logger.warn(
-        "Webhook configured while running in polling mode, removing",
-        {
-          webhookUrl: webhookInfo.url,
-          pendingUpdateCount: webhookInfo.pending_update_count,
-        },
-      );
-
-      await bot.telegram.deleteWebhook({
-        drop_pending_updates: false,
-      });
-    }
   } catch (error) {
     logger.error("Telegram startup validation failed", {
+      interfaceId: instance.id,
+      ownerUserId: instance.owner_user_id,
       error: error instanceof Error ? error.message : String(error),
     });
   }
 
-  // Error handling
   bot.catch((err: unknown, ctx) => {
     const errorMessage = err instanceof Error ? err.message : String(err);
     recordChannelEvent({
@@ -93,332 +138,171 @@ async function startBot() {
       ok: false,
       details: {
         phase: "bot.catch",
+        ownerUserId: String(instance.owner_user_id),
         userId: String(ctx.from?.id),
         error: errorMessage,
       },
     });
     logger.error("Bot error", {
+      interfaceId: instance.id,
       error: errorMessage,
       userId: String(ctx.from?.id),
     });
   });
 
-  // /start command
   bot.start(async (ctx) => {
-    const userId = ctx.from.id.toString();
-    if (!isUserAllowed(userId)) {
-      await ctx.reply("⛔ You are not authorized to use this bot.");
-      return;
-    }
-
     await ctx.reply(
-      getWelcomeMessage() +
-        "\n\nCommands:\n/help - Show this message\n/reset - Clear conversation history\n/status - Check system status",
+      "Hi. I am your assistant. Send a message and I will respond.",
     );
   });
 
-  // /help command
-  bot.help(async (ctx) => {
-    await ctx.reply(getHelpMessage("Overseer Telegram"), {
-      parse_mode: "Markdown",
-    });
+  bot.command("help", async (ctx) => {
+    await ctx.reply(
+      "Send a message to chat. If tools require confirmation, I’ll ask first.",
+    );
   });
 
-  // /reset command
-  bot.command("reset", async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const chatId = ctx.chat.id.toString();
-
-    const conversation = conversationsModel.findOrCreate({
-      interface_type: "telegram",
-      external_chat_id: chatId,
-      external_user_id: userId,
-      external_username: ctx.from.username || undefined,
-    });
-
-    // Clear both database messages and session
-    conversationsModel.clearMessages(conversation.id);
-
-    // Get or create session and clear it
-    const session = SessionManager.getOrCreateSession({
-      conversation_id: conversation.id,
-      interface_type: "telegram",
-      external_user_id: userId,
-      external_chat_id: chatId,
-    });
-    SessionManager.clearMessages(session.id);
-
-    await ctx.reply("🔄 Conversation history cleared. Let's start fresh!");
-  });
-
-  // /status command
-  bot.command("status", async (ctx) => {
-    const status = await getSystemStatus();
-    await ctx.reply(`📊 ${status}`, { parse_mode: "Markdown" });
-  });
-
-  // Handle text messages
   bot.on(message("text"), async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const chatId = ctx.chat.id.toString();
-    const username = ctx.from.username || ctx.from.first_name || undefined;
-    const messageText = ctx.message.text;
+    const externalUserId = String(ctx.from?.id || "");
+    const chatId = String(ctx.chat?.id || "");
 
-    // Check authorization
-    if (!isUserAllowed(userId)) {
-      logger.warn("Unauthorized user attempt", { userId, username });
-      await ctx.reply("⛔ You are not authorized to use this bot.");
+    // Allowed-users check per interface.
+    if (instance.allowed_users.length > 0 && !instance.allowed_users.includes(externalUserId)) {
+      await ctx.reply("You are not allowed to use this bot.");
       return;
     }
 
-    // Check comprehensive rate limits
-    const rateLimiter = getRateLimiter();
-    const estimatedTokenCount = estimateTokens(messageText);
-    const activeModelId =
-      (getDefaultModel() as { modelId?: string } | null)?.modelId || "default";
-
-    const rateLimitCheck = await rateLimiter.checkLimit({
-      userId,
-      interfaceType: "telegram",
-      tokens: estimatedTokenCount,
-      modelId: activeModelId,
-    });
-
-    if (!rateLimitCheck.allowed) {
-      const errorMessage = rateLimiter.getErrorMessage(rateLimitCheck);
-      await ctx.reply(errorMessage);
-      recordChannelEvent({
-        channel: "telegram",
-        event: "rate_limit",
-        ok: false,
-        details: {
-          userId,
-          reason: rateLimitCheck.reason,
-        },
-      });
-      logger.warn("Rate limit exceeded", {
-        userId,
-        reason: rateLimitCheck.reason,
-      });
+    if (isRateLimited(`${instance.id}:${externalUserId}`, { cooldownMs: COOLDOWN_MS })) {
       return;
     }
 
-    // Check for quota warnings
-    const warning = rateLimiter.shouldWarnUser(userId);
-    if (warning.warn && warning.message) {
-      await ctx.reply(warning.message);
-    }
+    const messageText = String(ctx.message.text || "").trim();
+    if (!messageText) return;
 
-    logger.info("Message received", {
-      userId,
-      username,
-      length: messageText.length,
-    });
-
-    // Get or create conversation
     const conversation = conversationsModel.findOrCreate({
+      owner_user_id: instance.owner_user_id,
+      interface_id: instance.id > 0 ? instance.id : undefined,
       interface_type: "telegram",
       external_chat_id: chatId,
-      external_user_id: userId,
-      external_username: username,
+      external_user_id: externalUserId,
+      external_username: ctx.from?.username,
+      metadata: {
+        interfaceName: instance.name,
+      },
     });
 
-    // Get or create session
     const session = SessionManager.getOrCreateSession({
       conversation_id: conversation.id,
       interface_type: "telegram",
-      external_user_id: userId,
+      external_user_id: externalUserId,
       external_chat_id: chatId,
+      metadata: {
+        interfaceId: instance.id,
+        ownerUserId: instance.owner_user_id,
+      },
     });
 
-    // Add user message to session
     SessionManager.addMessage(session.id, "user", messageText);
 
-    // Save user message to database
     messagesModel.create({
       conversation_id: conversation.id,
       role: "user",
       content: messageText,
     });
 
-    // Send typing indicator
-    await ctx.sendChatAction("typing");
+    await ctx.reply("…");
 
-    try {
-      // Submit to resource pool with priority
-      const pool = poolManager.getPool("agent-execution");
+    const rateLimiter = getRateLimiter();
 
-      await pool.execute(`telegram-${userId}`, async () => {
-        // Run agent with streaming
-        const { textStream, fullText, usage } = await runAgentStream(
-          messageText,
-          {
-            conversationId: conversation.id,
-            onToolCall: (toolName) => {
-              logger.info("Tool called", {
-                toolName,
-                conversationId: conversation.id,
-              });
-              SessionManager.recordToolCall(session.id);
-            },
-          },
-        );
-
-        // Stream response to Telegram
-        let responseText = "";
-        let sentMessage: { message_id: number } | null = null;
-        let lastUpdate = 0;
-        const UPDATE_INTERVAL = 1000; // Update every 1 second
-
-        for await (const chunk of textStream) {
-          responseText += chunk;
-
-          // Update message periodically
-          const now = Date.now();
-          if (now - lastUpdate > UPDATE_INTERVAL && responseText.length > 0) {
-            try {
-              if (!sentMessage) {
-                sentMessage = await ctx.reply(responseText + "▌");
-              } else {
-                await ctx.telegram.editMessageText(
-                  ctx.chat.id,
-                  sentMessage.message_id,
-                  undefined,
-                  responseText + "▌",
-                );
-              }
-              lastUpdate = now;
-            } catch {
-              // Ignore edit errors (message not modified, etc.)
-            }
-          }
-        }
-
-        // Final update
-        const finalText = await fullText;
-        if (finalText) {
-          try {
-            if (!sentMessage) {
-              await ctx.reply(finalText);
-            } else {
-              await ctx.telegram.editMessageText(
-                ctx.chat.id,
-                sentMessage.message_id,
-                undefined,
-                finalText,
-              );
-            }
-          } catch {
-            // If edit fails, send new message
-            if (sentMessage) {
-              await ctx.reply(finalText);
-            }
-          }
-
-          // Add assistant message to session
-          SessionManager.addMessage(session.id, "assistant", finalText);
-
-          // Save assistant message to database
-          const usageData = await usage;
-          messagesModel.create({
-            conversation_id: conversation.id,
-            role: "assistant",
-            content: finalText,
-            input_tokens: usageData?.inputTokens,
-            output_tokens: usageData?.outputTokens,
-          });
-
-          // Record usage for cost tracking
-          if (usageData) {
-            rateLimiter.recordRequest({
-              userId,
-              conversationId: conversation.id,
-              interfaceType: "telegram",
-              inputTokens: usageData.inputTokens,
-              outputTokens: usageData.outputTokens,
-              model: activeModelId,
-            });
-          }
-
-          // Fire-and-forget: extract memories from this exchange
-          extractMemoriesFromConversation(
-            `user: ${messageText}\n\nassistant: ${finalText}`,
-          ).catch(() => {});
-        } else if (!responseText) {
-          await ctx.reply(
-            "I apologize, but I couldn't generate a response. Please try again.",
-          );
-        }
-
-        logger.info("Response sent", {
+    await withToolContext(
+      {
+        sandboxRoot,
+        allowSystem,
+        actor: { kind: "web", id: String(instance.owner_user_id) },
+      },
+      async () => {
+        const result = await runAgentStream(messageText, {
           conversationId: conversation.id,
-          length: finalText?.length,
+          planMode: true,
+          sandboxRoot,
+          allowSystem,
+          actor: { kind: "web", id: String(instance.owner_user_id) },
         });
+
+        let fullText = "";
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+        }
+
+        const finalText = await result.fullText;
+        const usage = await result.usage;
+
+        await ctx.reply(finalText || "I couldn't generate a response. Try again.");
+
+        if (usage) {
+          rateLimiter.recordRequest({
+            userId: String(instance.owner_user_id),
+            conversationId: conversation.id,
+            interfaceType: "telegram",
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            model: "default",
+          });
+        }
+
+        messagesModel.create({
+          conversation_id: conversation.id,
+          role: "assistant",
+          content: finalText,
+          input_tokens: usage?.inputTokens,
+          output_tokens: usage?.outputTokens,
+        });
+
+        extractMemoriesFromConversation(
+          instance.owner_user_id,
+          `user: ${messageText}\n\nassistant: ${finalText}`,
+        ).catch(() => {});
 
         recordChannelEvent({
           channel: "telegram",
           event: "message_processing",
           ok: true,
           details: {
-            userId,
+            interfaceId: instance.id,
+            ownerUserId: String(instance.owner_user_id),
             conversationId: conversation.id,
             responseLength: finalText?.length,
           },
         });
-      });
-    } catch (error) {
-      // Record error in session
-      SessionManager.recordError(session.id);
-
-      recordChannelEvent({
-        channel: "telegram",
-        event: "message_processing",
-        ok: false,
-        details: {
-          userId,
-          conversationId: conversation.id,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-
-      logger.error("Error processing message", {
-        error: error instanceof Error ? error.message : String(error),
-        userId,
-      });
-
-      await ctx.reply(
-        "❌ I encountered an error processing your request. Please try again.\n\n" +
-          "If this persists, check the admin panel for provider configuration.",
-      );
-    }
+      },
+    );
   });
 
-  // Start polling
-  logger.info("Starting Telegram bot...");
-
-  bot.launch({
-    dropPendingUpdates: true,
+  await bot.launch();
+  logger.info("Telegram instance launched", {
+    interfaceId: instance.id,
+    ownerUserId: instance.owner_user_id,
+    name: instance.name,
   });
-
-  recordChannelEvent({
-    channel: "telegram",
-    event: "startup",
-    ok: true,
-    details: {
-      mode: "polling",
-    },
-  });
-
-  console.log("🤖 Telegram bot is running!");
-  console.log("   Send /start to your bot to begin\n");
-
-  // Graceful shutdown
-  process.once("SIGINT", () => bot.stop("SIGINT"));
-  process.once("SIGTERM", () => bot.stop("SIGTERM"));
 }
 
-// Run
-startBot().catch((error) => {
-  console.error("Failed to start bot:", error);
+async function main() {
+  const instances = getActiveTelegramInterfaces();
+  if (instances.length === 0) {
+    const logger = createBotLogger("telegram");
+    logger.info(
+      "Telegram interface not enabled; no active interface rows found. Enable it in the admin panel.",
+    );
+    process.exit(0);
+  }
+
+  await Promise.all(instances.map((i) => startTelegramInstance(i)));
+}
+
+main().catch((err) => {
+  const logger = createBotLogger("telegram");
+  logger.error("Telegram runner failed", {
+    error: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });

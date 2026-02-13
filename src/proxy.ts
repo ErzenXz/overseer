@@ -14,7 +14,7 @@ const protectedApiRoutes = [
   "/api/auth/logout",
 ];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Check if it's a public route

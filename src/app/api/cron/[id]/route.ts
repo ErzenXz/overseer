@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cronJobsModel, cronExecutionsModel } from "@/database";
 import { isValidCronExpression, describeCronExpression } from "@/database/models/cron";
 import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission } from "@/lib/permissions";
 
 /**
  * GET /api/cron/[id] — Get a single cron job with execution history
@@ -22,7 +23,14 @@ export async function GET(
     return NextResponse.json({ error: "Cron job not found" }, { status: 404 });
   }
 
-  const executions = cronExecutionsModel.findByJobId(job.id, 20);
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && (job as any).owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const executions = canViewAll
+    ? cronExecutionsModel.findByJobId(job.id, 20)
+    : cronExecutionsModel.findByJobIdForOwner(user.id, job.id, 20);
 
   return NextResponse.json({
     job: {
@@ -46,6 +54,15 @@ export async function PATCH(
   }
 
   const { id } = await params;
+  const existing = cronJobsModel.findById(parseInt(id));
+  if (!existing) {
+    return NextResponse.json({ error: "Cron job not found" }, { status: 404 });
+  }
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && (existing as any).owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await request.json();
 
   // Validate cron expression if being updated
@@ -94,6 +111,15 @@ export async function DELETE(
   }
 
   const { id } = await params;
+  const existing = cronJobsModel.findById(parseInt(id));
+  if (!existing) {
+    return NextResponse.json({ error: "Cron job not found" }, { status: 404 });
+  }
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && (existing as any).owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const deleted = cronJobsModel.delete(parseInt(id));
 
   if (!deleted) {

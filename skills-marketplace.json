@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Overseer Community Skills",
+    "description": "Curated community-contributed skills (set SKILLS_MARKETPLACE_URL to your own manifest if desired).",
+    "github": "https://github.com/ErzenXz/overseer-skills",
+    "tags": ["official", "community"]
+  }
+]
+

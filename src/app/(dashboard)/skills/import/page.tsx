@@ -3,13 +3,21 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import * as skillsRegistry from "@/agent/skills/registry";
+import { getMarketplaceSkills } from "@/agent/skills/marketplace";
+import { getCurrentUser } from "@/lib/auth";
+import { withToolContext } from "@/lib/tool-context";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 async function syncBuiltinAction() {
   "use server";
 
-  skillsRegistry.syncBuiltinSkills();
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  withToolContext({ actor: { kind: "web", id: String(user.id) } }, () => {
+    skillsRegistry.syncBuiltinSkills();
+  });
   revalidatePath("/skills");
   redirect("/skills/import?success=Built-in%20skills%20synced%20successfully");
 }
@@ -17,18 +25,47 @@ async function syncBuiltinAction() {
 async function importGithubAction(formData: FormData) {
   "use server";
 
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const url = String(formData.get("github_url") ?? "").trim();
   if (!url) {
     redirect("/skills/import?error=GitHub%20URL%20is%20required");
   }
 
-  const imported = await skillsRegistry.importFromGitHub(url);
+  const imported = await withToolContext(
+    { actor: { kind: "web", id: String(user.id) } },
+    () => skillsRegistry.importFromGitHub(url),
+  );
   if (!imported) {
     redirect("/skills/import?error=Failed%20to%20import%20skill%20from%20GitHub");
   }
 
   revalidatePath("/skills");
   redirect("/skills/import?success=Skill%20imported%20successfully");
+}
+
+async function importMarketplaceAction(formData: FormData) {
+  "use server";
+
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const url = String(formData.get("github_url") ?? "").trim();
+  if (!url) {
+    redirect("/skills/import?error=Marketplace%20URL%20is%20required");
+  }
+
+  const imported = await withToolContext(
+    { actor: { kind: "web", id: String(user.id) } },
+    () => skillsRegistry.importFromGitHub(url),
+  );
+  if (!imported) {
+    redirect("/skills/import?error=Failed%20to%20import%20marketplace%20skill");
+  }
+
+  revalidatePath("/skills");
+  redirect("/skills/import?success=Marketplace%20skill%20imported%20successfully");
 }
 
 export default async function ImportSkillPage({
@@ -40,6 +77,7 @@ export default async function ImportSkillPage({
   const error = typeof params.error === "string" ? params.error : null;
   const success = typeof params.success === "string" ? params.success : null;
   const builtinCount = skillsRegistry.loadBuiltinSkills().length;
+  const marketplace = await getMarketplaceSkills();
 
   return (
     <div>
@@ -58,7 +96,7 @@ export default async function ImportSkillPage({
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-surface-raised border border-border rounded-lg p-6">
           <h2 className="text-base text-white mb-2">Sync built-in skills</h2>
           <p className="text-sm text-text-secondary text-pretty mb-4">
@@ -93,6 +131,71 @@ export default async function ImportSkillPage({
               Import skill
             </button>
           </form>
+        </div>
+
+        <div className="bg-surface-raised border border-border rounded-lg p-6">
+          <h2 className="text-base text-white mb-2">Marketplace</h2>
+          <p className="text-sm text-text-secondary text-pretty mb-4">
+            Curated community skills. Source:{" "}
+            <span className="text-white">
+              {marketplace.source === "remote"
+                ? "remote"
+                : marketplace.source === "local"
+                  ? "local"
+                  : "none"}
+            </span>
+            {marketplace.url ? (
+              <span className="text-text-muted"> ({marketplace.url})</span>
+            ) : null}
+          </p>
+
+          {marketplace.skills.length === 0 ? (
+            <div className="text-sm text-text-secondary space-y-2">
+              <p>No marketplace entries available.</p>
+              <p className="text-text-muted">
+                Add entries to <code>skills-marketplace.json</code> or set{" "}
+                <code>SKILLS_MARKETPLACE_URL</code>.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {marketplace.skills.slice(0, 6).map((skill) => (
+                <div
+                  key={skill.github}
+                  className="rounded border border-border bg-surface-overlay p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm text-white">{skill.name}</div>
+                      {skill.description ? (
+                        <div className="text-xs text-text-secondary mt-1 text-pretty">
+                          {skill.description}
+                        </div>
+                      ) : null}
+                      <div className="text-xs text-text-muted mt-1">
+                        {skill.github}
+                      </div>
+                    </div>
+                    <form action={importMarketplaceAction}>
+                      <input type="hidden" name="github_url" value={skill.github} />
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 rounded bg-surface-overlay hover:bg-border text-xs text-white transition-colors border border-border"
+                      >
+                        Import
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              ))}
+              {marketplace.skills.length > 6 ? (
+                <div className="text-xs text-text-muted">
+                  Showing 6 of {marketplace.skills.length}. Use{" "}
+                  <code>SKILLS_MARKETPLACE_URL</code> to host your full list.
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
 

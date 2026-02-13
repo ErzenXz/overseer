@@ -29,6 +29,9 @@ import { usersModel } from "@/database";
 import { db } from "@/database/db";
 import type { User } from "@/types/database";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/admin/permissions
  * Get all permissions, role mappings, and permission metadata

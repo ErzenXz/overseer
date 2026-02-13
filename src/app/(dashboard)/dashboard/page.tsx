@@ -1,33 +1,149 @@
 import { redirect } from "next/navigation";
 import { conversationsModel, messagesModel, providersModel, interfacesModel, toolExecutionsModel } from "@/database";
 import { StatsCard } from "@/components/StatsCard";
+import { getCurrentUser } from "@/lib/auth";
+import { getUserPermissions, hasPermission, Permission } from "@/lib/permissions";
+import { getUserSandboxRoot } from "@/lib/userfs";
 
-export default function DashboardPage() {
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login");
+  }
+
   const hasProviders = providersModel.findAll().length > 0;
   if (!hasProviders) {
     redirect("/onboarding");
   }
 
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  const ownerId = canViewAll ? undefined : user.id;
+
   // Get stats
-  const conversationCount = conversationsModel.count();
+  const conversationCount = conversationsModel.count(ownerId);
   const messageCount = messagesModel.count();
   const totalTokens = messagesModel.getTotalTokens();
   const providerCount = providersModel.findActive().length;
-  const interfaceCount = interfacesModel.findActive().length;
+  const interfaceCount = canViewAll
+    ? interfacesModel.findActive().length
+    : interfacesModel.findActiveByOwner(user.id).length;
   const toolStats = toolExecutionsModel.getStats();
   const totalToolExecutions = toolStats.reduce((acc, s) => acc + s.count, 0);
 
   // Get recent conversations
-  const recentConversations = conversationsModel.findAll(5);
+  const recentConversations = conversationsModel.findAll(5, 0, ownerId);
 
   // Get recent tool executions
   const recentToolExecutions = toolExecutionsModel.findRecent(10);
+
+  // Tenant panel data (always scoped to current web user unless tenant:view_all is granted).
+  const sandboxRoot = getUserSandboxRoot({ kind: "web", id: String(user.id) });
+  const enabledInterfacesForUser = interfacesModel.findActiveByOwner(user.id);
+  const effectivePerms = new Set(getUserPermissions(user));
+  const systemPerms = [
+    { perm: Permission.SYSTEM_SHELL, label: "Shell" },
+    { perm: Permission.SYSTEM_FILES_READ, label: "Files: Read" },
+    { perm: Permission.SYSTEM_FILES_WRITE, label: "Files: Write" },
+    { perm: Permission.SYSTEM_FILES_DELETE, label: "Files: Delete" },
+  ] as const;
 
   return (
     <div>
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">Dashboard</h1>
         <p className="text-[var(--color-text-secondary)] text-sm mt-1">System overview</p>
+      </div>
+
+      {/* Tenant Panel */}
+      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-5 mb-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-2">Tenant</h2>
+            <div className="text-sm text-[var(--color-text-primary)]">
+              <span className="font-medium">{user.username}</span>
+              <span className="text-[var(--color-text-muted)]"> · </span>
+              <span className="text-[var(--color-text-secondary)] font-[var(--font-mono)]">user:{user.id}</span>
+            </div>
+            <div className="mt-2 text-xs text-[var(--color-text-secondary)]">
+              Sandbox root
+              <div className="mt-1 font-[var(--font-mono)] text-[11px] text-[var(--color-text-primary)] break-all bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded px-2 py-1">
+                {sandboxRoot}
+              </div>
+              <div className="mt-2 text-[var(--color-text-muted)]">
+                All web and connector chats for this user run in the same sandbox by default.
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            <div className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-2 text-right">
+              Host Access
+            </div>
+            <div className="flex flex-wrap justify-end gap-1">
+              {systemPerms.map((p) => {
+                const ok = effectivePerms.has(p.perm);
+                return (
+                  <span
+                    key={p.perm}
+                    className={[
+                      "px-2 py-1 rounded border text-[11px] font-[var(--font-mono)]",
+                      ok
+                        ? "bg-[rgba(0,255,170,0.06)] border-[rgba(0,255,170,0.25)] text-[var(--color-success)]"
+                        : "bg-[rgba(255,186,0,0.06)] border-[rgba(255,186,0,0.25)] text-[var(--color-warning)]",
+                    ].join(" ")}
+                    title={p.perm}
+                  >
+                    {p.label}: {ok ? "ON" : "OFF"}
+                  </span>
+                );
+              })}
+            </div>
+            {!effectivePerms.has(Permission.SYSTEM_SHELL) &&
+              !effectivePerms.has(Permission.SYSTEM_FILES_READ) &&
+              !effectivePerms.has(Permission.SYSTEM_FILES_WRITE) &&
+              !effectivePerms.has(Permission.SYSTEM_FILES_DELETE) && (
+                <div className="mt-2 text-[11px] text-[var(--color-text-muted)] text-right max-w-[340px]">
+                  You are sandboxed. Ask an admin to grant system permissions if you need VPS-level control.
+                </div>
+              )}
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-[var(--color-border)]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] font-[var(--font-mono)] uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+              Enabled Connectors
+            </div>
+            <a
+              href="/interfaces"
+              className="text-[11px] font-[var(--font-mono)] text-[var(--color-text-secondary)] hover:text-white"
+            >
+              Manage
+            </a>
+          </div>
+
+          {enabledInterfacesForUser.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {enabledInterfacesForUser.map((i) => (
+                <span
+                  key={i.id}
+                  className="px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface-overlay)] text-[11px] font-[var(--font-mono)] text-[var(--color-text-primary)]"
+                  title={`interface:${i.id}`}
+                >
+                  {i.type}
+                  <span className="text-[var(--color-text-muted)]"> · </span>
+                  {i.name}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-[var(--color-text-muted)]">
+              No connectors enabled for this user yet.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Stats Grid */}

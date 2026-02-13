@@ -2,6 +2,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { interfacesModel } from "@/database";
+import type { InterfaceType } from "@/types/database";
+import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission, requirePermission } from "@/lib/permissions";
 
 interface EditInterfacePageProps {
   params: Promise<{ id: string }>;
@@ -10,26 +13,58 @@ interface EditInterfacePageProps {
 async function updateInterfaceAction(formData: FormData) {
   "use server";
 
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login");
+  }
+  requirePermission(user, Permission.INTERFACES_UPDATE, {
+    resource: "interfaces",
+    metadata: { action: "update" },
+  });
+
   const id = Number.parseInt(String(formData.get("id") ?? "0"), 10);
-  const type = String(formData.get("type") ?? "telegram") as "telegram" | "discord";
+  const type = String(formData.get("type") ?? "telegram") as InterfaceType;
   const name = String(formData.get("name") ?? "").trim();
   const botToken = String(formData.get("bot_token") ?? "").trim();
   const clientId = String(formData.get("client_id") ?? "").trim();
   const allowedGuilds = String(formData.get("allowed_guilds") ?? "").trim();
   const allowedUsers = String(formData.get("allowed_users") ?? "").trim();
+  const configJson = String(formData.get("config_json") ?? "").trim();
   const isActive = String(formData.get("is_active") ?? "") === "on";
 
   if (!Number.isFinite(id) || !name) {
     redirect("/interfaces");
   }
 
+  const existingIface = interfacesModel.findById(id);
+  if (!existingIface) {
+    redirect("/interfaces");
+  }
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && existingIface.owner_user_id !== user.id) {
+    redirect("/interfaces");
+  }
+
   const existingConfig = interfacesModel.getDecryptedConfig(id) || {};
+  let extraConfig: Record<string, unknown> = {};
+  if (configJson) {
+    try {
+      extraConfig = JSON.parse(configJson) as Record<string, unknown>;
+      if (!extraConfig || typeof extraConfig !== "object" || Array.isArray(extraConfig)) {
+        throw new Error("config_json must be an object");
+      }
+    } catch {
+      // If config JSON is invalid, keep existing config and continue (avoid breaking edits).
+      extraConfig = {};
+    }
+  }
 
   interfacesModel.update(id, {
     type,
     name,
     config: {
       ...existingConfig,
+      ...extraConfig,
       ...(botToken ? { bot_token: botToken } : {}),
       ...(type === "discord" && clientId ? { client_id: clientId } : {}),
       ...(type === "discord"
@@ -55,14 +90,39 @@ async function updateInterfaceAction(formData: FormData) {
 }
 
 export default async function EditInterfacePage({ params }: EditInterfacePageProps) {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login");
+  }
+  requirePermission(user, Permission.INTERFACES_VIEW, {
+    resource: "interfaces",
+    metadata: { action: "view_edit_page" },
+  });
+
   const { id } = await params;
   const interfaceId = Number.parseInt(id, 10);
   if (!Number.isFinite(interfaceId)) notFound();
 
   const iface = interfacesModel.findById(interfaceId);
   if (!iface) notFound();
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && iface.owner_user_id !== user.id) {
+    notFound();
+  }
 
   const config = interfacesModel.getDecryptedConfig(interfaceId) || {};
+  const configForEditor = { ...(config as Record<string, unknown>) };
+  for (const key of [
+    "bot_token",
+    "webhook_secret",
+    "signing_secret",
+    "app_token",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+  ]) {
+    delete configForEditor[key];
+  }
   const allowedUsers = interfacesModel.getAllowedUsers(interfaceId).join(", ");
   const allowedGuilds = Array.isArray(config.allowed_guilds)
     ? (config.allowed_guilds as string[]).join(", ")
@@ -96,6 +156,10 @@ export default async function EditInterfacePage({ params }: EditInterfacePagePro
             >
               <option value="telegram">Telegram</option>
               <option value="discord">Discord</option>
+              <option value="slack">Slack</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="matrix">Matrix</option>
+              <option value="web">Web (Admin)</option>
             </select>
           </div>
 
@@ -116,6 +180,19 @@ export default async function EditInterfacePage({ params }: EditInterfacePagePro
               name="bot_token"
               className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-white mb-2">Extra Config JSON (optional)</label>
+            <textarea
+              name="config_json"
+              defaultValue={JSON.stringify(configForEditor, null, 2)}
+              rows={6}
+              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-accent font-(--font-mono)"
+            />
+            <p className="text-xs text-text-secondary mt-1">
+              Secrets are not shown here. Use the Bot Token field (and other dedicated fields) to update secrets.
+            </p>
           </div>
 
           <div>

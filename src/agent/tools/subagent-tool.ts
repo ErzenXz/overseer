@@ -14,6 +14,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { createLogger } from "../../lib/logger";
 import { getDefaultModel } from "../providers";
+import { getToolContext } from "../../lib/tool-context";
 import {
   createSubAgent,
   executeTask,
@@ -21,10 +22,23 @@ import {
   resumeTask,
   type SubAgentType,
 } from "../subagents/manager";
-import { allTools } from "./index";
+import { builtinTools } from "./builtin-tools";
+import { getAllMCPTools } from "../mcp/client";
+import { getAllActiveSkillTools } from "../skills/registry";
+import type { Tool } from "ai";
 import { v4 as uuidv4 } from "uuid";
 
 const logger = createLogger("tools:subagent");
+
+function getToolsForSubAgent(): Record<string, Tool> {
+  // Avoid importing ./index here (circular). Build the same combined toolset.
+  const tools: Record<string, Tool> = { ...builtinTools };
+  const mcp = getAllMCPTools();
+  for (const [name, t] of Object.entries(mcp)) tools[name] = t;
+  const skills = getAllActiveSkillTools();
+  for (const [name, t] of Object.entries(skills)) tools[name] = t;
+  return tools;
+}
 
 /**
  * Spawn a generic sub-agent to handle a focused task.
@@ -114,6 +128,10 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
          - Previous attempts that didn't work
          - Constraints or requirements`,
       ),
+    agent_type: z
+      .enum(["generic", "planner", "code", "system", "security", "evaluator"])
+      .optional()
+      .describe("Optional sub-agent type. If omitted, defaults to generic."),
     wait_for_result: z
       .boolean()
       .default(false)
@@ -130,10 +148,12 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
   execute: async ({
     task,
     context,
+    agent_type,
     wait_for_result,
   }: {
     task: string;
     context?: string;
+    agent_type?: SubAgentType;
     wait_for_result: boolean;
   }) => {
     const startTime = Date.now();
@@ -147,9 +167,14 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
     try {
       const fullTask = context ? `${task}\n\nContext: ${context}` : task;
 
+      const ctx = getToolContext();
+      const ownerUserId =
+        ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : 1;
+
       const subAgent = createSubAgent({
         parent_session_id: sessionId,
-        agent_type: "generic" as SubAgentType,
+        agent_type: (agent_type || "generic") as SubAgentType,
+        owner_user_id: Number.isFinite(ownerUserId) ? ownerUserId : 1,
         assigned_task: fullTask,
         metadata: {
           spawned_at: new Date().toISOString(),
@@ -168,7 +193,9 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
           };
         }
 
-        void executeTask(subAgent.sub_agent_id, model, allTools).catch(
+        void executeTask(subAgent.sub_agent_id, model, getToolsForSubAgent(), {
+          toolContext: ctx,
+        }).catch(
           (error) => {
             const errorMessage =
               error instanceof Error ? error.message : String(error);
@@ -200,7 +227,12 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
         };
       }
 
-      const result = await executeTask(subAgent.sub_agent_id, model, allTools);
+      const result = await executeTask(
+        subAgent.sub_agent_id,
+        model,
+        getToolsForSubAgent(),
+        { toolContext: ctx },
+      );
 
       logger.info("Sub-agent completed", {
         success: result.success,
@@ -307,9 +339,11 @@ Use when:
       return { success: false, error: "No LLM provider configured" };
     }
 
-    const resumed = await resumeTask(sub_agent_id, model, allTools, {
+    const ctx = getToolContext();
+    const resumed = await resumeTask(sub_agent_id, model, getToolsForSubAgent(), {
       reason,
       bypassCircuitBreaker: bypass_circuit_breaker,
+      toolContext: ctx,
     });
 
     return {

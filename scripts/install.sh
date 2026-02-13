@@ -58,6 +58,64 @@ ADMIN_PASSWORD=""
 SESSION_SECRET=""
 ENCRYPTION_KEY=""
 
+# Script flags
+SHOW_HELP=0
+DRY_RUN=0
+NON_INTERACTIVE=0
+
+# =========================================
+# CLI / Flags
+# =========================================
+
+usage() {
+    cat <<'EOF'
+Overseer Installation Script
+
+Usage:
+  bash install.sh [--help] [--dry-run] [--yes]
+
+Options:
+  -h, --help       Show this help and exit
+  --dry-run        Print what would happen, without making changes
+  -y, --yes        Non-interactive mode (skip prompts where possible)
+
+Environment:
+  OVERSEER_DIR=/path/to/install
+  OVERSEER_VERSION=main|tag|branch
+  OVERSEER_REPO=https://github.com/.../overseer.git
+  OVERSEER_PORT=3000 (optional; random high port by default)
+
+Notes:
+  This script is designed to be safe on existing VPS installs. It will:
+  - never block SSH (22/tcp)
+  - avoid conflicting ports by default
+EOF
+}
+
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                SHOW_HELP=1
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=1
+                shift
+                ;;
+            -y|--yes)
+                NON_INTERACTIVE=1
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                usage >&2
+                exit 2
+                ;;
+        esac
+    done
+}
+
 # =========================================
 # Utility Functions
 # =========================================
@@ -1476,8 +1534,33 @@ EOF
 # =========================================
 
 main() {
+    parse_args "$@"
+    if [ "$SHOW_HELP" -eq 1 ]; then
+        usage
+        exit 0
+    fi
+
     detect_os
     print_banner
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        print_step "DRY RUN"
+        print_info "No changes will be made."
+        echo ""
+        echo -e "  Detected: ${BOLD}${OS}${NC} $([ -n "$OS_VERSION" ] && echo "v${OS_VERSION}") | pkg: ${PKG_MANAGER}"
+        echo -e "  Target dir: ${BOLD}${OVERSEER_DIR}${NC}"
+        echo -e "  Repo: ${BOLD}${OVERSEER_REPO}${NC}"
+        echo -e "  Version: ${BOLD}${OVERSEER_VERSION}${NC}"
+        echo ""
+        print_info "Planned steps:"
+        print_info "  - Detect existing services (no changes)"
+        print_info "  - Install prerequisites (node/pnpm/build deps)"
+        print_info "  - Clone repository + configure .env + install deps"
+        print_info "  - Initialize DB + build app"
+        print_info "  - Set up services + optional firewall/TLS (if enabled)"
+        echo ""
+        exit 0
+    fi
 
     echo -e "  Detected: ${BOLD}${OS}${NC} $([ -n "$OS_VERSION" ] && echo "v${OS_VERSION}") | pkg: ${PKG_MANAGER}"
     echo ""
@@ -1488,7 +1571,7 @@ main() {
     # Check and install prerequisites
     if ! check_requirements; then
         echo ""
-        if [ -t 0 ]; then
+        if [ "$NON_INTERACTIVE" -eq 0 ] && [ -t 0 ]; then
             read -p "  Install missing dependencies? (Y/n) " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Nn]$ ]]; then

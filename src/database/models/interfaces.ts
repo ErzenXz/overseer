@@ -1,4 +1,4 @@
-import { db, type Interface } from "../db";
+import { db, type Interface, type InterfaceType } from "../db";
 import { encrypt, decrypt } from "../../lib/crypto";
 
 export interface InterfaceConfig {
@@ -11,11 +11,44 @@ export interface InterfaceConfig {
 }
 
 export interface InterfaceInput {
-  type: "telegram" | "discord" | "slack" | "web";
+  type: InterfaceType;
   name: string;
   config: InterfaceConfig;
   is_active?: boolean;
   allowed_users?: string[];
+  owner_user_id?: number;
+}
+
+const SECRET_CONFIG_KEYS = [
+  "bot_token",
+  "webhook_secret",
+  "signing_secret",
+  "app_token",
+  "access_token",
+  "refresh_token",
+  "client_secret",
+] as const;
+
+function encryptKnownSecrets(config: Record<string, unknown>) {
+  for (const key of SECRET_CONFIG_KEYS) {
+    const val = config[key];
+    if (typeof val === "string" && val.length > 0) {
+      config[key] = encrypt(val);
+    }
+  }
+}
+
+function decryptKnownSecrets(config: Record<string, unknown>) {
+  for (const key of SECRET_CONFIG_KEYS) {
+    const val = config[key];
+    if (typeof val === "string" && val.length > 0) {
+      try {
+        config[key] = decrypt(val);
+      } catch {
+        // Already decrypted or not encrypted.
+      }
+    }
+  }
 }
 
 export const interfacesModel = {
@@ -33,11 +66,47 @@ export const interfacesModel = {
       .get(type) as Interface | undefined;
   },
 
+  // Find active interfaces by type (multi-tenant, multi-instance)
+  findActiveByType(type: string): Interface[] {
+    return db
+      .prepare(
+        "SELECT * FROM interfaces WHERE type = ? AND is_active = 1 ORDER BY created_at DESC",
+      )
+      .all(type) as Interface[];
+  },
+
+  // Find interfaces by type owned by a given user
+  findByOwnerAndType(ownerUserId: number, type: string): Interface[] {
+    return db
+      .prepare(
+        "SELECT * FROM interfaces WHERE owner_user_id = ? AND type = ? ORDER BY created_at DESC",
+      )
+      .all(ownerUserId, type) as Interface[];
+  },
+
+  // Find active interfaces by type owned by a given user
+  findActiveByOwnerAndType(ownerUserId: number, type: string): Interface[] {
+    return db
+      .prepare(
+        "SELECT * FROM interfaces WHERE owner_user_id = ? AND type = ? AND is_active = 1 ORDER BY created_at DESC",
+      )
+      .all(ownerUserId, type) as Interface[];
+  },
+
   // Get all interfaces
   findAll(): Interface[] {
     return db
       .prepare("SELECT * FROM interfaces ORDER BY created_at DESC")
       .all() as Interface[];
+  },
+
+  // Get all interfaces for a given owner
+  findAllByOwner(ownerUserId: number): Interface[] {
+    return db
+      .prepare(
+        "SELECT * FROM interfaces WHERE owner_user_id = ? ORDER BY created_at DESC",
+      )
+      .all(ownerUserId) as Interface[];
   },
 
   // Get active interfaces
@@ -47,23 +116,28 @@ export const interfacesModel = {
       .all() as Interface[];
   },
 
+  // Get active interfaces for a given owner
+  findActiveByOwner(ownerUserId: number): Interface[] {
+    return db
+      .prepare(
+        "SELECT * FROM interfaces WHERE owner_user_id = ? AND is_active = 1 ORDER BY created_at DESC",
+      )
+      .all(ownerUserId) as Interface[];
+  },
+
   // Create interface
   create(input: InterfaceInput): Interface {
     // Encrypt sensitive data in config
     const configToStore = { ...input.config };
-    if (configToStore.bot_token) {
-      configToStore.bot_token = encrypt(configToStore.bot_token);
-    }
-    if (configToStore.webhook_secret) {
-      configToStore.webhook_secret = encrypt(configToStore.webhook_secret);
-    }
+    encryptKnownSecrets(configToStore);
 
     const result = db
       .prepare(
-        `INSERT INTO interfaces (type, name, config, is_active, allowed_users)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO interfaces (owner_user_id, type, name, config, is_active, allowed_users)
+         VALUES (?, ?, ?, ?, ?, ?)`
       )
       .run(
+        input.owner_user_id ?? 1,
         input.type,
         input.name,
         JSON.stringify(configToStore),
@@ -82,6 +156,10 @@ export const interfacesModel = {
     const updates: string[] = [];
     const values: (string | number | null)[] = [];
 
+    if (input.owner_user_id !== undefined) {
+      updates.push("owner_user_id = ?");
+      values.push(input.owner_user_id);
+    }
     if (input.type !== undefined) {
       updates.push("type = ?");
       values.push(input.type);
@@ -92,12 +170,7 @@ export const interfacesModel = {
     }
     if (input.config !== undefined) {
       const configToStore = { ...input.config };
-      if (configToStore.bot_token) {
-        configToStore.bot_token = encrypt(configToStore.bot_token as string);
-      }
-      if (configToStore.webhook_secret) {
-        configToStore.webhook_secret = encrypt(configToStore.webhook_secret as string);
-      }
+      encryptKnownSecrets(configToStore);
       updates.push("config = ?");
       values.push(JSON.stringify(configToStore));
     }
@@ -133,20 +206,7 @@ export const interfacesModel = {
     if (!iface) return null;
 
     const config = JSON.parse(iface.config) as InterfaceConfig;
-    if (config.bot_token && typeof config.bot_token === "string") {
-      try {
-        config.bot_token = decrypt(config.bot_token);
-      } catch {
-        // Already decrypted or invalid
-      }
-    }
-    if (config.webhook_secret && typeof config.webhook_secret === "string") {
-      try {
-        config.webhook_secret = decrypt(config.webhook_secret);
-      } catch {
-        // Already decrypted or invalid
-      }
-    }
+    decryptKnownSecrets(config as Record<string, unknown>);
     return config;
   },
 

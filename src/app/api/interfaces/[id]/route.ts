@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { interfacesModel } from "@/database";
 import { getCurrentUser } from "@/lib/auth";
 import { syncInterfaceServiceState } from "@/lib/interface-services";
+import { hasPermission, Permission } from "@/lib/permissions";
 
 export async function GET(
   request: NextRequest,
@@ -17,6 +18,11 @@ export async function GET(
 
   if (!iface) {
     return NextResponse.json({ error: "Interface not found" }, { status: 404 });
+  }
+
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && iface.owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   return NextResponse.json({ interface: iface });
@@ -35,6 +41,14 @@ export async function PATCH(
   const body = await request.json();
 
   const existing = interfacesModel.findById(parseInt(id));
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!existing) {
+    return NextResponse.json({ error: "Interface not found" }, { status: 404 });
+  }
+  if (!canViewAll && existing.owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const iface = interfacesModel.update(parseInt(id), {
     type: body.type,
     name: body.name,
@@ -76,6 +90,15 @@ export async function DELETE(
   }
 
   const { id } = await params;
+  const existing = interfacesModel.findById(parseInt(id));
+  if (!existing) {
+    return NextResponse.json({ error: "Interface not found" }, { status: 404 });
+  }
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && existing.owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const deleted = interfacesModel.delete(parseInt(id));
 
   if (!deleted) {

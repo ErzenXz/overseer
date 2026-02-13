@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import * as subAgentManager from "@/agent/subagents/manager";
+import { getCurrentUser } from "@/lib/auth";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -10,6 +11,11 @@ const allowedTypes = new Set(subAgentManager.getAllSubAgentTypes());
 
 async function spawnSubAgentAction(formData: FormData) {
   "use server";
+
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login");
+  }
 
   const parentSessionId = String(formData.get("parent_session_id") ?? "manual-dashboard").trim();
   const agentType = String(formData.get("agent_type") ?? "generic").trim() as ReturnType<
@@ -29,6 +35,7 @@ async function spawnSubAgentAction(formData: FormData) {
   subAgentManager.createSubAgent({
     parent_session_id: parentSessionId || "manual-dashboard",
     agent_type: agentType,
+    owner_user_id: user.id,
     name: name || undefined,
     assigned_task: task,
   });

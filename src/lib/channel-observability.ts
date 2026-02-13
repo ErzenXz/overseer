@@ -1,6 +1,7 @@
 import { createLogger } from "@/lib/logger";
 
-export type ChannelType = "telegram" | "discord";
+// Keep this extensible: new channels can be added without touching this file.
+export type ChannelType = string;
 
 interface ChannelState {
   consecutiveFailures: number;
@@ -26,18 +27,18 @@ interface ChannelEventInput {
 
 const logger = createLogger("channel-observability");
 
-const channelStates: Record<ChannelType, ChannelState> = {
-  telegram: {
-    consecutiveFailures: 0,
-    totalFailures: 0,
-    totalSuccesses: 0,
-  },
-  discord: {
-    consecutiveFailures: 0,
-    totalFailures: 0,
-    totalSuccesses: 0,
-  },
-};
+const channelStates: Record<string, ChannelState> = {};
+
+function getOrCreateChannelState(channel: string): ChannelState {
+  if (!channelStates[channel]) {
+    channelStates[channel] = {
+      consecutiveFailures: 0,
+      totalFailures: 0,
+      totalSuccesses: 0,
+    };
+  }
+  return channelStates[channel];
+}
 
 function getFailureAlertThreshold(): number {
   const fromEnv = Number.parseInt(
@@ -61,7 +62,7 @@ function getAlertCooldownMs(): number {
 
 export function recordChannelEvent(input: ChannelEventInput): void {
   const nowIso = new Date().toISOString();
-  const state = channelStates[input.channel];
+  const state = getOrCreateChannelState(input.channel);
 
   if (input.ok) {
     state.consecutiveFailures = 0;

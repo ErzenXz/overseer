@@ -13,7 +13,11 @@ import {
 } from "fs";
 import { join, dirname, basename, resolve } from "path";
 import { toolExecutionsModel } from "../../database/index";
+import { usersModel } from "../../database";
 import { createLogger } from "../../lib/logger";
+import { getToolContext } from "../../lib/tool-context";
+import { ensureDir, resolveInSandbox } from "../../lib/userfs";
+import { hasPermission, Permission } from "../../lib/permissions";
 import {
   isWindows,
   normalizePath,
@@ -84,6 +88,43 @@ function resolveCrossPlatformPath(inputPath: string): string {
 
   // Regular path resolution
   return resolve(inputPath);
+}
+
+function resolvePathForTool(inputPath: string): string {
+  const ctx = getToolContext();
+  if (ctx?.sandboxRoot && !ctx.allowSystem) {
+    ensureDir(ctx.sandboxRoot);
+
+    // In sandbox mode we only allow sandbox-relative paths.
+    if (inputPath.startsWith("~")) {
+      throw new Error("Home paths are not allowed in sandbox mode");
+    }
+    if (inputPath.startsWith("/") && !isWindows()) {
+      throw new Error("Absolute paths are not allowed in sandbox mode");
+    }
+    if (/^[A-Za-z]:/.test(inputPath) || inputPath.startsWith("\\\\")) {
+      throw new Error("Absolute paths are not allowed in sandbox mode");
+    }
+
+    return resolveInSandbox(ctx.sandboxRoot, inputPath);
+  }
+
+  return resolveCrossPlatformPath(inputPath);
+}
+
+function requireHostPermission(required: Permission): string | null {
+  const ctx = getToolContext();
+  if (!ctx?.allowSystem) return null;
+  const actorId =
+    ctx.actor?.kind === "web" ? Number.parseInt(ctx.actor.id, 10) : NaN;
+  if (!Number.isFinite(actorId)) {
+    return "Host file access denied: no authenticated web user context.";
+  }
+  const actorUser = usersModel.findById(actorId);
+  if (!hasPermission(actorUser ?? null, required)) {
+    return `Host file access denied: missing permission ${required}.`;
+  }
+  return null;
 }
 
 /**
@@ -159,7 +200,26 @@ LIMITATIONS:
   inputSchema: readFileSchema,
   execute: async ({ path, startLine = 1, endLine, encoding = "utf-8" }: ReadFileInput) => {
     const startTime = Date.now();
-    const resolvedPath = resolveCrossPlatformPath(path);
+    const permErr = requireHostPermission(Permission.SYSTEM_FILES_READ);
+    if (permErr) {
+      return {
+        success: false,
+        content: null,
+        error: permErr,
+        platform: getPlatform(),
+      };
+    }
+    let resolvedPath: string;
+    try {
+      resolvedPath = resolvePathForTool(path);
+    } catch (e) {
+      return {
+        success: false,
+        content: null,
+        error: e instanceof Error ? e.message : "Invalid path",
+        platform: getPlatform(),
+      };
+    }
 
     logger.info("Reading file", { path: resolvedPath, platform: getPlatform() });
 
@@ -305,7 +365,24 @@ LIMITATIONS:
   inputSchema: writeFileSchema,
   execute: async ({ path, content, createDirectories = true, append = false }: WriteFileInput) => {
     const startTime = Date.now();
-    const resolvedPath = resolveCrossPlatformPath(path);
+    const permErr = requireHostPermission(Permission.SYSTEM_FILES_WRITE);
+    if (permErr) {
+      return {
+        success: false,
+        error: permErr,
+        platform: getPlatform(),
+      };
+    }
+    let resolvedPath: string;
+    try {
+      resolvedPath = resolvePathForTool(path);
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Invalid path",
+        platform: getPlatform(),
+      };
+    }
 
     logger.info("Writing file", { path: resolvedPath, append, platform: getPlatform() });
 
@@ -407,7 +484,26 @@ Works on: Windows, Linux, macOS.`,
   inputSchema: listDirectorySchema,
   execute: async ({ path, showHidden = false, recursive = false }: ListDirectoryInput) => {
     const startTime = Date.now();
-    const resolvedPath = resolveCrossPlatformPath(path);
+    const permErr = requireHostPermission(Permission.SYSTEM_FILES_READ);
+    if (permErr) {
+      return {
+        success: false,
+        entries: null,
+        error: permErr,
+        platform: getPlatform(),
+      };
+    }
+    let resolvedPath: string;
+    try {
+      resolvedPath = resolvePathForTool(path);
+    } catch (e) {
+      return {
+        success: false,
+        entries: null,
+        error: e instanceof Error ? e.message : "Invalid path",
+        platform: getPlatform(),
+      };
+    }
 
     logger.info("Listing directory", { path: resolvedPath, platform: getPlatform() });
 

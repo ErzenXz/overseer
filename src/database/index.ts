@@ -5,6 +5,7 @@ export { interfacesModel, type InterfaceConfig, type InterfaceInput } from "./mo
 export { conversationsModel, messagesModel, type ConversationInput, type MessageInput } from "./models/conversations";
 export { toolExecutionsModel, settingsModel, logsModel, type ToolExecutionInput } from "./models/system";
 export { cronJobsModel, cronExecutionsModel, type CronJobInput, type CronExecutionInput } from "./models/cron";
+export { agentTasksModel, type AgentTaskInput } from "./models/tasks";
 
 // Re-export database and types
 export { db, initializeSchema } from "./db";
@@ -20,4 +21,5 @@ export type {
   Log,
   CronJob,
   CronExecution,
+  AgentTask,
 } from "./db";

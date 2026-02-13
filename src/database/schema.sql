@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT DEFAULT 'admin' CHECK (role IN ('admin', 'viewer')),
+    -- NOTE: roles are application-defined (admin/developer/operator/viewer, etc.)
+    -- and may expand over time, so we intentionally do not constrain this with CHECK.
+    role TEXT DEFAULT 'admin',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_login_at DATETIME
@@ -50,13 +52,17 @@ CREATE TABLE IF NOT EXISTS providers (
 -- =====================================================
 CREATE TABLE IF NOT EXISTS interfaces (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL CHECK (type IN ('telegram', 'discord', 'slack', 'web')),
+    owner_user_id INTEGER NOT NULL DEFAULT 1,
+    -- NOTE: Next interface types are intentionally not constrained with a CHECK,
+    -- because integrations are pluggable/extendable (WhatsApp, Slack, etc.).
+    type TEXT NOT NULL,
     name TEXT NOT NULL,                    -- User-friendly name
     config TEXT NOT NULL,                  -- JSON config (bot token, etc.)
     is_active BOOLEAN DEFAULT 1,
     allowed_users TEXT,                    -- JSON array of allowed user IDs
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- =====================================================
@@ -64,6 +70,7 @@ CREATE TABLE IF NOT EXISTS interfaces (
 -- =====================================================
 CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL DEFAULT 1,
     interface_id INTEGER,
     interface_type TEXT NOT NULL,          -- 'telegram', 'discord', etc.
     external_chat_id TEXT NOT NULL,        -- Telegram chat ID, Discord channel, etc.
@@ -76,6 +83,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     total_tokens INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (interface_id) REFERENCES interfaces(id) ON DELETE SET NULL
 );
 
@@ -137,11 +145,13 @@ CREATE TABLE IF NOT EXISTS settings (
 -- =====================================================
 CREATE TABLE IF NOT EXISTS logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER,
     level TEXT NOT NULL CHECK (level IN ('debug', 'info', 'warn', 'error')),
     category TEXT NOT NULL,                -- 'agent', 'telegram', 'system', etc.
     message TEXT NOT NULL,
     metadata TEXT,                         -- JSON metadata
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level, created_at);

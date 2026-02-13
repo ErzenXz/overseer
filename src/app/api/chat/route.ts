@@ -9,6 +9,9 @@ import { resumableStreams } from "@/lib/resumable-streams";
 import { getRateLimiter } from "@/lib/rate-limiter";
 import { estimateTokens, SessionManager } from "@/lib/session-manager";
 import { extractMemoriesFromConversation } from "@/agent/super-memory";
+import { withToolContext } from "@/lib/tool-context";
+import { ensureDir, getUserSandboxRoot } from "@/lib/userfs";
+import { hasAnyPermission, hasPermission, Permission } from "@/lib/permissions";
 
 const logger = createLogger("chat-api");
 
@@ -52,12 +55,17 @@ export async function POST(request: NextRequest) {
           { status: 404 },
         );
       }
+      const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+      if (!canViewAll && conversation.owner_user_id !== user.id) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     } else {
-      // Create new conversation for web chat
+      // Create new conversation for web chat (per web user)
       conversation = conversationsModel.findOrCreate({
+        owner_user_id: user.id,
         interface_type: "web",
-        external_chat_id: `web-${user.username}-${Date.now()}`,
-        external_user_id: user.username,
+        external_chat_id: `web-${user.id}-${Date.now()}`,
+        external_user_id: String(user.id),
         external_username: user.username,
         title: message.slice(0, 100),
       });
@@ -108,7 +116,7 @@ export async function POST(request: NextRequest) {
     const session = SessionManager.getOrCreateSession({
       conversation_id: conversationId,
       interface_type: "web",
-      external_user_id: user.username,
+      external_user_id: String(user.id),
       external_chat_id: `web-${user.username}-${conversationId}`,
       metadata: {
         source: "web-chat",
@@ -158,37 +166,61 @@ export async function POST(request: NextRequest) {
           const toolCalls: { name: string; args: unknown; result?: unknown }[] =
             [];
 
-          const result = await runAgentStream(message, {
-            conversationId,
-            model: model || undefined,
-            planMode: Boolean(planMode),
-            steering,
-            onToolCall: (toolName, args) => {
-              SessionManager.recordToolCall(session.id);
-              sendEvent({
-                type: "tool_call",
-                toolName,
-                args,
-              });
-              toolCalls.push({ name: toolName, args });
-            },
-            onToolResult: (toolName, result) => {
-              sendEvent({
-                type: "tool_result",
-                toolName,
-                result:
-                  typeof result === "string" ? result.slice(0, 500) : result,
-              });
-
-              // Update tool call with result
-              const tc = toolCalls.find(
-                (t) => t.name === toolName && t.result === undefined,
-              );
-              if (tc) {
-                tc.result = result;
-              }
-            },
+          const sandboxRoot = getUserSandboxRoot({
+            kind: "web",
+            id: String(user.id),
           });
+          ensureDir(sandboxRoot);
+
+          const allowSystem = hasAnyPermission(user, [
+            Permission.SYSTEM_SHELL,
+            Permission.SYSTEM_FILES_READ,
+            Permission.SYSTEM_FILES_WRITE,
+            Permission.SYSTEM_FILES_DELETE,
+          ]);
+
+          const result = await withToolContext(
+            {
+              sandboxRoot,
+              allowSystem,
+              actor: { kind: "web", id: String(user.id) },
+            },
+            () =>
+              runAgentStream(message, {
+                conversationId,
+                model: model || undefined,
+                planMode: planMode === undefined ? true : Boolean(planMode),
+                steering,
+                sandboxRoot,
+                allowSystem,
+                actor: { kind: "web", id: String(user.id) },
+                onToolCall: (toolName, args) => {
+                  SessionManager.recordToolCall(session.id);
+                  sendEvent({
+                    type: "tool_call",
+                    toolName,
+                    args,
+                  });
+                  toolCalls.push({ name: toolName, args });
+                },
+                onToolResult: (toolName, result) => {
+                  sendEvent({
+                    type: "tool_result",
+                    toolName,
+                    result:
+                      typeof result === "string" ? result.slice(0, 500) : result,
+                  });
+
+                  // Update tool call with result
+                  const tc = toolCalls.find(
+                    (t) => t.name === toolName && t.result === undefined,
+                  );
+                  if (tc) {
+                    tc.result = result;
+                  }
+                },
+              }),
+          );
 
           // Stream text
           for await (const chunk of result.textStream) {
@@ -257,7 +289,7 @@ export async function POST(request: NextRequest) {
 
           if (usage) {
             rateLimiter.recordRequest({
-              userId: user.username,
+              userId: String(user.id),
               interfaceType: "web",
               conversationId,
               inputTokens: usage.inputTokens,
@@ -275,6 +307,7 @@ export async function POST(request: NextRequest) {
 
           // Fire-and-forget: extract memories from this exchange
           extractMemoriesFromConversation(
+            user.id,
             `user: ${message}\n\nassistant: ${finalText}`,
           ).catch((err) =>
             logger.warn("Memory extraction failed", {

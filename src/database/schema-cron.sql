@@ -4,6 +4,7 @@
 -- Cron jobs table
 CREATE TABLE IF NOT EXISTS cron_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_user_id INTEGER NOT NULL DEFAULT 1,
   name TEXT NOT NULL,
   description TEXT,
   cron_expression TEXT NOT NULL,         -- standard 5-field: "0 9 * * *"
@@ -19,13 +20,15 @@ CREATE TABLE IF NOT EXISTS cron_jobs (
   last_status TEXT,                      -- 'success', 'failed', 'running'
   metadata TEXT,                         -- JSON for extra config
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Cron executions table (history of each run)
 CREATE TABLE IF NOT EXISTS cron_executions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   cron_job_id INTEGER NOT NULL,
+  owner_user_id INTEGER NOT NULL DEFAULT 1,
   conversation_id INTEGER,
   status TEXT NOT NULL DEFAULT 'running', -- 'running', 'success', 'failed'
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -39,6 +42,7 @@ CREATE TABLE IF NOT EXISTS cron_executions (
   tool_calls_count INTEGER DEFAULT 0,
   metadata TEXT,
   FOREIGN KEY (cron_job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE,
+  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id)
 );
 

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PROVIDER_INFO, type ProviderName } from "@/agent/provider-info";
+import type { InterfaceType } from "@/types/database";
 
 type StepId = "welcome" | "provider" | "interface" | "soul" | "done";
 
@@ -54,7 +55,7 @@ export function OnboardingWizard() {
   const [providerSaving, setProviderSaving] = useState(false);
 
   const [interfaceForm, setInterfaceForm] = useState({
-    type: "telegram" as "telegram" | "discord",
+    type: "telegram" as InterfaceType,
     name: "My Telegram Bot",
     bot_token: "",
     allowed_users: "",
@@ -329,7 +330,7 @@ export function OnboardingWizard() {
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Platform</label>
                 <select
                   value={interfaceForm.type}
-                  onChange={(e) => setInterfaceForm((prev) => ({ ...prev, type: e.target.value as "telegram" | "discord" }))}
+                  onChange={(e) => setInterfaceForm((prev) => ({ ...prev, type: e.target.value as InterfaceType }))}
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
                   <option value="telegram">Telegram</option>

@@ -10,12 +10,14 @@ import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { toolExecutionsModel } from "../../database/index";
 import { createLogger } from "../../lib/logger";
+import { classifyCommandSafety } from "../../lib/command-safety";
 
 const execAsync = promisify(exec);
 const logger = createLogger("tools:shell");
 
 const TIMEOUT_MS = parseInt(process.env.SHELL_TIMEOUT_MS || "60000", 10); // 60s default
 const MAX_OUTPUT_LENGTH = 100000; // 100KB max output
+const ALLOW_UNSAFE = (process.env.ALLOW_UNSAFE_NOCONFIRM_SHELL || "").toLowerCase() === "true";
 
 /**
  * Execute a command, optionally piping stdinInput via spawn.
@@ -135,6 +137,62 @@ INTERACTIVE COMMANDS:
   execute: async ({ command, workingDirectory, timeout, explanation, stdin }: { command: string; workingDirectory?: string; timeout?: number; explanation?: string; stdin?: string }) => {
     const startTime = Date.now();
     const cwd = workingDirectory || process.cwd();
+
+    const safety = classifyCommandSafety(command, process.platform);
+    if (safety.risk === "deny") {
+      const executionTimeMs = Date.now() - startTime;
+      const error =
+        `⛔ COMMAND BLOCKED: "${command}"\n\n` +
+        `This command matches a high-risk pattern and is blocked.\n` +
+        (safety.reasons.length > 0
+          ? `\nReasons:\n- ${safety.reasons.join("\n- ")}\n`
+          : "");
+
+      toolExecutionsModel.create({
+        tool_name: "executeShellCommand",
+        input: { command, workingDirectory, explanation },
+        output: error,
+        success: false,
+        error: "Command denied by safety policy",
+        execution_time_ms: executionTimeMs,
+      });
+
+      return {
+        success: false,
+        output: "",
+        error,
+        executionTimeMs,
+        command,
+      };
+    }
+
+    if (safety.risk === "confirm" && !ALLOW_UNSAFE) {
+      const executionTimeMs = Date.now() - startTime;
+      const error =
+        `⚠️ CONFIRMATION REQUIRED: "${command}"\n\n` +
+        `This no-confirmation shell tool is locked down by default.\n` +
+        `Use executeShellCommand (safe) first, or set ALLOW_UNSAFE_NOCONFIRM_SHELL=true if you really want this tool to run destructive commands.\n` +
+        (safety.reasons.length > 0
+          ? `\nWhy it was flagged:\n- ${safety.reasons.join("\n- ")}\n`
+          : "");
+
+      toolExecutionsModel.create({
+        tool_name: "executeShellCommand",
+        input: { command, workingDirectory, explanation },
+        output: error,
+        success: false,
+        error: "Unsafe no-confirmation command blocked",
+        execution_time_ms: executionTimeMs,
+      });
+
+      return {
+        success: false,
+        output: "",
+        error,
+        executionTimeMs,
+        command,
+      };
+    }
 
     logger.info("Executing shell command", { 
       command, 
@@ -265,6 +323,36 @@ INTERACTIVE COMMANDS:
     for (const cmd of commands) {
       const cmdStartTime = Date.now();
       const cwd = cmd.workingDirectory || workingDirectory || process.cwd();
+
+      const safety = classifyCommandSafety(cmd.command, process.platform);
+      if (safety.risk === "deny" || (safety.risk === "confirm" && !ALLOW_UNSAFE)) {
+        const cmdExecutionTime = Date.now() - cmdStartTime;
+        const error =
+          safety.risk === "deny"
+            ? `Command denied by safety policy`
+            : `Unsafe command blocked in no-confirmation mode (set ALLOW_UNSAFE_NOCONFIRM_SHELL=true to override)`;
+
+        results.push({
+          command: cmd.command,
+          success: false,
+          output: "",
+          error:
+            `${error}\n` +
+            (safety.reasons.length > 0
+              ? `Reasons:\n- ${safety.reasons.join("\n- ")}`
+              : ""),
+          executionTimeMs: cmdExecutionTime,
+        });
+
+        logger.warn("Blocked command in executeMultipleCommands", {
+          command: cmd.command,
+          risk: safety.risk,
+          reasons: safety.reasons,
+        });
+
+        if (stopOnError) break;
+        continue;
+      }
 
       try {
         const { stdout, stderr } = await executeCommandNoConfirm(

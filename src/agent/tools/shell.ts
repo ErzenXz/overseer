@@ -2,8 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
-import { toolExecutionsModel } from "../../database/index";
+import { settingsModel, toolExecutionsModel } from "../../database/index";
+import { usersModel } from "../../database";
 import { createLogger } from "../../lib/logger";
+import { classifyCommandSafety } from "../../lib/command-safety";
+import { getToolContext } from "../../lib/tool-context";
+import { ensureDir } from "../../lib/userfs";
+import { hasPermission, Permission } from "../../lib/permissions";
 import {
   isWindows,
   isUnix,
@@ -16,65 +21,6 @@ import {
 
 const execAsync = promisify(exec);
 const logger = createLogger("tools:shell");
-
-// Dangerous commands that require confirmation - platform specific
-const UNIX_DANGEROUS_PATTERNS = [
-  /\brm\s+(-[rf]+\s+)?\//, // rm with absolute path
-  /\brm\s+-rf?\s/,        // rm -r or rm -rf
-  /\brmdir\b/,
-  /\bmkfs\b/,
-  /\bdd\s+if=/,
-  /\b>\s*\/dev\//,
-  /\bchmod\s+777/,
-  /\bchown\s+/,
-  /\bsudo\s+rm/,
-  /\bkill\s+-9/,
-  /\bkillall\b/,
-  /\bshutdown\b/,
-  /\breboot\b/,
-  /\bsystemctl\s+(stop|disable|mask)/,
-  />\s*\//,              // redirect to root
-];
-
-const WINDOWS_DANGEROUS_PATTERNS = [
-  /Remove-Item\s+.*-Recurse/i,
-  /Remove-Item\s+.*-Force/i,
-  /del\s+\/[sS]/i,
-  /rd\s+\/[sS]/i,
-  /rmdir\s+\/[sS]/i,
-  /format\s+[a-z]:/i,
-  /diskpart/i,
-  /Stop-Process\s+.*-Force/i,
-  /Stop-Service/i,
-  /Disable-Service/i,
-  /shutdown/i,
-  /Restart-Computer/i,
-  /Stop-Computer/i,
-  /Remove-Item\s+C:\\/i,
-  /Remove-Item\s+"?C:\\/i,
-  /reg\s+delete/i,
-];
-
-const SQL_DANGEROUS_PATTERNS = [
-  /\bdrop\s+database/i,
-  /\bdrop\s+table/i,
-  /\btruncate\s+table/i,
-  /\bdelete\s+from/i,
-];
-
-function isDangerousCommand(command: string): boolean {
-  // Check SQL patterns (platform-independent)
-  if (SQL_DANGEROUS_PATTERNS.some((pattern) => pattern.test(command))) {
-    return true;
-  }
-
-  // Check platform-specific patterns
-  if (isWindows()) {
-    return WINDOWS_DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
-  }
-
-  return UNIX_DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
-}
 
 const TIMEOUT_MS = parseInt(process.env.SHELL_TIMEOUT_MS || "30000", 10);
 const MAX_OUTPUT_LENGTH = 50000; // 50KB max output
@@ -191,6 +137,26 @@ async function executeCommand(
   });
 }
 
+function hasDisallowedAbsolutePaths(command: string, sandboxRoot: string): boolean {
+  const root = normalizePath(sandboxRoot);
+  // crude scan for absolute unix paths; allow /dev/* only.
+  const unixMatches = command.match(/\/[A-Za-z0-9._\/-]+/g) || [];
+  for (const m of unixMatches) {
+    if (m.startsWith("/dev/")) continue;
+    if (m.startsWith(root)) continue;
+    return true;
+  }
+
+  // windows drive paths
+  const winMatches = command.match(/[A-Za-z]:\\[^\\s"']+/g) || [];
+  for (const m of winMatches) {
+    if (m.startsWith(root)) continue;
+    return true;
+  }
+
+  return false;
+}
+
 export const executeShellCommand = tool<any, any>({
   description: `Execute a shell command on the system and return its output.
 Platform: ${getPlatform().toUpperCase()} | Shell: ${isWindows() ? "PowerShell" : "Bash/Zsh"}
@@ -243,15 +209,70 @@ INTERACTIVE COMMANDS:
   }),
   execute: async ({ command, workingDirectory, timeout, autoMap = false, stdin }: { command: string; workingDirectory?: string; timeout?: number; autoMap?: boolean; stdin?: string }) => {
     const startTime = Date.now();
+    const requireConfirmation =
+      settingsModel.getWithDefault("tools.require_confirmation", "true") ===
+      "true";
+    const configuredTimeoutMsRaw = settingsModel.getWithDefault(
+      "tools.shell_timeout_ms",
+      String(TIMEOUT_MS),
+    );
+    const configuredTimeoutMs = Number.parseInt(configuredTimeoutMsRaw, 10);
+    const effectiveTimeoutMs = Number.isFinite(configuredTimeoutMs)
+      ? configuredTimeoutMs
+      : TIMEOUT_MS;
+    const ctx = getToolContext();
+    if (ctx?.sandboxRoot && !ctx.allowSystem) {
+      ensureDir(ctx.sandboxRoot);
+    }
+    if (ctx?.allowSystem) {
+      const actorId =
+        ctx.actor?.kind === "web" ? Number.parseInt(ctx.actor.id, 10) : NaN;
+      if (!Number.isFinite(actorId)) {
+        return {
+          success: false,
+          output: "",
+          error: "Host shell access denied: no authenticated web user context.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
+      const actorUser = usersModel.findById(actorId);
+      if (!hasPermission(actorUser ?? null, Permission.SYSTEM_SHELL)) {
+        return {
+          success: false,
+          output: "",
+          error: "Host shell access denied: missing permission system:shell.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
+    }
+
     const homeDir = isWindows()
       ? process.env.USERPROFILE || `${process.env.HOMEDRIVE ?? ""}${process.env.HOMEPATH ?? ""}`
       : process.env.HOME;
-    const cwd = workingDirectory || homeDir || process.cwd();
+    const defaultCwd = workingDirectory || homeDir || process.cwd();
+    const cwd =
+      ctx?.sandboxRoot && !ctx.allowSystem ? ctx.sandboxRoot : defaultCwd;
 
     // Optionally map command between platforms
     let finalCommand = command;
     if (autoMap) {
       finalCommand = mapCommand(command);
+    }
+
+    if (ctx?.sandboxRoot && !ctx.allowSystem) {
+      // Disallow absolute paths outside the sandbox for basic containment.
+      if (hasDisallowedAbsolutePaths(finalCommand, ctx.sandboxRoot)) {
+        return {
+          success: false,
+          output: "",
+          error:
+            "Sandbox mode: absolute paths outside your sandbox are blocked. Use relative paths inside your sandbox root.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
     }
 
     logger.info("Executing shell command", { 
@@ -262,12 +283,46 @@ INTERACTIVE COMMANDS:
       hasStdin: !!stdin,
     });
 
-    // Check for dangerous commands
-    if (isDangerousCommand(finalCommand)) {
+    const safety = classifyCommandSafety(finalCommand, getPlatform());
+    if (safety.risk === "deny") {
       const result = {
         success: false,
         output: "",
-        error: `⚠️ DANGEROUS COMMAND DETECTED: "${finalCommand}"\n\nThis command could cause data loss or system damage. Please confirm you want to run this command by explicitly asking me to execute it with confirmation.`,
+        error:
+          `⛔ COMMAND BLOCKED: "${finalCommand}"\n\n` +
+          `This command matches a high-risk pattern and is blocked to prevent system damage.\n` +
+          (safety.reasons.length > 0
+            ? `\nReasons:\n- ${safety.reasons.join("\n- ")}\n`
+            : ""),
+        requiresConfirmation: false,
+        denied: true,
+        executionTimeMs: Date.now() - startTime,
+        platform: getPlatform(),
+      };
+
+      toolExecutionsModel.create({
+        tool_name: "executeShellCommand",
+        input: { command: finalCommand, workingDirectory },
+        output: result.error,
+        success: false,
+        error: "Command denied by safety policy",
+        execution_time_ms: result.executionTimeMs,
+      });
+
+      return result;
+    }
+
+    if (safety.risk === "confirm" && requireConfirmation) {
+      const result = {
+        success: false,
+        output: "",
+        error:
+          `⚠️ CONFIRMATION REQUIRED: "${finalCommand}"\n\n` +
+          `This command may be destructive or disruptive.\n` +
+          (safety.reasons.length > 0
+            ? `\nWhy it was flagged:\n- ${safety.reasons.join("\n- ")}\n`
+            : "") +
+          `\nIf you want to proceed, explicitly confirm and I will run it using executeShellCommandConfirmed.`,
         requiresConfirmation: true,
         executionTimeMs: Date.now() - startTime,
         platform: getPlatform(),
@@ -278,7 +333,7 @@ INTERACTIVE COMMANDS:
         input: { command: finalCommand, workingDirectory },
         output: result.error,
         success: false,
-        error: "Dangerous command blocked",
+        error: "Confirmation required",
         execution_time_ms: result.executionTimeMs,
       });
 
@@ -289,7 +344,7 @@ INTERACTIVE COMMANDS:
       const { stdout, stderr } = await executeCommand(
         finalCommand,
         cwd,
-        timeout || TIMEOUT_MS,
+        timeout || effectiveTimeoutMs,
         stdin
       );
 
@@ -394,15 +449,66 @@ NEVER use this tool preemptively — always attempt the command with executeShel
   }),
   execute: async ({ command, workingDirectory, userConfirmation, autoMap = false }: { command: string; workingDirectory?: string; userConfirmation: string; autoMap?: boolean }) => {
     const startTime = Date.now();
+    const configuredTimeoutMsRaw = settingsModel.getWithDefault(
+      "tools.shell_timeout_ms",
+      String(TIMEOUT_MS),
+    );
+    const configuredTimeoutMs = Number.parseInt(configuredTimeoutMsRaw, 10);
+    const effectiveTimeoutMs = Number.isFinite(configuredTimeoutMs)
+      ? configuredTimeoutMs
+      : TIMEOUT_MS;
+    const ctx = getToolContext();
+    if (ctx?.sandboxRoot && !ctx.allowSystem) {
+      ensureDir(ctx.sandboxRoot);
+    }
+    if (ctx?.allowSystem) {
+      const actorId =
+        ctx.actor?.kind === "web" ? Number.parseInt(ctx.actor.id, 10) : NaN;
+      if (!Number.isFinite(actorId)) {
+        return {
+          success: false,
+          output: "",
+          error: "Host shell access denied: no authenticated web user context.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
+      const actorUser = usersModel.findById(actorId);
+      if (!hasPermission(actorUser ?? null, Permission.SYSTEM_SHELL)) {
+        return {
+          success: false,
+          output: "",
+          error: "Host shell access denied: missing permission system:shell.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
+    }
+
     const homeDir = isWindows()
       ? process.env.USERPROFILE || `${process.env.HOMEDRIVE ?? ""}${process.env.HOMEPATH ?? ""}`
       : process.env.HOME;
-    const cwd = workingDirectory || homeDir || process.cwd();
+    const defaultCwd = workingDirectory || homeDir || process.cwd();
+    const cwd =
+      ctx?.sandboxRoot && !ctx.allowSystem ? ctx.sandboxRoot : defaultCwd;
 
     // Optionally map command between platforms
     let finalCommand = command;
     if (autoMap) {
       finalCommand = mapCommand(command);
+    }
+
+    if (ctx?.sandboxRoot && !ctx.allowSystem) {
+      if (hasDisallowedAbsolutePaths(finalCommand, ctx.sandboxRoot)) {
+        return {
+          success: false,
+          output: "",
+          error:
+            "Sandbox mode: absolute paths outside your sandbox are blocked. Use relative paths inside your sandbox root.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
     }
 
     logger.warn("Executing confirmed dangerous command", {
@@ -412,11 +518,39 @@ NEVER use this tool preemptively — always attempt the command with executeShel
       platform: getPlatform(),
     });
 
+    const safety = classifyCommandSafety(finalCommand, getPlatform());
+    if (safety.risk === "deny") {
+      const executionTimeMs = Date.now() - startTime;
+      const error =
+        `⛔ COMMAND BLOCKED: "${finalCommand}"\n\n` +
+        `This command is blocked by the safety policy and cannot be executed.\n` +
+        (safety.reasons.length > 0
+          ? `\nReasons:\n- ${safety.reasons.join("\n- ")}\n`
+          : "");
+
+      toolExecutionsModel.create({
+        tool_name: "executeShellCommandConfirmed",
+        input: { command: finalCommand, workingDirectory, userConfirmation },
+        output: error,
+        success: false,
+        error: "Command denied by safety policy",
+        execution_time_ms: executionTimeMs,
+      });
+
+      return {
+        success: false,
+        output: "",
+        error,
+        executionTimeMs,
+        platform: getPlatform(),
+      };
+    }
+
     try {
       const { stdout, stderr } = await executeCommand(
         finalCommand,
         cwd,
-        TIMEOUT_MS * 2 // Double timeout for dangerous commands
+        effectiveTimeoutMs * 2 // Double timeout for dangerous commands
       );
 
       let output = stdout || "";

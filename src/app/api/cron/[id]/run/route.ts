@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cronJobsModel } from "@/database";
 import { triggerJob } from "@/lib/cron-engine";
 import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission, requirePermission } from "@/lib/permissions";
 
 /**
  * POST /api/cron/[id]/run — Manually trigger a cron job
@@ -15,12 +16,22 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  requirePermission(user, Permission.AGENT_EXECUTE, {
+    resource: "cron_jobs",
+    metadata: { action: "run_now" },
+  });
+
   const { id } = await params;
   const jobId = parseInt(id);
   const job = cronJobsModel.findById(jobId);
 
   if (!job) {
     return NextResponse.json({ error: "Cron job not found" }, { status: 404 });
+  }
+
+  const canViewAll = hasPermission(user, Permission.TENANT_VIEW_ALL);
+  if (!canViewAll && job.owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Trigger execution in background — don't await

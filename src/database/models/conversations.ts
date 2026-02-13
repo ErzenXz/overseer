@@ -1,6 +1,7 @@
 import { db, type Conversation, type Message } from "../db";
 
 export interface ConversationInput {
+  owner_user_id?: number;
   interface_id?: number;
   interface_type: string;
   external_chat_id: string;
@@ -32,12 +33,13 @@ export const conversationsModel = {
 
   // Find or create conversation by external IDs
   findOrCreate(input: ConversationInput): Conversation {
+    const ownerUserId = input.owner_user_id ?? 1;
     const existing = db
       .prepare(
         `SELECT * FROM conversations 
-         WHERE interface_type = ? AND external_chat_id = ? AND external_user_id = ?`
+         WHERE owner_user_id = ? AND interface_type = ? AND external_chat_id = ? AND external_user_id = ?`
       )
-      .get(input.interface_type, input.external_chat_id, input.external_user_id) as
+      .get(ownerUserId, input.interface_type, input.external_chat_id, input.external_user_id) as
       | Conversation
       | undefined;
 
@@ -53,10 +55,11 @@ export const conversationsModel = {
 
     const result = db
       .prepare(
-        `INSERT INTO conversations (interface_id, interface_type, external_chat_id, external_user_id, external_username, title, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO conversations (owner_user_id, interface_id, interface_type, external_chat_id, external_user_id, external_username, title, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
+        ownerUserId,
         input.interface_id || null,
         input.interface_type,
         input.external_chat_id,
@@ -70,7 +73,14 @@ export const conversationsModel = {
   },
 
   // Get all conversations
-  findAll(limit = 100, offset = 0): Conversation[] {
+  findAll(limit = 100, offset = 0, ownerUserId?: number): Conversation[] {
+    if (typeof ownerUserId === "number") {
+      return db
+        .prepare(
+          "SELECT * FROM conversations WHERE owner_user_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+        )
+        .all(ownerUserId, limit, offset) as Conversation[];
+    }
     return db
       .prepare(
         "SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ? OFFSET ?"
@@ -79,7 +89,14 @@ export const conversationsModel = {
   },
 
   // Get conversations by interface type
-  findByInterfaceType(type: string, limit = 100): Conversation[] {
+  findByInterfaceType(type: string, limit = 100, ownerUserId?: number): Conversation[] {
+    if (typeof ownerUserId === "number") {
+      return db
+        .prepare(
+          "SELECT * FROM conversations WHERE owner_user_id = ? AND interface_type = ? ORDER BY updated_at DESC LIMIT ?"
+        )
+        .all(ownerUserId, type, limit) as Conversation[];
+    }
     return db
       .prepare(
         "SELECT * FROM conversations WHERE interface_type = ? ORDER BY updated_at DESC LIMIT ?"
@@ -138,7 +155,13 @@ export const conversationsModel = {
   },
 
   // Get conversation count
-  count(): number {
+  count(ownerUserId?: number): number {
+    if (typeof ownerUserId === "number") {
+      const result = db
+        .prepare("SELECT COUNT(*) as count FROM conversations WHERE owner_user_id = ?")
+        .get(ownerUserId) as { count: number };
+      return result.count;
+    }
     const result = db
       .prepare("SELECT COUNT(*) as count FROM conversations")
       .get() as { count: number };

@@ -18,6 +18,8 @@ const logger = createLogger("super-memory");
 
 export interface MemoryEntry {
   id: number;
+  owner_user_id: number;
+  scope: "private" | "shared" | string;
   key: string;
   value: string;
   category: "preference" | "fact" | "project" | "context" | "custom";
@@ -36,18 +38,28 @@ export interface MemorySearchResult {
  * Create a new memory entry
  */
 export function createMemory(
+  ownerUserId: number,
   key: string,
   value: string,
   category: MemoryEntry["category"] = "custom",
   importance: number = 5,
   source?: string,
+  scope: MemoryEntry["scope"] = "private",
 ): MemoryEntry {
   const stmt = db.prepare(`
-    INSERT INTO memory (key, value, category, importance, source)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO memory (owner_user_id, scope, key, value, category, importance, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const result = stmt.run(key, value, category, importance, source || null);
+  const result = stmt.run(
+    ownerUserId,
+    scope,
+    key,
+    value,
+    category,
+    importance,
+    source || null,
+  );
 
   logger.info("Memory created", { key, category, importance });
 
@@ -66,31 +78,50 @@ export function getMemoryById(id: number): MemoryEntry | undefined {
  * Get all memories, optionally filtered by category
  */
 export function getAllMemories(category?: MemoryEntry["category"]): MemoryEntry[] {
+  throw new Error(
+    "getAllMemories() now requires an ownerUserId; use getAllMemoriesForUser().",
+  );
+}
+
+export function getAllMemoriesForUser(
+  ownerUserId: number,
+  category?: MemoryEntry["category"],
+): MemoryEntry[] {
   if (category) {
     const stmt = db.prepare(
-      "SELECT * FROM memory WHERE category = ? ORDER BY importance DESC, updated_at DESC"
+      "SELECT * FROM memory WHERE (owner_user_id = ? OR scope = 'shared') AND category = ? ORDER BY importance DESC, updated_at DESC"
     );
-    return stmt.all(category) as MemoryEntry[];
+    return stmt.all(ownerUserId, category) as MemoryEntry[];
   }
 
   const stmt = db.prepare(
-    "SELECT * FROM memory ORDER BY importance DESC, updated_at DESC"
+    "SELECT * FROM memory WHERE (owner_user_id = ? OR scope = 'shared') ORDER BY importance DESC, updated_at DESC"
   );
-  return stmt.all() as MemoryEntry[];
+  return stmt.all(ownerUserId) as MemoryEntry[];
 }
 
 /**
  * Search memories by keyword
  */
 export function searchMemories(query: string): MemorySearchResult[] {
+  throw new Error(
+    "searchMemories() now requires an ownerUserId; use searchMemoriesForUser().",
+  );
+}
+
+export function searchMemoriesForUser(
+  ownerUserId: number,
+  query: string,
+): MemorySearchResult[] {
   const stmt = db.prepare(`
     SELECT * FROM memory 
-    WHERE key LIKE ? OR value LIKE ?
+    WHERE (owner_user_id = ? OR scope = 'shared')
+      AND (key LIKE ? OR value LIKE ?)
     ORDER BY importance DESC
   `);
 
   const searchTerm = `%${query}%`;
-  const results = stmt.all(searchTerm, searchTerm) as MemoryEntry[];
+  const results = stmt.all(ownerUserId, searchTerm, searchTerm) as MemoryEntry[];
 
   return results.map((entry) => ({
     entry,
@@ -126,6 +157,7 @@ export function updateMemory(
     value?: string;
     category?: MemoryEntry["category"];
     importance?: number;
+    scope?: MemoryEntry["scope"];
   },
 ): MemoryEntry | undefined {
   const fields: string[] = [];
@@ -146,6 +178,10 @@ export function updateMemory(
   if (updates.importance !== undefined) {
     fields.push("importance = ?");
     values.push(updates.importance);
+  }
+  if (updates.scope !== undefined) {
+    fields.push("scope = ?");
+    values.push(updates.scope);
   }
 
   if (fields.length === 0) {
@@ -173,7 +209,16 @@ export function deleteMemory(id: number): boolean {
  * Get memories formatted for the system prompt
  */
 export function getMemoriesForPrompt(limit: number = 20): string {
-  const memories = getAllMemories().slice(0, limit);
+  throw new Error(
+    "getMemoriesForPrompt() now requires an ownerUserId; use getMemoriesForPromptForUser().",
+  );
+}
+
+export function getMemoriesForPromptForUser(
+  ownerUserId: number,
+  limit: number = 20,
+): string {
+  const memories = getAllMemoriesForUser(ownerUserId).slice(0, limit);
 
   if (memories.length === 0) {
     return "";
@@ -212,6 +257,7 @@ ${sections.join("\n")}
  * This is called after conversations to learn new things
  */
 export async function extractMemoriesFromConversation(
+  ownerUserId: number,
   conversationText: string,
   model?: LanguageModel,
 ): Promise<MemoryEntry[]> {
@@ -260,7 +306,7 @@ ${conversationText.slice(-4000)}`;
     const created: MemoryEntry[] = [];
 
     for (const item of items) {
-      const existing = searchMemories(item.key);
+      const existing = searchMemoriesForUser(ownerUserId, item.key);
       if (existing.length > 0 && existing[0].entry.key.toLowerCase() === item.key.toLowerCase()) {
         updateMemory(existing[0].entry.id, {
           value: item.value,
@@ -268,11 +314,13 @@ ${conversationText.slice(-4000)}`;
         });
       } else {
         const created_entry = createMemory(
+          ownerUserId,
           item.key,
           item.value,
           item.category,
           item.importance,
           "auto-extracted",
+          "private",
         );
         created.push(created_entry);
       }
@@ -299,7 +347,17 @@ export function getMemoryStats(): {
   byCategory: Record<string, number>;
   avgImportance: number;
 } {
-  const memories = getAllMemories();
+  throw new Error(
+    "getMemoryStats() now requires an ownerUserId; use getMemoryStatsForUser().",
+  );
+}
+
+export function getMemoryStatsForUser(ownerUserId: number): {
+  total: number;
+  byCategory: Record<string, number>;
+  avgImportance: number;
+} {
+  const memories = getAllMemoriesForUser(ownerUserId);
 
   const byCategory: Record<string, number> = {};
   let totalImportance = 0;

@@ -29,7 +29,7 @@ export interface RateLimitResult {
 
 export interface RateLimitCheck {
   userId: string;
-  interfaceType: "telegram" | "discord" | "slack" | "web" | "api";
+  interfaceType: string;
   tokens?: number; // For TPM limiting
   estimatedCost?: number; // For cost limiting
   modelId?: string;

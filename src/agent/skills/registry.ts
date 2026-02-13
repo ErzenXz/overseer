@@ -11,6 +11,7 @@ import { readFileSync, readdirSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { pathToFileURL } from "url";
 import { scanSkillSecurity } from "./security";
+import { getToolContext } from "@/lib/tool-context";
 
 const logger = createLogger("skills");
 
@@ -25,6 +26,7 @@ const skillModulesCache = new Map<string, Record<string, Function>>();
 export interface Skill {
   id: number;
   skill_id: string;
+  owner_user_id: number;
   name: string;
   description: string | null;
   version: string;
@@ -338,14 +340,22 @@ export function syncBuiltinSkills(): void {
 export function createSkill(
   skill: Partial<Skill> & { skill_id: string; name: string },
 ): Skill {
+  const ctx = getToolContext();
+  const ownerUserId =
+    ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
+
   const stmt = db.prepare(`
     INSERT INTO skills (
+      owner_user_id,
       skill_id, name, description, version, author, source, source_url,
       triggers, system_prompt, tools, config_schema, config, is_builtin
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
+    typeof ownerUserId === "number" && Number.isFinite(ownerUserId)
+      ? ownerUserId
+      : 1,
     skill.skill_id,
     skill.name,
     skill.description || null,
@@ -385,18 +395,50 @@ export function findBySkillId(skillId: string): Skill | null {
  * Get all skills
  */
 export function getAllSkills(): Skill[] {
+  const ctx = getToolContext();
+  const ownerUserId =
+    ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
+  if (typeof ownerUserId === "number" && Number.isFinite(ownerUserId)) {
+    const stmt = db.prepare(
+      "SELECT * FROM skills WHERE (owner_user_id = ? OR is_builtin = 1) ORDER BY name",
+    );
+    return stmt.all(ownerUserId) as Skill[];
+  }
+
   const stmt = db.prepare("SELECT * FROM skills ORDER BY name");
   return stmt.all() as Skill[];
+}
+
+export function getAllSkillsForUser(ownerUserId: number): Skill[] {
+  const stmt = db.prepare(
+    "SELECT * FROM skills WHERE (owner_user_id = ? OR is_builtin = 1) ORDER BY name",
+  );
+  return stmt.all(ownerUserId) as Skill[];
 }
 
 /**
  * Get active skills
  */
 export function getActiveSkills(): Skill[] {
-  const stmt = db.prepare(
-    "SELECT * FROM skills WHERE is_active = 1 ORDER BY name",
-  );
+  const ctx = getToolContext();
+  const ownerUserId =
+    ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
+  if (typeof ownerUserId === "number" && Number.isFinite(ownerUserId)) {
+    const stmt = db.prepare(
+      "SELECT * FROM skills WHERE is_active = 1 AND (owner_user_id = ? OR is_builtin = 1) ORDER BY name",
+    );
+    return stmt.all(ownerUserId) as Skill[];
+  }
+
+  const stmt = db.prepare("SELECT * FROM skills WHERE is_active = 1 ORDER BY name");
   return stmt.all() as Skill[];
+}
+
+export function getActiveSkillsForUser(ownerUserId: number): Skill[] {
+  const stmt = db.prepare(
+    "SELECT * FROM skills WHERE is_active = 1 AND (owner_user_id = ? OR is_builtin = 1) ORDER BY name",
+  );
+  return stmt.all(ownerUserId) as Skill[];
 }
 
 /**

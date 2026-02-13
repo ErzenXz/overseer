@@ -22,30 +22,30 @@ export interface BotLogger {
 /**
  * Create a logger for a specific bot type
  */
-export function createBotLogger(botType: string): BotLogger {
+export function createBotLogger(botType: string, ownerUserId?: number): BotLogger {
   return {
     info: (msg: string, meta?: Record<string, unknown>) => {
       console.log(`[INFO] [${botType}] ${msg}`, meta || "");
       try {
-        logsModel.info(botType, msg, meta);
+        logsModel.create("info", botType, msg, meta, ownerUserId ?? null);
       } catch {}
     },
     error: (msg: string, meta?: Record<string, unknown>) => {
       console.error(`[ERROR] [${botType}] ${msg}`, meta || "");
       try {
-        logsModel.error(botType, msg, meta);
+        logsModel.create("error", botType, msg, meta, ownerUserId ?? null);
       } catch {}
     },
     warn: (msg: string, meta?: Record<string, unknown>) => {
       console.warn(`[WARN] [${botType}] ${msg}`, meta || "");
       try {
-        logsModel.warn(botType, msg, meta);
+        logsModel.create("warn", botType, msg, meta, ownerUserId ?? null);
       } catch {}
     },
     debug: (msg: string, meta?: Record<string, unknown>) => {
       console.debug(`[DEBUG] [${botType}] ${msg}`, meta || "");
       try {
-        logsModel.debug(botType, msg, meta);
+        logsModel.create("debug", botType, msg, meta, ownerUserId ?? null);
       } catch {}
     },
   };
@@ -96,7 +96,7 @@ export function clearRateLimit(userId: string): void {
  * Get bot token from database or environment
  */
 export function getBotToken(
-  interfaceType: "telegram" | "discord" | "slack",
+  interfaceType: string,
   envVarName: string,
 ): string | null {
   // First try database
@@ -116,7 +116,7 @@ export function getBotToken(
  * Get allowed users from database or environment
  */
 export function getAllowedUsers(
-  interfaceType: "telegram" | "discord" | "slack",
+  interfaceType: string,
   envVarName: string,
 ): string[] {
   const botInterface = interfacesModel.findByType(interfaceType);
@@ -142,7 +142,7 @@ export function getAllowedUsers(
  */
 export function isUserAllowed(
   userId: string,
-  interfaceType: "telegram" | "discord" | "slack",
+  interfaceType: string,
   envVarName: string,
 ): boolean {
   const allowed = getAllowedUsers(interfaceType, envVarName);
@@ -273,12 +273,12 @@ export async function getSystemStatus(): Promise<string> {
 export function getHelpMessage(botName = "Overseer"): string {
   return (
     `**${botName} Help**\n\n` +
-    `I'm an AI assistant with full access to this VPS. I can:\n\n` +
+    `I'm your assistant. By default I work in your tenant sandbox, and some system actions may require permissions or confirmation.\n\n` +
     `📁 **File Operations**\n` +
     `• Read, write, and list files\n\n` +
     `💻 **Shell Commands**\n` +
-    `• Execute any bash command\n` +
-    `• Run git, system, or network tools via shell\n\n` +
+    `• Run git and build tooling\n` +
+    `• Potentially run system commands if your permissions allow\n\n` +
     `🧠 **Sub-Agents**\n` +
     `• Delegate complex tasks to specialists\n\n` +
     `Just ask me anything!`
@@ -290,7 +290,7 @@ export function getHelpMessage(botName = "Overseer"): string {
  */
 export function getWelcomeMessage(): string {
   return (
-    `👋 Hello! I'm your AI assistant with full VPS access.\n\n` +
+    `Hello! I'm your assistant.\n\n` +
     `I can help you with:\n` +
     `• Running shell commands\n` +
     `• Managing files and directories\n` +

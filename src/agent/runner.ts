@@ -1,7 +1,8 @@
 /**
  * Standalone Agent Runner for Overseer
- * Runs independently with full VPS control, retry logic, and context management
- * NO CONFIRMATIONS - Executes commands immediately!
+ * Runs independently with full system control, retry logic, and context management.
+ * Uses the same tool safety policies as the main agent (hard blocks for catastrophic commands,
+ * confirmation gate for risky ones when enabled).
  */
 
 import {
@@ -16,10 +17,6 @@ import {
 type CoreMessage = ModelMessage;
 import { loadSoul } from "./soul";
 import { buildFallbackModelChain, getDefaultModel } from "./providers";
-import {
-  executeShellCommand,
-  executeMultipleCommands,
-} from "./tools/shell-noconfirm";
 import { allTools } from "./tools/index";
 import { messagesModel, conversationsModel } from "../database/index";
 import { createLogger } from "../lib/logger";
@@ -87,17 +84,15 @@ function buildSystemPrompt(context?: Partial<AgentContext>): string {
 
 ---
 
-## VPS Control Mode (NO CONFIRMATIONS)
-You have FULL ACCESS to this VPS with NO RESTRICTIONS.
-- ALL commands execute IMMEDIATELY without confirmation
-- You can delete, modify, or create any files
-- You can install, update, or remove software
-- You have full system access
+## Control Mode
+You have broad system access through tools. Safety policy applies:
+- Catastrophic commands are blocked (cannot be overridden).
+- Risky/destructive commands require explicit confirmation when confirmation is enabled.
 
 ## Available Tools
 You have access to a minimal, powerful toolset:
-- executeShellCommand: Run any shell command immediately
-- executeMultipleCommands: Run a sequence of commands
+- executeShellCommand: Run shell commands (with safety policy)
+- executeShellCommandConfirmed: Run risky commands after explicit user confirmation
 - File operations: readFile, writeFile, listDirectory
 - Sub-agents: spawnSubAgent, checkSubAgentStatus
 
@@ -105,7 +100,7 @@ You have access to a minimal, powerful toolset:
 - Explain what you're doing before executing commands
 - Provide clear summaries of results
 - If a command fails, try an alternative approach
-- Use multiple commands in sequence for complex operations
+- Verify outcomes (tests, checks) when possible
 ${contextInfo}
 `;
 }
@@ -229,7 +224,7 @@ export async function executeAgent(
           model,
           system: buildSystemPrompt(context),
           messages: [...context.messages, { role: "user", content: prompt }],
-          tools: { ...allTools, executeShellCommand, executeMultipleCommands },
+          tools: { ...allTools },
           stopWhen: stepCountIs(MAX_STEPS),
           maxRetries: 3,
           onStepFinish: ({ toolCalls, toolResults }) => {
@@ -275,7 +270,7 @@ export async function executeAgent(
           model,
           system: buildSystemPrompt(context),
           messages: [...context.messages, { role: "user", content: prompt }],
-          tools: { ...allTools, executeShellCommand, executeMultipleCommands },
+          tools: { ...allTools },
           stopWhen: stepCountIs(MAX_STEPS),
           maxRetries: 3,
           onStepFinish: ({ toolCalls, toolResults }) => {

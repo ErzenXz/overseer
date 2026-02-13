@@ -125,11 +125,18 @@ export const logsModel = {
     level: "debug" | "info" | "warn" | "error",
     category: string,
     message: string,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    ownerUserId?: number | null,
   ): void {
     db.prepare(
-      "INSERT INTO logs (level, category, message, metadata) VALUES (?, ?, ?, ?)"
-    ).run(level, category, message, metadata ? JSON.stringify(metadata) : null);
+      "INSERT INTO logs (owner_user_id, level, category, message, metadata) VALUES (?, ?, ?, ?, ?)"
+    ).run(
+      ownerUserId ?? null,
+      level,
+      category,
+      message,
+      metadata ? JSON.stringify(metadata) : null,
+    );
   },
 
   // Convenience methods
@@ -150,11 +157,20 @@ export const logsModel = {
   },
 
   // Get recent logs
-  findRecent(limit = 100, level?: string, category?: string): Log[] {
+  findRecent(
+    limit = 100,
+    level?: string,
+    category?: string,
+    ownerUserId?: number,
+  ): Log[] {
     let query = "SELECT * FROM logs";
     const conditions: string[] = [];
     const values: (string | number)[] = [];
 
+    if (typeof ownerUserId === "number") {
+      conditions.push("owner_user_id = ?");
+      values.push(ownerUserId);
+    }
     if (level) {
       conditions.push("level = ?");
       values.push(level);
@@ -185,13 +201,25 @@ export const logsModel = {
   },
 
   // Get log stats
-  getStats(): { level: string; count: number }[] {
+  getStats(ownerUserId?: number): { level: string; count: number }[] {
+    if (typeof ownerUserId === "number") {
+      return db
+        .prepare(
+          `SELECT level, COUNT(*) as count
+           FROM logs
+           WHERE owner_user_id = ?
+             AND created_at > datetime('now', '-1 day')
+           GROUP BY level`,
+        )
+        .all(ownerUserId) as { level: string; count: number }[];
+    }
+
     return db
       .prepare(
         `SELECT level, COUNT(*) as count 
          FROM logs 
          WHERE created_at > datetime('now', '-1 day')
-         GROUP BY level`
+         GROUP BY level`,
       )
       .all() as { level: string; count: number }[];
   },
