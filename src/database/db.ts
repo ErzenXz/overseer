@@ -394,7 +394,8 @@ function cleanupLegacyInterfacesArtifacts() {
   try {
     const refs = db
       .prepare(
-        "SELECT type, name, sql FROM sqlite_master WHERE sql LIKE '%interfaces_old%'",
+        // Use instr(lower(sql), ...) to avoid being affected by PRAGMA case_sensitive_like.
+        "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND instr(lower(sql), 'interfaces_old') > 0",
       )
       .all() as Array<{ type: string; name: string; sql?: string | null }>;
 
