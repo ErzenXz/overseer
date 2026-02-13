@@ -11,6 +11,9 @@ const execFileAsync = promisify(execFile);
 const repoRoot = resolve(process.cwd());
 const installSh = resolve(repoRoot, "scripts", "install.sh");
 const updateSh = resolve(repoRoot, "scripts", "update.sh");
+const bashTest = process.platform === "win32"
+  ? test.skip
+  : test;
 
 async function run(cmd, args, opts = {}) {
   try {
@@ -31,10 +34,7 @@ async function run(cmd, args, opts = {}) {
   }
 }
 
-test("install.sh and update.sh parse in bash (bash -n)", async () => {
-  if (process.platform === "win32") {
-    test.skip("WSL2-only: bash installer/update scripts are not tested on native Windows");
-  }
+bashTest("install.sh and update.sh parse in bash (bash -n)", async () => {
   {
     const res = await run("bash", ["-n", installSh]);
     assert.equal(res.code, 0, res.stderr || res.stdout);
@@ -45,10 +45,7 @@ test("install.sh and update.sh parse in bash (bash -n)", async () => {
   }
 });
 
-test("install.sh supports --help and --dry-run", async () => {
-  if (process.platform === "win32") {
-    test.skip("WSL2-only: bash installer/update scripts are not tested on native Windows");
-  }
+bashTest("install.sh supports --help and --dry-run", async () => {
   const help = await run("bash", [installSh, "--help"]);
   assert.equal(help.code, 0, help.stderr || help.stdout);
   assert.match(help.stdout, /Usage:/);
@@ -62,10 +59,7 @@ test("install.sh supports --help and --dry-run", async () => {
   assert.match(dryYes.stdout, /DRY RUN/);
 });
 
-test("update.sh supports --help and --dry-run", async () => {
-  if (process.platform === "win32") {
-    test.skip("WSL2-only: bash installer/update scripts are not tested on native Windows");
-  }
+bashTest("update.sh supports --help and --dry-run", async () => {
   const help = await run("bash", [updateSh, "--help"]);
   assert.equal(help.code, 0, help.stderr || help.stdout);
   assert.match(help.stdout, /Usage:/);
