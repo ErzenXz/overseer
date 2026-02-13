@@ -404,14 +404,22 @@ function cleanupLegacyOldTableArtifacts() {
       )
       .all() as Array<{ type: string; name: string; sql?: string | null }>;
 
+    const dropped: Array<{ type: string; name: string }> = [];
     for (const ref of refs) {
       const ident = quoteIdent(ref.name);
       try {
-        if (ref.type === "view") db.exec(`DROP VIEW IF EXISTS ${ident}`);
-        else if (ref.type === "trigger") db.exec(`DROP TRIGGER IF EXISTS ${ident}`);
-        else if (ref.type === "index") db.exec(`DROP INDEX IF EXISTS ${ident}`);
-        else if (ref.type === "table" && targets.includes(ref.name as any)) {
+        if (ref.type === "view") {
+          db.exec(`DROP VIEW IF EXISTS ${ident}`);
+          dropped.push({ type: "view", name: ref.name });
+        } else if (ref.type === "trigger") {
+          db.exec(`DROP TRIGGER IF EXISTS ${ident}`);
+          dropped.push({ type: "trigger", name: ref.name });
+        } else if (ref.type === "index") {
+          db.exec(`DROP INDEX IF EXISTS ${ident}`);
+          dropped.push({ type: "index", name: ref.name });
+        } else if (ref.type === "table" && targets.includes(ref.name as any)) {
           db.exec(`DROP TABLE IF EXISTS ${ident}`);
+          dropped.push({ type: "table", name: ref.name });
         }
       } catch {
         // best-effort cleanup only
@@ -429,8 +437,13 @@ function cleanupLegacyOldTableArtifacts() {
       if (entry?.type && entry.type !== "table") {
         try {
           db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tableName)}`);
+          dropped.push({ type: "view", name: tableName });
         } catch {}
       }
+    }
+
+    if (dropped.length > 0) {
+      console.log("  Cleanup: dropped legacy sqlite objects referencing *_old", dropped);
     }
 
     // Ensure the canonical interfaces table exists (tenant-aware).
