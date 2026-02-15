@@ -67,13 +67,17 @@ export function getAllAvailableTools(): Record<string, Tool> {
   // Add MCP tools
   const mcpTools = getAllMCPTools();
   for (const [name, tool] of Object.entries(mcpTools)) {
-    combinedTools[name] = tool;
+    // Avoid overriding built-ins if names collide; MCP tools are still available
+    // via their original name in the MCP toolset.
+    if (!(name in combinedTools)) combinedTools[name] = tool;
   }
 
   // Add Skill tools
   const skillTools = getAllActiveSkillTools();
   for (const [name, tool] of Object.entries(skillTools)) {
-    combinedTools[name] = tool;
+    // Avoid overriding built-ins/MCP tools on collision. Skills registry exposes
+    // namespaced aliases (skillId_toolName) for collisions.
+    if (!(name in combinedTools)) combinedTools[name] = tool;
   }
 
   return combinedTools;

@@ -146,20 +146,24 @@ async function loadSkillModule(
 
   const skillDir = join(BUILTIN_SKILLS_DIR, skillId);
   const indexTsPath = join(skillDir, "index.ts");
+  const indexMjsPath = join(skillDir, "index.mjs");
   const indexJsPath = join(skillDir, "index.js");
 
   try {
     let modulePath: string | null = null;
 
-    if (existsSync(indexTsPath)) {
-      modulePath = indexTsPath;
+    // Prefer runtime-friendly ESM builds (index.mjs). Node cannot import TS in production.
+    if (existsSync(indexMjsPath)) {
+      modulePath = indexMjsPath;
     } else if (existsSync(indexJsPath)) {
       modulePath = indexJsPath;
+    } else if (existsSync(indexTsPath) && process.env.NODE_ENV !== "production") {
+      modulePath = indexTsPath;
     }
 
     if (modulePath) {
-      // Use dynamic import for both TS and JS modules
-      // For TypeScript, this relies on ts-node or tsx being available
+      // Use dynamic import for ESM modules.
+      // Note: importing index.ts is only supported in non-production environments.
       const moduleUrl = pathToFileURL(modulePath).href;
       const skillModule = await import(moduleUrl);
       skillModulesCache.set(skillId, skillModule);
@@ -232,6 +236,11 @@ export function loadBuiltinSkills(): SkillDefinition[] {
               entry.name,
               "index.ts",
             );
+            const indexMjsPath = join(
+              BUILTIN_SKILLS_DIR,
+              entry.name,
+              "index.mjs",
+            );
             const indexJsPath = join(
               BUILTIN_SKILLS_DIR,
               entry.name,
@@ -245,9 +254,11 @@ export function loadBuiltinSkills(): SkillDefinition[] {
 
             const indexSource = existsSync(indexTsPath)
               ? readFileSync(indexTsPath, "utf-8")
-              : existsSync(indexJsPath)
-                ? readFileSync(indexJsPath, "utf-8")
-                : "";
+              : existsSync(indexMjsPath)
+                ? readFileSync(indexMjsPath, "utf-8")
+                : existsSync(indexJsPath)
+                  ? readFileSync(indexJsPath, "utf-8")
+                  : "";
             const readmeSource = existsSync(readmePath)
               ? readFileSync(readmePath, "utf-8")
               : "";
@@ -613,7 +624,16 @@ export function getAllActiveSkillTools(): Record<string, Tool> {
   for (const skill of activeSkills) {
     const skillTools = getSkillTools(skill.skill_id);
     for (const [name, tool] of Object.entries(skillTools)) {
-      // Prefix with skill ID to avoid conflicts
+      // Prefer bare tool names for model ergonomics. If there's a collision,
+      // keep the first bare name and also expose the namespaced variant.
+      if (!(name in allTools)) {
+        allTools[name] = tool;
+      } else {
+        logger.warn("Skill tool name collision; using namespaced fallback", {
+          tool: name,
+          skillId: skill.skill_id,
+        });
+      }
       allTools[`${skill.skill_id}_${name}`] = tool;
     }
   }

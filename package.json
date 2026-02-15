@@ -31,7 +31,8 @@
     "typecheck": "tsc --noEmit",
     "clean": "shx rm -rf .next node_modules/.cache",
     "clean:data": "shx rm -rf data/*.db data/*.db-wal data/*.db-shm",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "skills:build": "node scripts/build-skills.mjs"
   },
   "bin": {
     "overseer": "./src/cli/index.ts"
@@ -81,6 +82,7 @@
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^11.0.0",
+    "esbuild": "^0.25.9",
     "shx": "^0.3.4",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",
