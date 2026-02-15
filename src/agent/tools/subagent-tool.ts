@@ -22,6 +22,7 @@ import {
   resumeTask,
   type SubAgentType,
 } from "../subagents/manager";
+import { agentTasksModel } from "../../database";
 import { builtinTools } from "./builtin-tools";
 import { getAllMCPTools } from "../mcp/client";
 import { getAllActiveSkillTools } from "../skills/registry";
@@ -66,7 +67,7 @@ function getToolsForSubAgent(): Record<string, Tool> {
  * // Background work - don't wait
  * spawnSubAgent({
  *   task: "Migrate all data from old-api to new-api. Handle rate limits.",
- *   wait_for_result: false
+ *   mode: "background"
  * })
  * // Continue conversation, check status later
  * 
@@ -74,7 +75,7 @@ function getToolsForSubAgent(): Record<string, Tool> {
  * const result = spawnSubAgent({
  *   task: "Write a unit test for the auth function",
  *   context: "File: src/auth.ts, function: validateToken",
- *   wait_for_result: true
+ *   mode: "wait"
  * })
  */
 export const spawnSubAgent = tool<any, any>({
@@ -95,13 +96,14 @@ TASK WRITING:
 - Define what "done" looks like
 
 EXECUTION:
-- wait_for_result: false (default) → Fire and forget, continue immediately
-- wait_for_result: true → Block until complete (only when you need the result now)
+- mode: "auto" (default) → Start in background, wait briefly, then return a handle if it takes too long
+- mode: "background" → Fire and forget, continue immediately
+- mode: "wait" → Block until complete (only when you need the result now)
 
 EXAMPLES:
 spawnSubAgent({ task: "Check if nginx is running on prod-server" })
 spawnSubAgent({ task: "Find all users who haven't logged in 90 days", context: "Database at /data/app.db" })
-spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for_result: true })`,
+spawnSubAgent({ task: "Write tests for auth.ts validateToken function", mode: "wait" })`,
   inputSchema: z.object({
     task: z.string().describe(
       `The specific task for the sub-agent to complete.
@@ -132,79 +134,159 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
       .enum(["generic", "planner", "code", "system", "security", "evaluator"])
       .optional()
       .describe("Optional sub-agent type. If omitted, defaults to generic."),
-    wait_for_result: z
-      .boolean()
-      .default(false)
+    mode: z
+      .enum(["auto", "wait", "background"])
+      .optional()
       .describe(
         `Execution mode:
-         
-         - false (default): Fire and forget. Sub-agent runs in background.
-           Use for parallel work or long tasks. You continue immediately.
-         
-         - true: Block and wait. Use ONLY when you literally cannot continue
-           until you have this result.`,
+
+         - auto (default): Start in background, but wait briefly for a result. If it takes too long, return a handle.
+         - wait: Wait until the sub-agent completes (use only when you need the result now).
+         - background: Fire and forget; return immediately with a handle.`,
       ),
+    max_wait_ms: z
+      .number()
+      .optional()
+      .describe("For mode=auto, how long to wait before returning a handle (default: 12000ms)."),
+    // Backwards compatibility:
+    // - wait_for_result=false maps to mode=background
+    // - wait_for_result=true maps to mode=wait
+    wait_for_result: z
+      .boolean()
+      .optional()
+      .describe("Deprecated. Use mode instead."),
   }),
   execute: async ({
     task,
     context,
     agent_type,
+    mode,
+    max_wait_ms,
     wait_for_result,
   }: {
     task: string;
     context?: string;
     agent_type?: SubAgentType;
-    wait_for_result: boolean;
+    mode?: "auto" | "wait" | "background";
+    max_wait_ms?: number;
+    wait_for_result?: boolean;
   }) => {
     const startTime = Date.now();
-    const sessionId = uuidv4();
+    const ctx = getToolContext();
+
+    const effectiveMode: "auto" | "wait" | "background" =
+      mode ||
+      (typeof wait_for_result === "boolean"
+        ? wait_for_result
+          ? "wait"
+          : "background"
+        : "auto");
+    const effectiveMaxWaitMs =
+      typeof max_wait_ms === "number" && Number.isFinite(max_wait_ms)
+        ? Math.max(0, Math.min(120_000, max_wait_ms))
+        : 12_000;
 
     logger.info("Spawning sub-agent", {
       task: task.substring(0, 100),
-      wait_for_result,
+      mode: effectiveMode,
     });
 
     try {
       const fullTask = context ? `${task}\n\nContext: ${context}` : task;
 
-      const ctx = getToolContext();
       const ownerUserId =
         ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : 1;
 
+      const parentSessionId =
+        ctx?.agentSessionId ||
+        (typeof ctx?.conversationId === "number"
+          ? `conversation:${ctx.conversationId}`
+          : `session:${uuidv4()}`);
+
       const subAgent = createSubAgent({
-        parent_session_id: sessionId,
+        parent_session_id: parentSessionId,
         agent_type: (agent_type || "generic") as SubAgentType,
         owner_user_id: Number.isFinite(ownerUserId) ? ownerUserId : 1,
         assigned_task: fullTask,
         metadata: {
           spawned_at: new Date().toISOString(),
-          wait_for_result,
+          mode: effectiveMode,
+          max_wait_ms: effectiveMaxWaitMs,
         },
       });
 
-      if (!wait_for_result) {
-        const model = getDefaultModel();
-        if (!model) {
-          return {
-            success: false,
-            error: "No LLM provider configured for sub-agent",
-            sub_agent_id: subAgent.sub_agent_id,
-            execution_time_ms: Date.now() - startTime,
-          };
-        }
+      const taskRow = agentTasksModel.create({
+        owner_user_id: Number.isFinite(ownerUserId) ? ownerUserId : 1,
+        conversation_id:
+          typeof ctx?.conversationId === "number" ? ctx.conversationId : null,
+        title: `Sub-agent: ${task.slice(0, 60)}`,
+        input: fullTask,
+        status: "running",
+        priority: effectiveMode === "background" ? 6 : 5,
+        assigned_sub_agent_id: subAgent.sub_agent_id,
+        started_at: new Date().toISOString(),
+        artifacts: {
+          parentSessionId,
+          agentType: agent_type || "generic",
+          mode: effectiveMode,
+          interface: ctx?.interface ?? null,
+        },
+      });
 
-        void executeTask(subAgent.sub_agent_id, model, getToolsForSubAgent(), {
-          toolContext: ctx,
-        }).catch(
-          (error) => {
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            logger.error("Background sub-agent execution failed", {
-              sub_agent_id: subAgent.sub_agent_id,
-              error: errorMessage,
-            });
-          },
-        );
+      const model = getDefaultModel();
+      if (!model) {
+        agentTasksModel.update(taskRow.id, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error: "No LLM provider configured for sub-agent",
+        });
+        return {
+          success: false,
+          error: "No LLM provider configured for sub-agent",
+          sub_agent_id: subAgent.sub_agent_id,
+          execution_time_ms: Date.now() - startTime,
+        };
+      }
+
+      // Always start in background so we can "auto-wait" without blocking forever.
+      const execPromise = executeTask(subAgent.sub_agent_id, model, getToolsForSubAgent(), {
+        toolContext: ctx,
+      }).then((result) => {
+        agentTasksModel.update(taskRow.id, {
+          status: result.success ? "completed" : "failed",
+          finished_at: new Date().toISOString(),
+          result_summary: result.success ? "Completed" : "Failed",
+          result_full: result.result || null,
+          error: result.success ? null : result.error || "Sub-agent failed",
+          artifacts: {
+            parentSessionId,
+            agentType: agent_type || "generic",
+            mode: effectiveMode,
+            interface: ctx?.interface ?? null,
+            steps: result.steps,
+            tokens_used: result.tokens_used,
+            execution_time_ms: result.execution_time_ms,
+          } as any,
+        });
+        return result;
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        agentTasksModel.update(taskRow.id, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error: msg,
+        });
+        throw err;
+      });
+
+      if (effectiveMode === "background") {
+        void execPromise.catch((error) => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error("Background sub-agent execution failed", {
+            sub_agent_id: subAgent.sub_agent_id,
+            error: errorMessage,
+          });
+        });
 
         return {
           success: true,
@@ -215,24 +297,52 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
           next_steps:
             "Continue helping the user. Use checkSubAgentStatus to get the result later.",
           execution_time_ms: Date.now() - startTime,
+          task_id: taskRow.id,
         };
       }
 
-      const model = getDefaultModel();
-      if (!model) {
+      if (effectiveMode === "auto") {
+        const result = await Promise.race([
+          execPromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), effectiveMaxWaitMs)),
+        ]);
+
+        if (result === null) {
+          // Still working. Return a handle.
+          return {
+            success: true,
+            sub_agent_id: subAgent.sub_agent_id,
+            status: "working",
+            mode: "auto",
+            message:
+              "Sub-agent started. It's still working; use checkSubAgentStatus to retrieve the result shortly.",
+            execution_time_ms: Date.now() - startTime,
+            task_id: taskRow.id,
+          };
+        }
+
+        logger.info("Sub-agent completed (auto)", {
+          success: result.success,
+          steps: result.steps,
+          execution_time_ms: result.execution_time_ms,
+        });
+
         return {
-          success: false,
-          error: "No LLM provider configured for sub-agent",
-          execution_time_ms: Date.now() - startTime,
+          success: result.success,
+          sub_agent_id: subAgent.sub_agent_id,
+          status: result.success ? "completed" : "error",
+          mode: "auto",
+          result: result.result,
+          steps: result.steps,
+          tokens_used: result.tokens_used,
+          error: result.error,
+          execution_time_ms: result.execution_time_ms,
+          task_id: taskRow.id,
         };
       }
 
-      const result = await executeTask(
-        subAgent.sub_agent_id,
-        model,
-        getToolsForSubAgent(),
-        { toolContext: ctx },
-      );
+      // wait
+      const result = await execPromise;
 
       logger.info("Sub-agent completed", {
         success: result.success,
@@ -244,12 +354,13 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", wait_for
         success: result.success,
         sub_agent_id: subAgent.sub_agent_id,
         status: result.success ? "completed" : "error",
-        mode: "foreground",
+        mode: "wait",
         result: result.result,
         steps: result.steps,
         tokens_used: result.tokens_used,
         error: result.error,
         execution_time_ms: result.execution_time_ms,
+        task_id: taskRow.id,
       };
     } catch (error) {
       const errorMessage =

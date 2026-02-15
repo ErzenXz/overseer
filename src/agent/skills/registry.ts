@@ -23,6 +23,19 @@ const BUILTIN_SKILLS_DIR = resolve(process.cwd(), "skills");
 // Cache for loaded skill modules
 const skillModulesCache = new Map<string, Record<string, Function>>();
 
+let builtinSkillsSyncedOnce = false;
+function ensureBuiltinSkillsSyncedOnce(): void {
+  if (builtinSkillsSyncedOnce) return;
+  builtinSkillsSyncedOnce = true;
+  try {
+    syncBuiltinSkills();
+  } catch (e) {
+    logger.warn("Auto-sync built-in skills failed", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export interface Skill {
   id: number;
   skill_id: string;
@@ -395,6 +408,7 @@ export function findBySkillId(skillId: string): Skill | null {
  * Get all skills
  */
 export function getAllSkills(): Skill[] {
+  ensureBuiltinSkillsSyncedOnce();
   const ctx = getToolContext();
   const ownerUserId =
     ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
@@ -420,6 +434,7 @@ export function getAllSkillsForUser(ownerUserId: number): Skill[] {
  * Get active skills
  */
 export function getActiveSkills(): Skill[] {
+  ensureBuiltinSkillsSyncedOnce();
   const ctx = getToolContext();
   const ownerUserId =
     ctx?.actor?.kind === "web" ? parseInt(ctx.actor.id, 10) : undefined;
@@ -435,6 +450,7 @@ export function getActiveSkills(): Skill[] {
 }
 
 export function getActiveSkillsForUser(ownerUserId: number): Skill[] {
+  ensureBuiltinSkillsSyncedOnce();
   const stmt = db.prepare(
     "SELECT * FROM skills WHERE is_active = 1 AND (owner_user_id = ? OR is_builtin = 1) ORDER BY name",
   );

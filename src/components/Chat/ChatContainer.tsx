@@ -15,7 +15,6 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null);
-  const [mode, setMode] = useState<"chat" | "work">("chat");
 
   const {
     messages,
@@ -39,7 +38,6 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
   const handleSend = async (content: string, attachments?: File[]) => {
     await sendMessage(content, attachments, {
       providerId: selectedProviderId,
-      planMode: mode === "work",
     });
   };
 
@@ -59,8 +57,6 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
         onNewChat={handleNewChat}
         selectedProviderId={selectedProviderId}
         onProviderChange={handleProviderChange}
-        mode={mode}
-        onModeChange={setMode}
       />
 
       {/* Messages */}

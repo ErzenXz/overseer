@@ -23,8 +23,6 @@ interface ChatHeaderProps {
   onNewChat: () => void;
   selectedProviderId: number | null;
   onProviderChange: (providerId: number | null) => void;
-  mode: "chat" | "work";
-  onModeChange: (mode: "chat" | "work") => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,8 +70,6 @@ export function ChatHeader({
   onNewChat,
   selectedProviderId,
   onProviderChange,
-  mode,
-  onModeChange,
 }: ChatHeaderProps) {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -123,34 +119,6 @@ export function ChatHeader({
 
       {/* Right side - Actions */}
       <div className="flex items-center gap-2">
-        {/* Mode toggle */}
-        <div className="flex items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-overlay)] p-0.5">
-          <button
-            type="button"
-            onClick={() => onModeChange("chat")}
-            className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-              mode === "chat"
-                ? "bg-[var(--color-accent)] text-black font-medium"
-                : "text-[var(--color-text-secondary)] hover:text-white"
-            }`}
-            title="Normal assistant chat"
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            onClick={() => onModeChange("work")}
-            className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-              mode === "work"
-                ? "bg-amber-400 text-black font-medium"
-                : "text-[var(--color-text-secondary)] hover:text-white"
-            }`}
-            title="Work mode (tasks/subagents)"
-          >
-            Work
-          </button>
-        </div>
-
         {/* Model selector */}
         <div className="relative">
           <button

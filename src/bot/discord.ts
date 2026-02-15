@@ -205,11 +205,19 @@ async function startDiscordInstance(instance: {
         sandboxRoot,
         allowSystem,
         actor: { kind: "web", id: String(instance.owner_user_id) },
+        conversationId: conversation.id,
+        agentSessionId: session.session_id,
+        interface: {
+          type: "discord",
+          id: instance.id,
+          externalChatId: isDm ? `dm:${externalUserId}` : String(msg.channelId),
+          externalUserId,
+        },
       },
       async () => {
         const result = await runAgentStream(prompt, {
           conversationId: conversation.id,
-          planMode: true,
+          planMode: false,
           sandboxRoot,
           allowSystem,
           actor: { kind: "web", id: String(instance.owner_user_id) },

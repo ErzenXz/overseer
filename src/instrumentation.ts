@@ -21,4 +21,13 @@ export async function register() {
   } catch (err) {
     console.error("[instrumentation] Failed to start cron engine:", err);
   }
+
+  try {
+    // Keep skills available out-of-the-box (idempotent sync to DB).
+    const { syncBuiltinSkills } = await import("./agent/skills/registry");
+    syncBuiltinSkills();
+    console.log("[instrumentation] Built-in skills synced");
+  } catch (err) {
+    console.error("[instrumentation] Failed to sync built-in skills:", err);
+  }
 }

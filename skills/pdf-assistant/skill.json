@@ -3,8 +3,8 @@
   "description": "Summarize PDF text extracts, produce action checklists, and prepare review notes.",
   "version": "1.0.0",
   "author": "Overseer",
-  "triggers": ["pdf", "document", "summary", "extract", "report"],
-  "system_prompt": "You are a PDF document assistant. Work from extracted text provided by the user. Be precise, structured, and avoid hallucinating content that is not present.",
+  "triggers": ["pdf", "summarize pdf", "extract pdf", "pdf file", "report pdf", "document pdf"],
+  "system_prompt": "You are a PDF document assistant. If the user provides a PDF file path, first use extract_pdf_text (Document Reader skill) to extract text, then summarize or answer questions from that extracted text. Be precise and do not hallucinate content that is not present.",
   "tools": [
     {
       "name": "summarize_pdf_text",

@@ -31,7 +31,6 @@ export interface ChatOptions {
 
 export interface SendMessageOptions {
   providerId?: number | null;
-  planMode?: boolean;
   steering?: {
     tone?: "concise" | "balanced" | "deep";
     responseStyle?: "direct" | "explanatory" | "mentor";
@@ -492,7 +491,6 @@ export function useChat(options: ChatOptions = {}) {
           conversationId?: number | null;
           providerId?: number | null;
           streamId: string;
-          planMode?: boolean;
           steering?: SendMessageOptions["steering"];
         } = {
           message: content,
@@ -502,7 +500,6 @@ export function useChat(options: ChatOptions = {}) {
             typeof crypto !== "undefined" && "randomUUID" in crypto
               ? crypto.randomUUID()
               : `stream-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-          planMode: sendOptions?.planMode,
           steering: sendOptions?.steering,
         };
 

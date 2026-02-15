@@ -11,7 +11,7 @@ import {
   findModelInfo,
   getDefaultModel,
 } from "./providers";
-import { allTools, getAllAvailableTools, getToolCounts } from "./tools/index";
+import { allTools, getAllAvailableTools } from "./tools/index";
 import {
   messagesModel,
   conversationsModel,
@@ -31,18 +31,18 @@ import { getMemoriesForPromptForUser } from "./super-memory";
 // Type alias for messages (using ModelMessage from AI SDK)
 type CoreMessage = ModelMessage;
 
-// MCP and Skills imports
-import {
-  getConnectionStatus as getMCPStatus,
-  getActiveServers as getActiveMCPServers,
-} from "./mcp/client";
-import {
-  getActiveSkills,
-  matchSkillTriggers,
-  recordUsage as recordSkillUsage,
-} from "./skills/registry";
+// MCP/Skills are loaded via getAllAvailableTools(); we keep system prompt minimal.
 
 const logger = createLogger("agent");
+
+function isSmallTalk(prompt: string): boolean {
+  const text = String(prompt || "").trim().toLowerCase();
+  if (!text) return false;
+  if (text.length > 40) return false;
+  return /^(hi|hey|hello|yo|gm|good\\s+morning|good\\s+afternoon|good\\s+evening|gn|good\\s+night|thanks|thank\\s+you|thx)([!?.\\s]+)?$/.test(
+    text,
+  );
+}
 
 // Agent configuration
 const MAX_STEPS = parseInt(process.env.AGENT_MAX_STEPS || "25", 10);
@@ -337,19 +337,6 @@ function buildSystemPrompt(
 ): string {
   const soul = loadSoul(ownerUserId);
 
-  // Get MCP server info
-  const mcpServers = getActiveMCPServers();
-  const mcpStatus = getMCPStatus();
-
-  // Get active skills
-  const activeSkills = getActiveSkills();
-
-  // Match skills based on query if provided
-  const matchedSkills = query ? matchSkillTriggers(query) : [];
-
-  // Get tool counts
-  const toolCounts = getToolCounts();
-
   // Get context summary for infinite context
   const contextSummary = conversationId
     ? getContextSummaryForPrompt(conversationId)
@@ -360,76 +347,6 @@ function buildSystemPrompt(
     typeof ownerUserId === "number"
       ? getMemoriesForPromptForUser(ownerUserId, 15)
       : "";
-
-  // Build MCP server section
-  let mcpSection = "";
-  if (mcpServers.length > 0 || mcpStatus.length > 0) {
-    mcpSection = `
-## MCP Servers
-
-Connected MCP (Model Context Protocol) servers provide additional tools:
-`;
-    for (const status of mcpStatus) {
-      mcpSection += `- **${status.server}**: ${status.connected ? `Connected (${status.tools} tools)` : "Disconnected"}\n`;
-    }
-
-    if (mcpStatus.length === 0) {
-      mcpSection += `- No MCP servers currently connected\n`;
-    }
-  }
-
-  // Build skills section
-  let skillsSection = "";
-  if (activeSkills.length > 0) {
-    skillsSection = `
-## Available Skills
-
-The following skills are active and provide specialized capabilities:
-`;
-    for (const skill of activeSkills) {
-      skillsSection += `- **${skill.name}** (v${skill.version}): ${skill.description || "No description"}\n`;
-    }
-  }
-
-  // Build matched skills section with their system prompts
-  let matchedSkillsSection = "";
-  if (matchedSkills.length > 0) {
-    matchedSkillsSection = `
-## Activated Skills for This Query
-
-Based on the user's query, the following specialized skills are activated:
-`;
-    for (const skill of matchedSkills) {
-      matchedSkillsSection += `### ${skill.name}\n`;
-      if (skill.system_prompt) {
-        matchedSkillsSection += `${skill.system_prompt}\n\n`;
-      }
-      // Record skill usage
-      recordSkillUsage(skill.skill_id);
-    }
-  }
-
-  // Build sub-agents section
-  const subAgentsSection = `
-## Sub-Agents (Your Team)
-
-You can spawn sub-agents to handle tasks autonomously. Each sub-agent is a generic worker that gets access to ALL your tools (shell, files, MCP, skills) — just like you.
-
-**How to use:**
-- Give the sub-agent a clear task description and it will execute autonomously
-- Sub-agents are ideal for parallelizable or isolated work
-- They don't pollute your main conversation context
-
-**When to delegate:**
-- Multiple independent tasks that can run in parallel
-- Long-running work that shouldn't block the conversation
-- Isolated tasks that need their own clean context
-- Work that benefits from focused, single-task execution
-
-**Execution modes:**
-- \`wait_for_result: false\` (default) — Fire and forget, continue immediately
-- \`wait_for_result: true\` — Block until complete (only when you NEED the result)
-`;
 
   const steeringSection = steering
     ? `
@@ -457,28 +374,17 @@ Follow these steering instructions strictly while still completing user intent.
 ## Current Session Context
 
 - **Date/Time**: ${new Date().toISOString()}
-- **Working Directory**: ${process.cwd()}
-- **User**: ${process.env.USER || "unknown"}
-- **Platform**: ${process.platform}
 ${sandboxSection}
 ${contextSummary}
 ${superMemory}
-
-## Available Tools
-
-You have access to ${toolCounts.total} tools:
-- **Built-in tools**: ${toolCounts.builtin} (shell, files, sub-agents)
-- **MCP tools**: ${toolCounts.mcp} (from connected MCP servers)
-- **Skill tools**: ${toolCounts.skills} (from active skills)
-
-Built-in capabilities include:
-- Shell access for any command (git, system admin, networking, search)
-- File operations (read, write, list)
-- Sub-agent spawning (delegate specialized tasks)
-${mcpSection}${skillsSection}${matchedSkillsSection}${subAgentsSection}
 ${steeringSection}
 
-  Use these tools to help the user with their requests. Explain actions when you used tools, changed state, or when the user asks. Otherwise respond naturally and directly.
+## Response Style Contract (Non-Negotiable)
+
+- Respond like a competent human assistant.
+- Do NOT produce meta reports (e.g. “what was done/changed/verified”) unless the user asked for it or you actually performed actions that need summarizing.
+- For greetings/small talk: greet back naturally and ask what the user needs.
+- Explain actions only when you used tools, changed state, or the user asks.
 
 ## Tool Safety Policy (Non-Negotiable)
 
@@ -572,6 +478,26 @@ export async function runAgent(
       success: false,
       text: "No LLM provider configured. Please add a provider in the admin panel.",
       error: "No provider configured",
+    };
+  }
+
+  if (isSmallTalk(prompt)) {
+    const result = await generateText({
+      model,
+      system:
+        "You are a competent human assistant. Reply naturally to the greeting/pleasantry and ask how you can help. Keep it short.",
+      prompt,
+      tools: {}, // never use tools for small talk
+      stopWhen: stepCountIs(1),
+      maxRetries: 1,
+    });
+    return {
+      success: true,
+      text: result.text,
+      toolCalls: [],
+      model: (model as { modelId?: string }).modelId || "unknown",
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
     };
   }
 
@@ -850,6 +776,23 @@ export async function runAgentStream(
         yield errorText;
       })(),
       fullText: Promise.resolve(errorText),
+      usage: Promise.resolve(undefined),
+    };
+  }
+
+  if (isSmallTalk(prompt)) {
+    const r = streamText({
+      model,
+      system:
+        "You are a competent human assistant. Reply naturally to the greeting/pleasantry and ask how you can help. Keep it short.",
+      prompt,
+      tools: {}, // never use tools for small talk
+      stopWhen: stepCountIs(1),
+      maxRetries: 1,
+    });
+    return {
+      textStream: r.textStream,
+      fullText: Promise.resolve(r.text),
       usage: Promise.resolve(undefined),
     };
   }

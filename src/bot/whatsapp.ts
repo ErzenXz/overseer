@@ -226,11 +226,19 @@ async function startWhatsAppInstance(instance: {
           sandboxRoot,
           allowSystem,
           actor: { kind: "web", id: String(instance.owner_user_id) },
+          conversationId: conversation.id,
+          agentSessionId: session.session_id,
+          interface: {
+            type: "whatsapp",
+            id: instance.id,
+            externalChatId: chatJid,
+            externalUserId: senderJid,
+          },
         },
         async () => {
           const result = await runAgentStream(text, {
             conversationId: conversation.id,
-            planMode: true,
+            planMode: false,
             sandboxRoot,
             allowSystem,
             actor: { kind: "web", id: String(instance.owner_user_id) },

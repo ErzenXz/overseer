@@ -210,7 +210,10 @@ async function startTelegramInstance(instance: {
       content: messageText,
     });
 
-    await ctx.reply("…");
+    try {
+      // Best-effort: indicate we are working without sending placeholder messages.
+      await ctx.sendChatAction("typing");
+    } catch {}
 
     const rateLimiter = getRateLimiter();
 
@@ -219,11 +222,19 @@ async function startTelegramInstance(instance: {
         sandboxRoot,
         allowSystem,
         actor: { kind: "web", id: String(instance.owner_user_id) },
+        conversationId: conversation.id,
+        agentSessionId: session.session_id,
+        interface: {
+          type: "telegram",
+          id: instance.id,
+          externalChatId: chatId,
+          externalUserId,
+        },
       },
       async () => {
         const result = await runAgentStream(messageText, {
           conversationId: conversation.id,
-          planMode: true,
+          planMode: false,
           sandboxRoot,
           allowSystem,
           actor: { kind: "web", id: String(instance.owner_user_id) },

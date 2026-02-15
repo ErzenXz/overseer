@@ -219,11 +219,19 @@ async function startMatrixInstance(instance: {
           sandboxRoot,
           allowSystem,
           actor: { kind: "web", id: String(instance.owner_user_id) },
+          conversationId: conversation.id,
+          agentSessionId: session.session_id,
+          interface: {
+            type: "matrix",
+            id: instance.id,
+            externalChatId: roomId,
+            externalUserId: externalUserId,
+          },
         },
         () =>
           runAgentStream(text, {
             conversationId: conversation.id,
-            planMode: true,
+            planMode: false,
             sandboxRoot,
             allowSystem,
             actor: { kind: "web", id: String(instance.owner_user_id) },

@@ -1,0 +1,36 @@
+{
+  "name": "Document Reader",
+  "description": "Extract text from PDFs and DOCX files inside the user sandbox (for summarization, Q&A, checklists).",
+  "version": "1.0.0",
+  "author": "Overseer",
+  "triggers": ["pdf", "docx", "document", "read file", "summarize file", "extract text", "report"],
+  "system_prompt": "You can extract text from PDF and DOCX files inside the user's sandbox. When the user provides a file path, extract text first, then summarize or answer questions from that extracted text. Do not hallucinate content that is not present.",
+  "tools": [
+    {
+      "name": "extract_pdf_text",
+      "description": "Extract text from a PDF file at a sandbox-relative path",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Sandbox-relative path to a .pdf file" },
+          "max_pages": { "type": "integer", "default": 0, "description": "Optional limit; 0 means all pages" }
+        },
+        "required": ["path"]
+      },
+      "execute": "index.ts:extractPdfText"
+    },
+    {
+      "name": "extract_docx_text",
+      "description": "Extract text from a DOCX file at a sandbox-relative path",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Sandbox-relative path to a .docx file" }
+        },
+        "required": ["path"]
+      },
+      "execute": "index.ts:extractDocxText"
+    }
+  ]
+}
+

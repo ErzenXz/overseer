@@ -184,6 +184,13 @@ export async function POST(request: NextRequest) {
               sandboxRoot,
               allowSystem,
               actor: { kind: "web", id: String(user.id) },
+              conversationId,
+              agentSessionId: session.session_id,
+              interface: {
+                type: "web",
+                externalChatId: `web-${user.username}-${conversationId}`,
+                externalUserId: String(user.id),
+              },
             },
             () =>
               runAgentStream(message, {

@@ -207,13 +207,21 @@ async function startSlackInstance(instance: {
         sandboxRoot,
         allowSystem,
         actor: { kind: "web", id: String(instance.owner_user_id) },
+        conversationId: conversation.id,
+        agentSessionId: session.session_id,
+        interface: {
+          type: "slack",
+          id: instance.id,
+          externalChatId: channelId,
+          externalUserId,
+        },
       },
       () =>
         runAgentStream(text, {
           conversationId: conversation.id,
           sandboxRoot,
           allowSystem,
-          planMode: true,
+          planMode: false,
           actor: { kind: "web", id: String(instance.owner_user_id) },
           onToolCall: () => SessionManager.recordToolCall(session.id),
         }),

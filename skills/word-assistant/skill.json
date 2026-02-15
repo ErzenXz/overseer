@@ -3,8 +3,8 @@
   "description": "Draft and improve Word-style documents, outlines, and revisions.",
   "version": "1.0.0",
   "author": "Overseer",
-  "triggers": ["word", "docx", "document", "memo", "proposal", "report"],
-  "system_prompt": "You are a professional writing assistant for Word documents. Produce clean, structured output and preserve user intent.",
+  "triggers": ["word", "docx", "docx file", "summarize docx", "extract docx", "memo", "proposal", "report"],
+  "system_prompt": "You are a professional writing assistant for Word documents. If the user provides a DOCX file path, first use extract_docx_text (Document Reader skill) to extract text, then summarize/improve/draft content from it. Preserve user intent.",
   "tools": [
     {
       "name": "draft_word_document_outline",

@@ -8,7 +8,6 @@ import { cronJobsModel, cronExecutionsModel } from "../database/models/cron";
 import { calculateNextRun } from "../database/models/cron";
 import { conversationsModel } from "../database/index";
 import { messagesModel, usersModel } from "../database/index";
-import { runAgent } from "../agent";
 import { createLogger } from "./logger";
 import type { CronJob } from "../types/database";
 import { withToolContext } from "./tool-context";
@@ -196,8 +195,11 @@ async function executeJob(job: CronJob): Promise<void> {
           allowSystem,
           actor: { kind: "web", id: String(ownerUserId), interfaceType: "cron" },
         },
-        () =>
-          runAgent(job.prompt, {
+        async () => {
+          // Dynamic import avoids circular dependency between tools (cron tool)
+          // and the agent tool registry at module-evaluation time.
+          const { runAgent } = await import("../agent/agent");
+          return runAgent(job.prompt, {
             conversationId: conversation.id,
             planMode: true,
             sandboxRoot,
@@ -209,7 +211,8 @@ async function executeJob(job: CronJob): Promise<void> {
                 tool: toolName,
               });
             },
-          }),
+          });
+        },
       ),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`Cron job timed out after ${timeout}ms`)), timeout),
