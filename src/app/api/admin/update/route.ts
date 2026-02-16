@@ -126,7 +126,9 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/admin/update
- * Runs ./scripts/update.sh (self-hosted only; requires filesystem access).
+ * Spawns ./scripts/update-wrapper.sh as a fully detached process so it
+ * survives the service restart that update.sh performs.  Returns immediately.
+ * Poll GET /api/admin/update to track progress.
  */
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -139,61 +141,41 @@ export async function POST(request: NextRequest) {
   });
 
   const cwd = repoRoot();
-  const scriptPath = path.join(cwd, "scripts", "update.sh");
+  const wrapperPath = path.join(cwd, "scripts", "update-wrapper.sh");
+  const statusFile = updateStatusPath();
 
   const issueId = randomUUID();
-  const startedAt = new Date().toISOString();
   const headBefore = await tryGitHead(cwd);
 
   try {
-    // update.sh supports: [--help] [--dry-run] [--yes] [--stash]
-    // We default to non-interactive and safe-ish behavior.
-    const { exitCode, output } = await runProcess(
+    // Ensure the status directory exists before spawning
+    await ensureUpdateStatusDir();
+
+    // Spawn the wrapper fully detached so it survives systemd stop/restart.
+    // The wrapper writes progress and final status to the status file.
+    const child = spawn(
       "bash",
-      [scriptPath, "--yes", "--stash"],
-      { cwd, timeoutMs: 15 * 60_000 },
+      [wrapperPath, statusFile, issueId, cwd],
+      {
+        cwd,
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env, OVERSEER_DIR: cwd },
+      },
     );
 
-    const finishedAt = new Date().toISOString();
-    const headAfter = await tryGitHead(cwd);
-
-    const record: UpdateRunRecord = {
-      issueId,
-      startedAt,
-      finishedAt,
-      ok: exitCode === 0,
-      exitCode,
-      command: `bash ${scriptPath} --yes --stash`,
-      headBefore,
-      headAfter,
-      output,
-    };
-
-    await writeLastRun(record);
+    // Let the child run independently of this Node process
+    child.unref();
 
     return NextResponse.json({
-      success: record.ok,
+      success: true,
+      started: true,
       issueId,
-      exitCode,
       headBefore,
-      headAfter,
-      output,
+      message: "Update started. Poll GET /api/admin/update for progress.",
     });
   } catch (err) {
-    const finishedAt = new Date().toISOString();
     const msg = err instanceof Error ? err.message : String(err);
-    const record: UpdateRunRecord = {
-      issueId,
-      startedAt,
-      finishedAt,
-      ok: false,
-      exitCode: null,
-      command: `bash ${scriptPath} --yes --stash`,
-      headBefore,
-      headAfter: await tryGitHead(cwd),
-      output: msg,
-    };
-    await writeLastRun(record);
     return NextResponse.json({ success: false, issueId, error: msg }, { status: 500 });
   }
 }

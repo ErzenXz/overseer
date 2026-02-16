@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Loader2, Trash2, Star, Power, FlaskConical, Pencil } from "lucide-react";
 import type { Provider } from "@/types/database";
 import type { ModelInfo } from "@/agent/provider-info";
 import {
@@ -10,12 +12,9 @@ import {
   PricingDisplay,
   formatTokenCount,
 } from "@/components/ModelBadges";
-
-interface CatalogProvider {
-  id: string;
-  displayName: string;
-  models: ModelInfo[];
-}
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { trpc } from "@/lib/trpc/client";
 
 interface ProviderRuntimeConfig {
   providerId?: string;
@@ -27,64 +26,90 @@ interface ProvidersListProps {
   providers: Provider[];
 }
 
+function ProviderCardSkeleton() {
+  return (
+    <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-5">
+      <div className="flex items-start gap-4">
+        <Skeleton className="w-12 h-12 rounded-lg shrink-0" />
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-4 w-64" />
+          <div className="flex gap-2 mt-2">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+            <Skeleton className="h-5 w-14 rounded-full" />
+          </div>
+          <Skeleton className="h-3 w-80 mt-2" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { ProviderCardSkeleton };
+
 export function ProvidersList({ providers }: ProvidersListProps) {
   const router = useRouter();
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const utils = trpc.useUtils();
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ id: number; success: boolean; message: string } | null>(null);
-  const [catalog, setCatalog] = useState<Record<string, CatalogProvider>>({});
 
-  useEffect(() => {
-    let cancelled = false;
+  const { data: catalog = [] } = trpc.providers.catalog.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+  });
 
-    const load = async () => {
-      const res = await fetch("/api/providers/catalog", { cache: "no-store" });
-      const data = await res.json();
-      const providersList = (data.providers || []) as CatalogProvider[];
-
-      if (cancelled) return;
-
-      const mapped = providersList.reduce<Record<string, CatalogProvider>>((acc, item) => {
-        acc[item.id] = item;
-        return acc;
-      }, {});
-
-      setCatalog(mapped);
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this provider?")) return;
-
-    setDeletingId(id);
-    try {
-      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        router.refresh();
-      }
-    } finally {
-      setDeletingId(null);
+  const catalogMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const item of catalog) {
+      map[item.id] = item;
     }
-  };
+    return map;
+  }, [catalog]);
 
-  const handleSetDefault = async (id: number) => {
-    await fetch(`/api/providers/${id}/default`, { method: "POST" });
-    router.refresh();
-  };
+  const deleteMutation = trpc.providers.delete.useMutation({
+    onMutate: async ({ id }) => {
+      await utils.providers.list.cancel();
+      const prev = utils.providers.list.getData();
+      utils.providers.list.setData(undefined, (old) =>
+        (old ?? []).filter((p) => p.id !== id)
+      );
+      return { prev };
+    },
+    onSuccess: (_data, { id }) => {
+      toast.success("Provider deleted");
+      router.refresh();
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) utils.providers.list.setData(undefined, ctx.prev);
+      toast.error("Failed to delete provider", { description: err.message });
+    },
+  });
 
-  const handleToggleActive = async (id: number, currentActive: boolean) => {
-    await fetch(`/api/providers/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_active: !currentActive }),
-    });
-    router.refresh();
+  const setDefaultMutation = trpc.providers.setDefault.useMutation({
+    onSuccess: () => {
+      toast.success("Default provider updated");
+      utils.providers.list.invalidate();
+      router.refresh();
+    },
+    onError: (err) => {
+      toast.error("Failed to set default", { description: err.message });
+    },
+  });
+
+  const toggleActiveMutation = trpc.providers.update.useMutation({
+    onSuccess: (_data, vars) => {
+      toast.success(vars.is_active ? "Provider enabled" : "Provider disabled");
+      utils.providers.list.invalidate();
+      router.refresh();
+    },
+    onError: (err) => {
+      toast.error("Failed to toggle provider", { description: err.message });
+    },
+  });
+
+  const handleDelete = (id: number) => {
+    if (!confirm("Are you sure you want to delete this provider?")) return;
+    deleteMutation.mutate({ id });
   };
 
   const handleTest = async (id: number) => {
@@ -95,13 +120,21 @@ export function ProvidersList({ providers }: ProvidersListProps) {
       const res = await fetch(`/api/providers/${id}/test`, { method: "POST" });
       const data = await res.json();
 
-      setTestResult({
+      const result = {
         id,
         success: data.success,
         message: data.success ? `Connected (${data.latencyMs}ms)` : data.error || "Failed",
-      });
+      };
+      setTestResult(result);
+
+      if (data.success) {
+        toast.success("Connection test passed", { description: `${data.latencyMs}ms` });
+      } else {
+        toast.error("Connection test failed", { description: data.error || "Unknown error" });
+      }
     } catch {
       setTestResult({ id, success: false, message: "Test failed" });
+      toast.error("Connection test failed");
     } finally {
       setTestingId(null);
     }
@@ -109,7 +142,6 @@ export function ProvidersList({ providers }: ProvidersListProps) {
 
   const parseConfig = (raw: string | null): ProviderRuntimeConfig => {
     if (!raw) return {};
-
     try {
       return JSON.parse(raw) as ProviderRuntimeConfig;
     } catch {
@@ -117,27 +149,26 @@ export function ProvidersList({ providers }: ProvidersListProps) {
     }
   };
 
-  // Look up model info from dynamic catalog
   function getModelInfo(providerName: string, modelId: string) {
-    const providerInfo = catalog[providerName];
+    const providerInfo = catalogMap[providerName];
     if (!providerInfo) return null;
-    return providerInfo.models.find((m) => m.id === modelId) || null;
+    return providerInfo.models.find((m: ModelInfo) => m.id === modelId) || null;
   }
 
   return (
     <div className="space-y-4">
-      {providers.map((provider) => {
+      {providers.map((provider, index) => {
         const runtimeConfig = parseConfig(provider.config);
         const providerLookupId =
           runtimeConfig.models_dev_provider_id || runtimeConfig.providerId || provider.name;
         const modelInfo = getModelInfo(providerLookupId, provider.model);
         const isTestingThis = testingId === provider.id;
-        const testResultForThis = testResult?.id === provider.id ? testResult : null;
+        const isDeletingThis = deleteMutation.isPending && deleteMutation.variables?.id === provider.id;
 
         return (
           <div
             key={provider.id}
-            className={`bg-[var(--color-surface-raised)] border rounded-lg overflow-hidden ${
+            className={`stagger-item card-hover bg-[var(--color-surface-raised)] border rounded-lg overflow-hidden ${
               provider.is_default ? "border-[var(--color-accent)]" : "border-[var(--color-border)]"
             }`}
           >
@@ -147,7 +178,7 @@ export function ProvidersList({ providers }: ProvidersListProps) {
                 <div className="flex items-start gap-4 min-w-0 flex-1">
                   {/* Avatar */}
                   <div
-                    className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${
+                    className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
                       provider.is_active
                         ? "bg-[var(--color-accent)] text-black"
                         : "bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)]"
@@ -219,61 +250,64 @@ export function ProvidersList({ providers }: ProvidersListProps) {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => handleTest(provider.id)}
                     disabled={isTestingThis}
-                    className="px-3 py-1.5 text-xs bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded transition-colors disabled:opacity-50"
+                    className="interactive"
                   >
+                    {isTestingThis ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
                     {isTestingThis ? "Testing..." : "Test"}
-                  </button>
-                  <a
-                    href={`/providers/${provider.id}/edit`}
-                    className="px-3 py-1.5 text-xs bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded transition-colors"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    className="interactive"
                   >
-                    Edit
-                  </a>
+                    <a href={`/providers/${provider.id}/edit`}>
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </a>
+                  </Button>
                   {!provider.is_default && (
-                    <button
-                      onClick={() => handleSetDefault(provider.id)}
-                      className="px-3 py-1.5 text-xs bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded transition-colors"
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDefaultMutation.mutate({ id: provider.id })}
+                      className="interactive"
                     >
-                      Set Default
-                    </button>
+                      <Star className="h-3.5 w-3.5" />
+                      Default
+                    </Button>
                   )}
-                  <button
-                    onClick={() => handleToggleActive(provider.id, !!provider.is_active)}
-                    className={`px-3 py-1.5 text-xs rounded transition-colors ${
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleActiveMutation.mutate({ id: provider.id, is_active: !provider.is_active })}
+                    className={`interactive ${
                       provider.is_active
-                        ? "text-yellow-400 hover:text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20"
-                        : "text-green-400 hover:text-green-300 bg-green-500/10 hover:bg-green-500/20"
+                        ? "text-yellow-400 hover:text-yellow-300"
+                        : "text-green-400 hover:text-green-300"
                     }`}
                   >
+                    <Power className="h-3.5 w-3.5" />
                     {provider.is_active ? "Disable" : "Enable"}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => handleDelete(provider.id)}
-                    disabled={deletingId === provider.id}
-                    className="px-3 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors disabled:opacity-50"
+                    disabled={isDeletingThis}
+                    className="interactive text-red-400 hover:text-red-300"
                   >
-                    {deletingId === provider.id ? "..." : "Delete"}
-                  </button>
+                    {isDeletingThis ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    Delete
+                  </Button>
                 </div>
               </div>
-
-              {/* Test result toast */}
-              {testResultForThis && (
-                <div
-                  className={`mt-3 px-3 py-2 rounded text-xs flex items-center gap-2 ${
-                    testResultForThis.success
-                      ? "bg-green-500/10 border border-green-500/20 text-green-400"
-                      : "bg-red-500/10 border border-red-500/20 text-red-400"
-                  }`}
-                >
-                  <span>{testResultForThis.success ? "OK" : "ERR"}</span>
-                  <span>{testResultForThis.message}</span>
-                </div>
-              )}
             </div>
 
             {/* Pricing footer (if model info available) */}

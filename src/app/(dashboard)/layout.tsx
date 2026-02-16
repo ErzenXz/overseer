@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { Sidebar } from "@/components/Sidebar";
 import { getUserPermissions, ROLE_PERMISSIONS } from "@/lib/permissions";
+import { DashboardShell } from "@/components/DashboardShell";
 
 export default async function DashboardLayout({
   children,
@@ -27,7 +28,9 @@ export default async function DashboardLayout({
     <div className="h-screen flex overflow-hidden bg-[var(--color-surface)]">
       <Sidebar user={user} permissions={permissions} />
       <main className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="p-6 lg:p-8 max-w-[1400px]">{children}</div>
+        <DashboardShell>
+          <div className="p-6 lg:p-8 max-w-[1400px]">{children}</div>
+        </DashboardShell>
       </main>
     </div>
   );

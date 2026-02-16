@@ -1,18 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-type UpdateRunRecord = {
-  issueId: string;
-  startedAt: string;
-  finishedAt: string;
-  ok: boolean;
-  exitCode: number | null;
-  command: string;
-  headBefore?: string | null;
-  headAfter?: string | null;
-  output: string;
-};
+import { useState } from "react";
+import { Loader2, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { trpc } from "@/lib/trpc/client";
 
 export function SystemUpdatePanel({
   title = "Updates",
@@ -21,100 +14,59 @@ export function SystemUpdatePanel({
   title?: string;
   showAutoUpdate?: boolean;
 }) {
-  const [status, setStatus] = useState<{
-    head: string | null;
-    lastRun: UpdateRunRecord | null;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const utils = trpc.useUtils();
   const [autoUpdateStatus, setAutoUpdateStatus] = useState<
     { created: boolean; jobId?: number; error?: string } | null
   >(null);
   const [forbidden, setForbidden] = useState(false);
 
-  const loadStatus = async () => {
-    setError(null);
-    setForbidden(false);
-    try {
-      const res = await fetch("/api/admin/update", { cache: "no-store" });
-      if (res.status === 401 || res.status === 403) {
+  const {
+    data: status,
+    error: statusError,
+    isLoading: statusLoading,
+  } = trpc.system.updateStatus.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const lastRun = query.state.data?.lastRun;
+      if (lastRun?.status === "running") return 5000;
+      return false;
+    },
+    retry: (failureCount, error) => {
+      // Don't retry on auth errors
+      if (error.data?.code === "UNAUTHORIZED") {
         setForbidden(true);
-        return;
+        return false;
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as any;
-      setStatus({
-        head: typeof data.head === "string" ? data.head : null,
-        lastRun: data.lastRun ?? null,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
+      return failureCount < 2;
+    },
+  });
 
-  useEffect(() => {
-    void loadStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const isRunning = status?.lastRun?.status === "running";
 
-  const runUpdateNow = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/update", { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (res.status === 401 || res.status === 403) {
-        setForbidden(true);
-        throw new Error("Insufficient permissions to run update.");
-      }
-      if (!res.ok || !data?.success) {
-        throw new Error(
-          data?.issueId
-            ? `${data?.error || "Update failed"} (Issue #${data.issueId})`
-            : data?.error || `Update failed (HTTP ${res.status})`,
-        );
-      }
-      await loadStatus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const updateMutation = trpc.system.runUpdate.useMutation({
+    onSuccess: () => {
+      toast.success("Update started", { description: "Polling for progress..." });
+      utils.system.updateStatus.invalidate();
+    },
+    onError: (err) => {
+      toast.error("Update failed", { description: err.message });
+    },
+  });
 
-  const enableWeeklyAutoUpdate = async () => {
-    setAutoUpdateStatus(null);
-    setError(null);
-    try {
-      const res = await fetch("/api/cron", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "Overseer Auto Update",
-          description: "Weekly self-update via scripts/update.sh",
-          cron_expression: "0 3 * * 0",
-          timezone: "UTC",
-          enabled: true,
-          prompt:
-            "Run the shell tool to execute exactly: bash ./scripts/update.sh --yes --stash\nReturn a brief status including the exit code.",
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (res.status === 401 || res.status === 403) {
-        setForbidden(true);
-        throw new Error("Insufficient permissions to configure auto-update.");
-      }
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Failed to create cron job (HTTP ${res.status})`);
-      }
-      setAutoUpdateStatus({ created: true, jobId: data.job?.id });
-    } catch (err) {
-      setAutoUpdateStatus({
-        created: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  };
+  const autoUpdateMutation = trpc.system.enableAutoUpdate.useMutation({
+    onSuccess: (data) => {
+      setAutoUpdateStatus({ created: true, jobId: data.jobId });
+      toast.success("Auto-update enabled", { description: "Weekly updates every Sunday at 3 AM UTC." });
+    },
+    onError: (err) => {
+      setAutoUpdateStatus({ created: false, error: err.message });
+      toast.error("Failed to enable auto-update", { description: err.message });
+    },
+  });
+
+  const errorMsg =
+    updateMutation.error?.message ??
+    statusError?.message ??
+    null;
 
   return (
     <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
@@ -143,37 +95,57 @@ export function SystemUpdatePanel({
 
         <div className="flex items-center gap-3">
           {showAutoUpdate && (
-            <button
-              onClick={enableWeeklyAutoUpdate}
-              disabled={forbidden}
-              className="px-4 py-2 text-sm bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded transition-colors border border-[var(--color-border)] disabled:opacity-50"
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => autoUpdateMutation.mutate()}
+              disabled={forbidden || autoUpdateMutation.isPending}
             >
+              {autoUpdateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Enable Weekly Auto-Update
-            </button>
+            </Button>
           )}
-          <button
-            onClick={runUpdateNow}
-            disabled={loading || forbidden}
-            className="px-4 py-2 text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-colors disabled:opacity-50"
+          <Button
+            onClick={() => updateMutation.mutate()}
+            disabled={updateMutation.isPending || isRunning || forbidden}
           >
-            {loading ? "Updating..." : "Update Now"}
-          </button>
+            {(updateMutation.isPending || isRunning) && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            {isRunning ? "Updating..." : updateMutation.isPending ? "Starting..." : "Update Now"}
+          </Button>
         </div>
       </div>
 
-      {(error || autoUpdateStatus?.error) && (
-        <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-300">
-          {error || autoUpdateStatus?.error}
+      {errorMsg && (
+        <div className="mt-4 flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-300">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
+      {autoUpdateStatus?.error && (
+        <div className="mt-4 flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-300">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>{autoUpdateStatus.error}</span>
         </div>
       )}
 
       {autoUpdateStatus?.created && (
-        <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded text-sm text-green-300">
+        <div className="mt-4 flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded text-sm text-green-300">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
           Weekly auto-update cron job created{autoUpdateStatus.jobId ? ` (Job #${autoUpdateStatus.jobId})` : ""}.
         </div>
       )}
 
-      {status?.lastRun && (
+      {isRunning && (
+        <div className="mt-4 flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded text-sm text-blue-300">
+          <RefreshCw className="h-4 w-4 animate-spin shrink-0" />
+          Update in progress... This page will refresh automatically when complete.
+        </div>
+      )}
+
+      {status?.lastRun && status.lastRun.status !== "running" && (
         <div className="mt-4 p-4 bg-[var(--color-surface-overlay)] rounded-lg border border-[var(--color-border)]">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="text-sm text-[var(--color-text-secondary)]">

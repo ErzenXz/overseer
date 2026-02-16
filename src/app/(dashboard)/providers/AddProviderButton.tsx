@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import type { ModelInfo } from "@/agent/provider-info";
 import {
   CapabilityBadges,
@@ -11,31 +13,37 @@ import {
   KnowledgeCutoff,
   formatTokenCount,
 } from "@/components/ModelBadges";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { trpc } from "@/lib/trpc/client";
 
 interface AddProviderButtonProps {
   variant?: "default" | "primary";
 }
 
-interface CatalogProvider {
-  id: string;
-  displayName: string;
-  requiresKey: boolean;
-  description: string;
-  npm: string;
-  apiBaseUrl?: string;
-  models: ModelInfo[];
-  runtimeAdapter: string;
-}
-
 export function AddProviderButton({ variant = "default" }: AddProviderButtonProps) {
   const router = useRouter();
+  const utils = trpc.useUtils();
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogLoadError, setCatalogLoadError] = useState("");
-  const [catalogReloadNonce, setCatalogReloadNonce] = useState(0);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -49,85 +57,47 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
     thinking_level: "medium" as "low" | "medium" | "high",
   });
 
+  const {
+    data: catalog = [],
+    isLoading: catalogLoading,
+    error: catalogError,
+    refetch: retryCatalog,
+  } = trpc.providers.catalog.useQuery(undefined, {
+    enabled: isOpen,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  // Auto-select the first provider when catalog loads
+  const catalogReady = catalog.length > 0;
+  const needsInit = catalogReady && !formData.name;
+  if (needsInit) {
+    const first = catalog[0];
+    const firstModel = first.models[0];
+    setFormData((prev) => ({
+      ...prev,
+      name: first.id,
+      display_name: first.displayName,
+      model: firstModel?.id || "",
+      base_url: (first as any).apiBaseUrl || "",
+      temperature: firstModel?.allowsTemperature === false ? 0 : prev.temperature,
+    }));
+  }
+
   const selectedProvider = useMemo(
-    () => catalog.find((provider) => provider.id === formData.name),
+    () => catalog.find((provider: any) => provider.id === formData.name),
     [catalog, formData.name]
-  );
+  ) as any;
 
-  useEffect(() => {
-    if (!isOpen || catalog.length > 0 || catalogLoading) return;
-
-    let cancelled = false;
-    const loadCatalog = async () => {
-      setCatalogLoading(true);
-      setCatalogLoadError("");
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
-        const res = await fetch("/api/providers/catalog", {
-          cache: "no-store",
-          signal: controller.signal,
-        }).finally(() => clearTimeout(timeout));
-        if (!res.ok) {
-          throw new Error(`Catalog request failed (${res.status})`);
-        }
-        const data = await res.json();
-        const providers = (data.providers || []) as CatalogProvider[];
-
-        if (!cancelled) {
-          setCatalog(providers);
-          if (providers.length > 0) {
-            const first = providers[0];
-            const firstModel = first.models[0];
-            setFormData((prev) => ({
-              ...prev,
-              name: first.id,
-              display_name: first.displayName,
-              model: firstModel?.id || "",
-              base_url: first.apiBaseUrl || "",
-              temperature: firstModel?.allowsTemperature === false ? 0 : prev.temperature,
-            }));
-          }
-        }
-      } catch (err) {
-        if (!cancelled) {
-          const msg = err instanceof Error ? err.message : String(err);
-          setCatalogLoadError(`Failed to load provider catalog: ${msg}`);
-          setError(`Failed to load provider catalog: ${msg}`);
-        }
-      } finally {
-        if (!cancelled) {
-          setCatalogLoading(false);
-        }
-      }
-    };
-
-    void loadCatalog();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, catalog.length, catalogLoading, catalogReloadNonce]);
-
-  const retryCatalogLoad = async () => {
-    setCatalog([]);
-    setCatalogLoadError("");
-    setCatalogLoading(false);
-    setCatalogReloadNonce((n) => n + 1);
-  };
-
-  // Look up the selected model's info from the provider registry
   const selectedModelInfo: ModelInfo | undefined = useMemo(() => {
-    const provider = selectedProvider;
-    if (!provider) return undefined;
-    return provider.models.find((m) => m.id === formData.model);
+    if (!selectedProvider) return undefined;
+    return selectedProvider.models.find((m: ModelInfo) => m.id === formData.model);
   }, [selectedProvider, formData.model]);
 
   const handleProviderChange = (name: string) => {
     const info = catalog.find((p) => p.id === name);
     if (!info) return;
     const firstModel = info.models[0];
-
     setFormData((prev) => ({
       ...prev,
       name,
@@ -139,9 +109,8 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
   };
 
   const handleModelChange = (modelId: string) => {
-    const provider = selectedProvider;
-    if (!provider) return;
-    const model = provider.models.find((m) => m.id === modelId);
+    if (!selectedProvider) return;
+    const model = selectedProvider.models.find((m: any) => m.id === modelId);
     setFormData((prev) => ({
       ...prev,
       model: modelId,
@@ -149,290 +118,342 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const addMutation = trpc.providers.create.useMutation({
+    onMutate: async (newProvider) => {
+      // Optimistic update: add a placeholder to the providers list
+      await utils.providers.list.cancel();
+      const prev = utils.providers.list.getData();
+      utils.providers.list.setData(undefined, (old) => [
+        ...(old ?? []),
+        {
+          id: -Date.now(),
+          name: newProvider.name,
+          display_name: newProvider.display_name,
+          model: newProvider.model,
+          temperature: newProvider.temperature,
+          is_active: 1,
+          is_default: newProvider.is_default ? 1 : 0,
+          priority: newProvider.priority,
+          base_url: newProvider.base_url ?? null,
+          api_key_encrypted: newProvider.api_key ? "***" : null,
+          config: newProvider.config ? JSON.stringify(newProvider.config) : null,
+          max_tokens: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as any,
+      ]);
+      return { prev };
+    },
+    onSuccess: () => {
+      setIsOpen(false);
+      setError("");
+      toast.success("Provider added", { description: `${formData.display_name} is ready to use.` });
+      utils.providers.list.invalidate();
+      router.refresh();
+    },
+    onError: (err, _vars, ctx) => {
+      // Rollback optimistic update
+      if (ctx?.prev) utils.providers.list.setData(undefined, ctx.prev);
+      const msg = err.message || "An error occurred";
+      setError(msg);
+      toast.error("Failed to add provider", { description: msg });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
-    try {
-      const providerConfig = selectedProvider
-        ? {
-            models_dev_provider_id: selectedProvider.id,
-            provider_npm: selectedProvider.npm,
-            runtime_adapter: selectedProvider.runtimeAdapter,
-            thinking_level:
-              selectedModelInfo?.supportsThinking || selectedModelInfo?.reasoning
-                ? formData.thinking_level
-                : undefined,
-          }
-        : undefined;
+    const providerConfig = selectedProvider
+      ? {
+          models_dev_provider_id: selectedProvider.id,
+          provider_npm: selectedProvider.npm,
+          runtime_adapter: selectedProvider.runtimeAdapter,
+          thinking_level:
+            selectedModelInfo?.supportsThinking || selectedModelInfo?.reasoning
+              ? formData.thinking_level
+              : undefined,
+        }
+      : undefined;
 
-      const res = await fetch("/api/providers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name,
-          display_name: formData.display_name,
-          api_key: formData.api_key,
-          base_url: formData.base_url,
-          model: formData.model,
-          temperature: formData.temperature,
-          is_default: formData.is_default,
-          priority: formData.priority,
-          config: providerConfig,
-        }),
+    addMutation.mutate({
+      name: formData.name,
+      display_name: formData.display_name,
+      api_key: formData.api_key || undefined,
+      base_url: formData.base_url || undefined,
+      model: formData.model,
+      temperature: formData.temperature,
+      is_default: formData.is_default,
+      priority: formData.priority,
+      config: providerConfig as Record<string, unknown> | undefined,
+    });
+  };
+
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (!open) {
+      setError("");
+      setFormData({
+        name: "",
+        display_name: "",
+        api_key: "",
+        base_url: "",
+        model: "",
+        temperature: 0.7,
+        is_default: false,
+        priority: 0,
+        thinking_level: "medium",
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to add provider");
-        return;
-      }
-
-      setIsOpen(false);
-      router.refresh();
-    } catch {
-      setError("An error occurred");
-    } finally {
-      setLoading(false);
     }
   };
 
-  const buttonClass =
-    variant === "primary"
-      ? "px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-all"
-      : "flex items-center gap-2 px-4 py-2 bg-[var(--color-accent-dim)] text-[var(--color-accent)] hover:bg-[var(--color-accent-dim)] rounded transition-colors";
+  const catalogErrorMsg = catalogError?.message ?? "";
 
   return (
-    <>
-      <button onClick={() => setIsOpen(true)} className={buttonClass}>
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-        </svg>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <Button
+        variant={variant === "primary" ? "default" : "secondary"}
+        onClick={() => setIsOpen(true)}
+      >
+        <Plus className="h-4 w-4" />
         Add Provider
-      </button>
+      </Button>
 
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-[var(--color-border)]">
-              <h2 className="text-xl font-semibold text-white font-[var(--font-mono)]">Add Provider</h2>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-2 text-[var(--color-text-secondary)] hover:text-white rounded hover:bg-[var(--color-border)] transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="font-[var(--font-mono)]">Add Provider</DialogTitle>
+          <DialogDescription>
+            Configure a new LLM provider and model for your AI agent.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
             </div>
+          )}
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Provider</label>
-                <select
-                  value={formData.name}
-                  onChange={(e) => handleProviderChange(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                  disabled={catalogLoading || catalog.length === 0}
-                >
-                  {catalog.map((info) => (
-                    <option key={info.id} value={info.id}>
-                      {info.displayName}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                  {catalogLoading
-                    ? "Loading providers from models.dev…"
-                    : selectedProvider?.description || catalogLoadError || ""}
-                </p>
-                {!catalogLoading && catalogLoadError && (
-                  <button
-                    type="button"
-                    onClick={retryCatalogLoad}
-                    className="mt-2 text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-light)] underline"
-                  >
-                    Retry loading catalog
-                  </button>
-                )}
+          {/* Provider Select */}
+          <div className="space-y-2">
+            <Label>Provider</Label>
+            {catalogLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-3 w-48" />
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Model</label>
-                {selectedProvider && selectedProvider.models.length === 0 ? (
-                  <>
-                    <input
-                      type="text"
-                      value={formData.model}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, model: e.target.value }))}
-                      className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                      placeholder="Enter model id (manual)"
-                      required
-                    />
-                    <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                      No models were returned for this provider. You can still add it by typing a model id manually.
-                    </p>
-                  </>
-                ) : (
-                  <select
-                    value={formData.model}
-                    onChange={(e) => handleModelChange(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                    disabled={!selectedProvider || selectedProvider.models.length === 0}
-                  >
-                    {(selectedProvider?.models || []).map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name} {model.reasoning ? "(reasoning)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* --- Model info panel --- */}
-              {selectedModelInfo && (
-                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-overlay)] p-3.5 space-y-3">
-                  {/* Row 1: name + cost tier */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <span className="text-sm font-medium text-white">{selectedModelInfo.name}</span>
-                      <span className="ml-2 text-[10px] text-[var(--color-text-muted)] font-mono">{selectedModelInfo.id}</span>
-                    </div>
-                    <CostTierBadge tier={selectedModelInfo.costTier} />
-                  </div>
-
-                  {/* Row 2: capability badges */}
-                  <CapabilityBadges model={selectedModelInfo} />
-
-                  {/* Row 3: context window bar */}
-                  <ContextWindowBar
-                    contextWindow={selectedModelInfo.contextWindow}
-                    maxOutput={selectedModelInfo.maxOutput}
-                  />
-
-                  {/* Row 4: pricing + cutoff */}
-                  <div className="flex items-start justify-between gap-4">
-                    <PricingDisplay model={selectedModelInfo} compact />
-                    <KnowledgeCutoff date={selectedModelInfo.knowledgeCutoff} />
-                  </div>
-
-                  {/* Hints for reasoning models */}
-                  {!selectedModelInfo.allowsTemperature && (
-                    <p className="text-[10px] text-amber-400/80 bg-amber-500/5 px-2 py-1 rounded">
-                      Reasoning model — temperature is locked to 0 and max output is set to {formatTokenCount(selectedModelInfo.maxOutput)} tokens.
-                    </p>
-                  )}
-
-                  {(selectedModelInfo.supportsThinking || selectedModelInfo.reasoning) && (
-                    <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2.5">
-                      <label className="block text-xs font-medium text-amber-300 mb-1">
-                        Thinking level
-                      </label>
-                      <select
-                        value={formData.thinking_level}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            thinking_level: e.target.value as "low" | "medium" | "high",
-                          }))
-                        }
-                        className="w-full px-3 py-2 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                      >
-                        <option value="low">Low (faster)</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High (deeper reasoning)</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {selectedProvider?.requiresKey && (
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">API Key</label>
-                  <input
-                    type="password"
-                    value={formData.api_key}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, api_key: e.target.value }))}
-                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                    placeholder="sk-..."
-                    required
-                  />
-                </div>
-              )}
-
-              {selectedProvider && (selectedProvider.id === "ollama" || selectedProvider.runtimeAdapter === "openai-compatible") && (
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Base URL</label>
-                  <input
-                    type="text"
-                    value={formData.base_url}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, base_url: e.target.value }))}
-                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                    placeholder="http://localhost:11434/v1"
-                  />
-                </div>
-              )}
-
-              <div>
-                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
-                    Temperature
-                    {selectedModelInfo && !selectedModelInfo.allowsTemperature && (
-                      <span className="ml-1 text-[10px] text-amber-400 font-normal">(locked)</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="2"
-                    value={formData.temperature}
-                    disabled={selectedModelInfo ? !selectedModelInfo.allowsTemperature : false}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="is_default"
-                  checked={formData.is_default}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, is_default: e.target.checked }))}
-                  className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-surface-overlay)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
-                />
-                <label htmlFor="is_default" className="text-sm text-[var(--color-text-primary)]">
-                  Set as default provider
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
+            ) : catalogErrorMsg ? (
+              <div className="space-y-2">
+                <p className="text-xs text-red-400">{catalogErrorMsg}</p>
+                <Button
                   type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="px-4 py-2 text-[var(--color-text-secondary)] hover:text-white transition-colors"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => retryCatalog()}
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || catalogLoading || !formData.name || !formData.model}
-                  className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-colors disabled:opacity-50"
-                >
-                  {loading ? "Adding..." : "Add Provider"}
-                </button>
+                  <RefreshCw className="h-3 w-3" />
+                  Retry
+                </Button>
               </div>
-            </form>
+            ) : (
+              <Select
+                value={formData.name}
+                onValueChange={handleProviderChange}
+                disabled={catalog.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {catalog.map((info) => (
+                    <SelectItem key={info.id} value={info.id}>
+                      {info.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {selectedProvider && (
+              <p className="text-[11px] text-[var(--color-text-muted)]">
+                {selectedProvider.description}
+              </p>
+            )}
           </div>
-        </div>
-      )}
-    </>
+
+          {/* Model Select */}
+          <div className="space-y-2">
+            <Label>Model</Label>
+            {selectedProvider && selectedProvider.models.length === 0 ? (
+              <>
+                <Input
+                  value={formData.model}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, model: e.target.value }))}
+                  placeholder="Enter model id (manual)"
+                  required
+                />
+                <p className="text-[11px] text-[var(--color-text-muted)]">
+                  No models were returned for this provider. You can still add it by typing a model id manually.
+                </p>
+              </>
+            ) : (
+              <Select
+                value={formData.model}
+                onValueChange={handleModelChange}
+                disabled={!selectedProvider || selectedProvider.models.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(selectedProvider?.models || []).map((model: any) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.name} {model.reasoning ? "(reasoning)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {/* --- Model info panel --- */}
+          {selectedModelInfo && (
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-overlay)] p-3.5 space-y-3">
+              {/* Row 1: name + cost tier */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-white">{selectedModelInfo.name}</span>
+                  <span className="ml-2 text-[10px] text-[var(--color-text-muted)] font-mono">{selectedModelInfo.id}</span>
+                </div>
+                <CostTierBadge tier={selectedModelInfo.costTier} />
+              </div>
+
+              {/* Row 2: capability badges */}
+              <CapabilityBadges model={selectedModelInfo} />
+
+              {/* Row 3: context window bar */}
+              <ContextWindowBar
+                contextWindow={selectedModelInfo.contextWindow}
+                maxOutput={selectedModelInfo.maxOutput}
+              />
+
+              {/* Row 4: pricing + cutoff */}
+              <div className="flex items-start justify-between gap-4">
+                <PricingDisplay model={selectedModelInfo} compact />
+                <KnowledgeCutoff date={selectedModelInfo.knowledgeCutoff} />
+              </div>
+
+              {/* Hints for reasoning models */}
+              {!selectedModelInfo.allowsTemperature && (
+                <p className="text-[10px] text-amber-400/80 bg-amber-500/5 px-2 py-1 rounded">
+                  Reasoning model — temperature is locked to 0 and max output is set to {formatTokenCount(selectedModelInfo.maxOutput)} tokens.
+                </p>
+              )}
+
+              {(selectedModelInfo.supportsThinking || selectedModelInfo.reasoning) && (
+                <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2.5 space-y-1">
+                  <Label className="text-xs text-amber-300">Thinking level</Label>
+                  <Select
+                    value={formData.thinking_level}
+                    onValueChange={(v) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        thinking_level: v as "low" | "medium" | "high",
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low (faster)</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High (deeper reasoning)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* API Key */}
+          {selectedProvider?.requiresKey && (
+            <div className="space-y-2">
+              <Label>API Key</Label>
+              <Input
+                type="password"
+                value={formData.api_key}
+                onChange={(e) => setFormData((prev) => ({ ...prev, api_key: e.target.value }))}
+                placeholder="sk-..."
+                required
+              />
+            </div>
+          )}
+
+          {/* Base URL */}
+          {selectedProvider && (selectedProvider.id === "ollama" || selectedProvider.runtimeAdapter === "openai-compatible") && (
+            <div className="space-y-2">
+              <Label>Base URL</Label>
+              <Input
+                type="text"
+                value={formData.base_url}
+                onChange={(e) => setFormData((prev) => ({ ...prev, base_url: e.target.value }))}
+                placeholder="http://localhost:11434/v1"
+              />
+            </div>
+          )}
+
+          {/* Temperature */}
+          <div className="space-y-2">
+            <Label>
+              Temperature
+              {selectedModelInfo && !selectedModelInfo.allowsTemperature && (
+                <span className="ml-1 text-[10px] text-amber-400 font-normal">(locked)</span>
+              )}
+            </Label>
+            <Input
+              type="number"
+              step="0.1"
+              min="0"
+              max="2"
+              value={formData.temperature}
+              disabled={selectedModelInfo ? !selectedModelInfo.allowsTemperature : false}
+              onChange={(e) => setFormData((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+            />
+          </div>
+
+          {/* Default Provider Checkbox */}
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="is_default"
+              checked={formData.is_default}
+              onCheckedChange={(checked) =>
+                setFormData((prev) => ({ ...prev, is_default: checked === true }))
+              }
+            />
+            <Label htmlFor="is_default" className="font-normal cursor-pointer">
+              Set as default provider
+            </Label>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={addMutation.isPending || catalogLoading || !formData.name || !formData.model}
+            >
+              {addMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {addMutation.isPending ? "Adding..." : "Add Provider"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
