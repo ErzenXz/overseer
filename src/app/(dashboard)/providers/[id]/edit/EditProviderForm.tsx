@@ -44,6 +44,7 @@ export function EditProviderForm({ provider }: EditProviderFormProps) {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
   const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
+  const [catalogReloadNonce, setCatalogReloadNonce] = useState(0);
 
   const initialConfig = useMemo(() => parseRuntimeConfig(provider.config), [provider.config]);
 
@@ -82,9 +83,10 @@ export function EditProviderForm({ provider }: EditProviderFormProps) {
         if (!cancelled) {
           setCatalog(providers);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setCatalogError("Failed to load provider catalog. You can still update manually.");
+          const msg = err instanceof Error ? err.message : String(err);
+          setCatalogError(`Failed to load provider catalog: ${msg}. You can still update manually.`);
         }
       } finally {
         if (!cancelled) {
@@ -98,7 +100,9 @@ export function EditProviderForm({ provider }: EditProviderFormProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [catalogReloadNonce]);
+
+  const retryCatalogLoad = () => setCatalogReloadNonce((n) => n + 1);
 
   const selectedProvider = useMemo(
     () => catalog.find((entry) => entry.id === formData.provider_name),

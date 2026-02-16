@@ -44,6 +44,7 @@ export enum Permission {
   SYSTEM_FILES_DELETE = "system:files:delete",
   SYSTEM_SETTINGS_READ = "system:settings:read",
   SYSTEM_SETTINGS_WRITE = "system:settings:write",
+  SYSTEM_UPDATE = "system:update",
 
   // MCP (Model Context Protocol) permissions
   MCP_CONNECT = "mcp:connect",
@@ -121,6 +122,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.SYSTEM_FILES_WRITE,
     Permission.SYSTEM_FILES_DELETE,
     Permission.SYSTEM_SETTINGS_READ,
+    Permission.SYSTEM_UPDATE,
     Permission.MCP_CONNECT,
     Permission.MCP_DISCONNECT,
     Permission.MCP_VIEW,
@@ -810,6 +812,11 @@ export function getPermissionMetadata(permission: Permission): PermissionMetadat
       category: "System",
       description: "Modify system settings",
       riskLevel: "high",
+    },
+    [Permission.SYSTEM_UPDATE]: {
+      category: "System",
+      description: "Run system self-update",
+      riskLevel: "critical",
     },
     [Permission.MCP_CONNECT]: {
       category: "MCP",

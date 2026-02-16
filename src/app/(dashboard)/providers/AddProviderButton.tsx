@@ -35,6 +35,7 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
   const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogLoadError, setCatalogLoadError] = useState("");
+  const [catalogReloadNonce, setCatalogReloadNonce] = useState(0);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -88,10 +89,11 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
             }));
           }
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setCatalogLoadError("Failed to load provider catalog. Please retry.");
-          setError("Failed to load provider catalog");
+          const msg = err instanceof Error ? err.message : String(err);
+          setCatalogLoadError(`Failed to load provider catalog: ${msg}`);
+          setError(`Failed to load provider catalog: ${msg}`);
         }
       } finally {
         if (!cancelled) {
@@ -105,12 +107,13 @@ export function AddProviderButton({ variant = "default" }: AddProviderButtonProp
     return () => {
       cancelled = true;
     };
-  }, [isOpen, catalog.length, catalogLoading]);
+  }, [isOpen, catalog.length, catalogLoading, catalogReloadNonce]);
 
   const retryCatalogLoad = async () => {
     setCatalog([]);
     setCatalogLoadError("");
     setCatalogLoading(false);
+    setCatalogReloadNonce((n) => n + 1);
   };
 
   // Look up the selected model's info from the provider registry

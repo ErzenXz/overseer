@@ -133,6 +133,21 @@ function extractModelId(model: LanguageModel): string {
   return (model as { modelId?: string }).modelId || "unknown";
 }
 
+function modelSupportsTools(model: LanguageModel): boolean {
+  const modelId = extractModelId(model);
+  const info = findModelInfo(modelId);
+  if (!info) return true; // default to tool-capable when unknown
+  return Boolean(info.model.supportsTools);
+}
+
+function isToolsUnsupportedError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  // Common OpenAI-compatible server errors when tools are unsupported.
+  return /tool(_calls)?|tools\b|function(_call)?s?\b|unsupported\b.*\btool|unknown\b.*\btools\b|unrecognized\b.*\btools\b/i.test(
+    msg,
+  );
+}
+
 /**
  * Build dynamic providerOptions, maxOutputTokens, and temperature
  * based on the model's capabilities from provider-info.
@@ -795,6 +810,7 @@ export async function runAgentStream(
   textStream: AsyncIterable<string>;
   fullText: Promise<string>;
   usage: Promise<{ inputTokens: number; outputTokens: number } | undefined>;
+  toolCalls: Promise<Array<{ name: string; args: unknown; result: unknown }>>;
 }> {
   const {
     conversationId,
@@ -823,6 +839,7 @@ export async function runAgentStream(
       })(),
       fullText: Promise.resolve(errorText),
       usage: Promise.resolve(undefined),
+      toolCalls: Promise.resolve([]),
     };
   }
   const model: LanguageModel = initialModel;
@@ -841,6 +858,7 @@ export async function runAgentStream(
       textStream: r.textStream,
       fullText: Promise.resolve(r.text),
       usage: Promise.resolve(undefined),
+      toolCalls: Promise.resolve([]),
     };
   }
 
@@ -861,6 +879,18 @@ export async function runAgentStream(
 
   // Get all available tools (built-in + MCP + Skills)
   const combinedTools = getAllAvailableTools();
+  const canUseTools = modelSupportsTools(model);
+
+  const receipts: Array<{ name: string; args: unknown; result: unknown }> = [];
+  const pendingToolCalls = new Map<string, { name: string; args: unknown }>();
+  let resolveToolCalls!: (
+    value: Array<{ name: string; args: unknown; result: unknown }>,
+  ) => void;
+  const toolCalls = new Promise<
+    Array<{ name: string; args: unknown; result: unknown }>
+  >((resolve) => {
+    resolveToolCalls = resolve;
+  });
 
   const streamCacheKey = [
     "runAgentStream:v2",
@@ -884,16 +914,22 @@ export async function runAgentStream(
       })(),
       fullText: Promise.resolve(cached.text),
       usage: Promise.resolve(cached.usage),
+      toolCalls: Promise.resolve([]),
     };
   }
 
   if (planMode) {
+    if (!canUseTools) {
+      logger.info("Plan mode requested, but model does not support tools; running plan mode tool-free", {
+        modelId: extractModelId(model),
+      });
+    }
     const orchestration = await runPlanModeOrchestration(prompt, {
       parentSessionId: conversationId
         ? `conversation:${conversationId}`
         : `session:${Date.now()}`,
       model,
-      tools: combinedTools,
+      tools: canUseTools ? combinedTools : {},
       context: history
         .map((h) => (typeof h.content === "string" ? h.content : ""))
         .join("\n\n"),
@@ -920,6 +956,7 @@ export async function runAgentStream(
       })(),
       fullText: Promise.resolve(full),
       usage: Promise.resolve(undefined),
+      toolCalls: Promise.resolve([]),
     };
   }
 
@@ -932,6 +969,12 @@ export async function runAgentStream(
 
   // Get dynamic settings based on the model's capabilities
   const modelSettings = getModelSettings(model);
+  const initialToolsEnabled = canUseTools;
+  if (!initialToolsEnabled) {
+    logger.info("Model does not support tools; disabling tools for this run", {
+      modelId: extractModelId(model),
+    });
+  }
 
   const system = buildSystemPrompt(
     prompt,
@@ -949,101 +992,162 @@ export async function runAgentStream(
   const textStream = (async function* () {
     let attempt = 0;
     let currentMessages = messages;
+    let toolsEnabled = initialToolsEnabled;
 
-    while (attempt < 5) {
-      try {
-        const r = await withModelRetries(
-          async () =>
-            streamText({
-              model,
-              system,
-              messages: currentMessages,
-              tools: combinedTools,
-              stopWhen: stepCountIs(maxSteps),
-              ...(modelSettings.maxOutputTokens && {
-                maxOutputTokens: modelSettings.maxOutputTokens,
-              }),
-              ...(modelSettings.temperature !== undefined && {
-                temperature: modelSettings.temperature,
-              }),
-              ...(modelSettings.providerOptions && {
-                providerOptions: modelSettings.providerOptions,
-              }),
-              onStepFinish: ({ toolCalls, toolResults }) => {
-                if (toolCalls) {
-                  for (const tc of toolCalls) {
-                    const args = "args" in tc ? tc.args : undefined;
-                    logger.debug("Tool called (stream)", {
-                      name: tc.toolName,
-                      args,
-                    });
-                    onToolCall?.(tc.toolName, args);
-                  }
-                }
-                if (toolResults) {
-                  for (const tr of toolResults) {
-                    const result = "result" in tr ? tr.result : undefined;
-                    onToolResult?.(tr.toolName, result);
-                  }
-                }
+    try {
+      while (attempt < 5) {
+        try {
+          const startStream = async (enableTools: boolean) =>
+            withModelRetries(
+              async () =>
+                streamText({
+                  model,
+                  system,
+                  messages: currentMessages,
+                  tools: enableTools ? combinedTools : {},
+                  stopWhen: stepCountIs(enableTools ? maxSteps : 1),
+                  ...(modelSettings.maxOutputTokens && {
+                    maxOutputTokens: modelSettings.maxOutputTokens,
+                  }),
+                  ...(modelSettings.temperature !== undefined && {
+                    temperature: modelSettings.temperature,
+                  }),
+                  ...(modelSettings.providerOptions && {
+                    providerOptions: modelSettings.providerOptions,
+                  }),
+                  onStepFinish: ({ toolCalls, toolResults }) => {
+                    if (!enableTools) return;
+
+                    if (toolCalls) {
+                      for (const tc of toolCalls) {
+                        const args = "args" in tc ? tc.args : undefined;
+                        const id =
+                          (tc as any)?.toolCallId ||
+                          `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                        pendingToolCalls.set(id, { name: tc.toolName, args });
+                        logger.debug("Tool called (stream)", {
+                          name: tc.toolName,
+                          args,
+                        });
+                        onToolCall?.(tc.toolName, args);
+                      }
+                    }
+                    if (toolResults) {
+                      for (const tr of toolResults) {
+                        const result = "result" in tr ? tr.result : undefined;
+                        const id =
+                          (tr as any)?.toolCallId ||
+                          (tr as any)?.toolCallID ||
+                          undefined;
+                        if (id && pendingToolCalls.has(id)) {
+                          const call = pendingToolCalls.get(id)!;
+                          pendingToolCalls.delete(id);
+                          receipts.push({
+                            name: call.name,
+                            args: call.args,
+                            result,
+                          });
+                        } else {
+                          receipts.push({
+                            name: tr.toolName,
+                            args: undefined,
+                            result,
+                          });
+                        }
+                        onToolResult?.(tr.toolName, result);
+                      }
+                    }
+                  },
+                  maxRetries: 2,
+                }),
+              {
+                maxAttempts: 3,
+                onRetry: ({ attempt, waitMs, error }) => {
+                  logger.warn("Retrying stream start", {
+                    attempt: attempt + 1,
+                    waitMs,
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  });
+                },
               },
-              maxRetries: 2,
-            }),
-          {
-            maxAttempts: 3,
-            onRetry: ({ attempt, waitMs, error }) => {
-              logger.warn("Retrying stream start", {
-                attempt: attempt + 1,
-                waitMs,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            },
-          },
-        );
+            );
 
-        for await (const chunk of r.textStream) {
-          partial += chunk;
-          yield chunk;
+          let r;
+          try {
+            r = await startStream(toolsEnabled);
+          } catch (err) {
+            if (toolsEnabled && isToolsUnsupportedError(err)) {
+              logger.warn(
+                "Provider appears to reject tools; retrying without tools",
+                {
+                  modelId: extractModelId(model),
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              );
+              toolsEnabled = false;
+              r = await startStream(false);
+            } else {
+              throw err;
+            }
+          }
+
+          for await (const chunk of r.textStream) {
+            partial += chunk;
+            yield chunk;
+          }
+
+          finalText = await Promise.resolve(r.text);
+          const u = await r.usage;
+          if (
+            u &&
+            u.inputTokens !== undefined &&
+            u.outputTokens !== undefined
+          ) {
+            finalUsage = { inputTokens: u.inputTokens, outputTokens: u.outputTokens };
+          }
+          return;
+        } catch (err) {
+          const check = isRetryableModelError(err);
+          logger.warn("Stream attempt failed", {
+            attempt: attempt + 1,
+            retryable: check.retryable,
+            error: err instanceof Error ? err.message : String(err),
+          });
+
+          if (!check.retryable || attempt >= 4) {
+            throw err;
+          }
+
+          currentMessages = buildResumeMessages(messages, partial, prompt);
+          attempt++;
+          continue;
         }
-
-        finalText = await Promise.resolve(r.text);
-        const u = await r.usage;
-        if (u && u.inputTokens !== undefined && u.outputTokens !== undefined) {
-          finalUsage = { inputTokens: u.inputTokens, outputTokens: u.outputTokens };
-        }
-        return;
-      } catch (err) {
-        const check = isRetryableModelError(err);
-        logger.warn("Stream attempt failed", {
-          attempt: attempt + 1,
-          retryable: check.retryable,
-          error: err instanceof Error ? err.message : String(err),
-        });
-
-        if (!check.retryable || attempt >= 4) {
-          throw err;
-        }
-
-        currentMessages = buildResumeMessages(messages, partial, prompt);
-        attempt++;
-        continue;
       }
+    } finally {
+      // Ensure we always resolve the receipts promise, even if the stream throws.
+      resolveToolCalls(receipts);
     }
   })();
 
   return {
     textStream,
     fullText: Promise.resolve(finalText ?? partial).then((text) => {
+      const normalized =
+        typeof text === "string" && text.trim().length > 0
+          ? text
+          : "No output generated. Check the stream for errors and confirm your provider supports streaming/tool-calling.";
       agentCache.set({
         scope: "agent",
         key: streamCacheKey,
-        value: { text },
+        value: { text: normalized },
         ttlSeconds: 180,
         tags: ["agent", "stream"],
       });
-      return text;
+      return normalized;
     }),
     usage: Promise.resolve(finalUsage),
+    toolCalls,
   };
 }
 

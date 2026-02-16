@@ -13,7 +13,7 @@ export function SettingsForm({ settings }: SettingsFormProps) {
     "agent.max_steps": settings["agent.max_steps"] || "25",
     "agent.max_retries": settings["agent.max_retries"] || "3",
     "agent.timeout_ms": settings["agent.timeout_ms"] || "120000",
-    "tools.require_confirmation": settings["tools.require_confirmation"] || "true",
+    "tools.require_confirmation": settings["tools.require_confirmation"] || "false",
     "tools.shell_timeout_ms": settings["tools.shell_timeout_ms"] || "30000",
     "tools.max_file_size_mb": settings["tools.max_file_size_mb"] || "10",
   });

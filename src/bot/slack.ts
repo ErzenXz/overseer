@@ -12,27 +12,25 @@ import { resolve } from "path";
 
 import { initializeSchema } from "../database/db";
 import {
-  conversationsModel,
-  messagesModel,
   interfacesModel,
   usersModel,
 } from "../database/index";
-import { runAgentStream } from "../agent/agent";
 import { createBotLogger, isRateLimited, splitText } from "./shared";
-import { getRateLimiter } from "../lib/rate-limiter";
-import { SessionManager, estimateTokens } from "../lib/session-manager";
 import { recordChannelEvent } from "../lib/channel-observability";
-import { getDefaultModel } from "../agent/providers";
-import { withToolContext } from "../lib/tool-context";
-import { ensureDir, getUserSandboxRoot } from "../lib/userfs";
-import { hasAnyPermission, Permission } from "../lib/permissions";
-import { extractMemoriesFromConversation } from "../agent/super-memory";
+import { streamGatewayChat } from "../gateway/sse-client";
 
 dotenvConfig({ path: resolve(process.cwd(), ".env") });
 initializeSchema();
 
 const COOLDOWN_MS = 1500;
 const MAX_SLACK_MESSAGE = 3000;
+const STREAM_UPDATE_DEBOUNCE_MS = 1200;
+const STREAM_MIN_CHARS_BEFORE_UPDATE = 64;
+
+function getGatewayBaseUrl(): string {
+  const port = process.env.PORT || "3000";
+  return process.env.GATEWAY_BASE_URL || process.env.BASE_URL || `http://localhost:${port}`;
+}
 
 function getFallbackOwnerUserId(): number {
   const admin = usersModel.findAll().find((u) => u.role === "admin");
@@ -48,22 +46,50 @@ function getActiveSlackInterfaces(): Array<{
 }> {
   const rows = interfacesModel.findActiveByType("slack");
   if (rows.length === 0 && process.env.SLACK_BOT_TOKEN) {
-    return [
-      {
-        id: -1,
-        owner_user_id: getFallbackOwnerUserId(),
+    // Backwards-compat: auto-create a DB-backed interface so gateway auth works.
+    const ownerId = getFallbackOwnerUserId();
+    const allowedUsers = (process.env.SLACK_ALLOWED_USERS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    try {
+      const created = interfacesModel.create({
+        type: "slack",
         name: "Slack (env)",
+        owner_user_id: ownerId,
         config: {
           bot_token: process.env.SLACK_BOT_TOKEN,
           app_token: process.env.SLACK_APP_TOKEN,
           signing_secret: process.env.SLACK_SIGNING_SECRET,
         },
-        allowed_users: (process.env.SLACK_ALLOWED_USERS || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      },
-    ];
+        allowed_users: allowedUsers,
+        is_active: true,
+      } as any);
+
+      return [
+        {
+          id: created.id,
+          owner_user_id: (created as any).owner_user_id ?? ownerId,
+          name: created.name,
+          config: (interfacesModel.getDecryptedConfig(created.id) || {}) as Record<string, unknown>,
+          allowed_users: interfacesModel.getAllowedUsers(created.id),
+        },
+      ];
+    } catch {
+      return [
+        {
+          id: -1,
+          owner_user_id: ownerId,
+          name: "Slack (env)",
+          config: {
+            bot_token: process.env.SLACK_BOT_TOKEN,
+            app_token: process.env.SLACK_APP_TOKEN,
+            signing_secret: process.env.SLACK_SIGNING_SECRET,
+          },
+          allowed_users: allowedUsers,
+        },
+      ];
+    }
   }
 
   return rows
@@ -81,11 +107,6 @@ function getActiveSlackInterfaces(): Array<{
     .filter((r) => typeof r.config.bot_token === "string" && r.config.bot_token.length > 0);
 }
 
-function isUserAllowed(userId: string, allowed: string[]): boolean {
-  if (allowed.length === 0) return true;
-  return allowed.includes(userId);
-}
-
 async function startSlackInstance(instance: {
   id: number;
   owner_user_id: number;
@@ -93,21 +114,13 @@ async function startSlackInstance(instance: {
   config: Record<string, unknown>;
   allowed_users: string[];
 }) {
-  const owner = usersModel.findById(instance.owner_user_id);
-  const allowSystem = owner
-    ? hasAnyPermission(owner, [
-        Permission.SYSTEM_SHELL,
-        Permission.SYSTEM_FILES_READ,
-        Permission.SYSTEM_FILES_WRITE,
-        Permission.SYSTEM_FILES_DELETE,
-      ])
-    : false;
   const logger = createBotLogger("slack", instance.owner_user_id);
 
   const botToken = typeof instance.config.bot_token === "string" ? instance.config.bot_token : null;
   const appToken = typeof instance.config.app_token === "string" ? instance.config.app_token : null;
   const signingSecret =
     typeof instance.config.signing_secret === "string" ? instance.config.signing_secret : null;
+  const gatewayToken = String((instance.config as any).gateway_token || "");
 
   if (!botToken || !appToken || !signingSecret) {
     logger.error("Slack instance missing credentials; skipping", {
@@ -119,11 +132,9 @@ async function startSlackInstance(instance: {
     return;
   }
 
-  const sandboxRoot = getUserSandboxRoot({
-    kind: "web",
-    id: String(instance.owner_user_id),
-  });
-  ensureDir(sandboxRoot);
+  if (!gatewayToken || instance.id <= 0) {
+    logger.warn("Gateway auth not configured for slack interface", { interfaceId: instance.id });
+  }
 
   const app = new App({
     token: botToken,
@@ -141,93 +152,65 @@ async function startSlackInstance(instance: {
     if (!externalUserId || !channelId || !text) return;
     if (m.subtype === "bot_message" || m.bot_id) return;
 
-    if (!isUserAllowed(externalUserId, instance.allowed_users)) {
-      await say("⛔ You are not authorized to use this bot.");
-      return;
-    }
-
     if (isRateLimited(`${instance.id}:${externalUserId}`, { cooldownMs: COOLDOWN_MS })) {
       await say("⏳ Please wait a moment before sending another request.");
       return;
     }
 
-    const rateLimiter = getRateLimiter();
-    const estimatedTokenCount = estimateTokens(text);
-    const activeModelId =
-      (getDefaultModel() as { modelId?: string } | null)?.modelId || "default";
-
-    const preCheck = await rateLimiter.checkLimit({
-      userId: String(instance.owner_user_id),
-      interfaceType: "slack",
-      tokens: estimatedTokenCount,
-      modelId: activeModelId,
-    });
-
-    if (!preCheck.allowed) {
-      await say(
-        rateLimiter.getErrorMessage(preCheck) ||
-          preCheck.reason ||
-          "Rate limit exceeded",
-      );
-      recordChannelEvent({
-        channel: "slack",
-        event: "rate_limit",
-        ok: false,
-        details: { ownerUserId: String(instance.owner_user_id), reason: preCheck.reason },
-      });
+    if (!gatewayToken || instance.id <= 0) {
+      await say("Gateway auth is not configured for this interface. Create/enable the interface in the admin panel.");
       return;
     }
 
-    const conversation = conversationsModel.findOrCreate({
-      owner_user_id: instance.owner_user_id,
-      interface_id: instance.id > 0 ? instance.id : undefined,
-      interface_type: "slack",
-      external_chat_id: channelId,
-      external_user_id: externalUserId,
-      external_username: externalUserId,
-      metadata: { interfaceName: instance.name },
-    });
-
-    const session = SessionManager.getOrCreateSession({
-      conversation_id: conversation.id,
-      interface_type: "slack",
-      external_user_id: externalUserId,
-      external_chat_id: channelId,
-      metadata: { interfaceId: instance.id, ownerUserId: instance.owner_user_id },
-    });
-
-    SessionManager.addMessage(session.id, "user", text);
-    messagesModel.create({ conversation_id: conversation.id, role: "user", content: text });
-
-    const thinking = await say("Thinking...");
+    const thinking = await say("…");
     const ts = (thinking as any)?.ts as string | undefined;
 
-    const { fullText, usage } = await withToolContext(
-      {
-        sandboxRoot,
-        allowSystem,
-        actor: { kind: "web", id: String(instance.owner_user_id) },
-        conversationId: conversation.id,
-        agentSessionId: session.session_id,
-        interface: {
-          type: "slack",
-          id: instance.id,
-          externalChatId: channelId,
-          externalUserId,
-        },
-      },
-      () =>
-        runAgentStream(text, {
-          conversationId: conversation.id,
-          sandboxRoot,
-          allowSystem,
-          planMode: false,
-          actor: { kind: "web", id: String(instance.owner_user_id) },
-          onToolCall: () => SessionManager.recordToolCall(session.id),
-        }),
-    );
+    let buffer = "";
+    let lastUpdateAt = 0;
+    let lastSentLen = 0;
+    let finalText = "";
+    let receiptText = "";
 
-    const finalText = (await fullText) || "";
+    for await (const evt of streamGatewayChat({
+      baseUrl: getGatewayBaseUrl(),
+      interfaceId: instance.id,
+      interfaceToken: gatewayToken,
+      body: {
+        message: text,
+        externalChatId: channelId,
+        externalUserId,
+        externalUsername: externalUserId,
+        planMode: false,
+        attachments: [],
+      },
+    })) {
+      if (evt.type === "text_delta") {
+        buffer += evt.text || "";
+        const now = Date.now();
+        const shouldUpdate =
+          ts &&
+          now - lastUpdateAt >= STREAM_UPDATE_DEBOUNCE_MS &&
+          buffer.length - lastSentLen >= STREAM_MIN_CHARS_BEFORE_UPDATE;
+        if (!shouldUpdate) continue;
+        const preview =
+          buffer.length > MAX_SLACK_MESSAGE
+            ? buffer.slice(0, MAX_SLACK_MESSAGE - 32) + "\n\n(continuing…)"
+            : buffer;
+        try {
+          await client.chat.update({ channel: channelId, ts, text: preview });
+          lastUpdateAt = now;
+          lastSentLen = buffer.length;
+        } catch {}
+      } else if (evt.type === "tool_receipt") {
+        receiptText = evt.text;
+      } else if (evt.type === "done") {
+        finalText = evt.fullText || buffer;
+      } else if (evt.type === "error") {
+        await say(`Error: ${evt.error || "Unknown error"}`);
+        return;
+      }
+    }
+
     const chunks = splitText(finalText || "(no output)", MAX_SLACK_MESSAGE);
 
     if (ts) {
@@ -239,32 +222,24 @@ async function startSlackInstance(instance: {
     for (let i = 1; i < chunks.length; i++) {
       await say(chunks[i]);
     }
-
-    SessionManager.addMessage(session.id, "assistant", finalText);
-    const usageData = await usage;
-    messagesModel.create({
-      conversation_id: conversation.id,
-      role: "assistant",
-      content: finalText,
-      input_tokens: usageData?.inputTokens,
-      output_tokens: usageData?.outputTokens,
-    });
-
-    if (usageData) {
-      rateLimiter.recordRequest({
-        userId: String(instance.owner_user_id),
-        conversationId: conversation.id,
-        interfaceType: "slack",
-        inputTokens: usageData.inputTokens,
-        outputTokens: usageData.outputTokens,
-        model: activeModelId,
-      });
+    if (receiptText) {
+      const rchunks = splitText(receiptText, MAX_SLACK_MESSAGE);
+      for (const ch of rchunks) {
+        await say(ch);
+      }
     }
 
-    extractMemoriesFromConversation(
-      instance.owner_user_id,
-      `user: ${text}\n\nassistant: ${finalText}`,
-    ).catch(() => {});
+    recordChannelEvent({
+      channel: "slack",
+      event: "message_processing",
+      ok: true,
+      details: {
+        interfaceId: instance.id,
+        ownerUserId: String(instance.owner_user_id),
+        externalChatId: channelId,
+        responseLength: finalText?.length,
+      },
+    });
   });
 
   await app.start();

@@ -97,7 +97,7 @@ export function OnboardingWizard() {
     toneDefault: "friendly" as "direct" | "friendly" | "formal" | "playful",
     verbosityDefault: "balanced" as "short" | "balanced" | "detailed",
     whenUncertain: "ask" as "ask" | "assume_and_note",
-    confirmations: "risky_only" as "always" | "risky_only" | "catastrophic_only",
+    confirmations: "catastrophic_only" as "always" | "risky_only" | "catastrophic_only",
     decisionStyle: "recommend_one" as "recommend_one" | "offer_three" | "ask_first",
     technicalDepth: "ask_which" as "explain" | "just_do" | "ask_which",
     proactivity: "suggest_next" as "suggest_next" | "only_answer",

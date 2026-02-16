@@ -181,7 +181,7 @@ INSERT OR IGNORE INTO settings (key, value, description) VALUES
     ('agent.max_steps', '25', 'Maximum number of agent steps per request'),
     ('agent.max_retries', '3', 'Maximum retries for failed operations'),
     ('agent.timeout_ms', '120000', 'Agent timeout in milliseconds'),
-    ('tools.require_confirmation', 'true', 'Require confirmation for destructive commands'),
+    ('tools.require_confirmation', 'false', 'Require confirmation for destructive commands'),
     ('tools.shell_timeout_ms', '30000', 'Shell command timeout in milliseconds'),
     ('tools.max_file_size_mb', '10', 'Maximum file size for read/write operations'),
     ('ui.theme', 'dark', 'Web UI theme'),

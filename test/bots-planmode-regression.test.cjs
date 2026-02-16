@@ -26,8 +26,7 @@ test("bots do not force planMode true", async () => {
   }
 });
 
-test("telegram bot does not send placeholder ellipsis message", async () => {
+test("telegram bot uses a placeholder message for streaming", async () => {
   const has = await fileContains("src/bot/index.ts", 'ctx.reply("…")');
-  assert.equal(has, false, "telegram should not send ctx.reply(\"…\")");
+  assert.equal(has, true, "telegram should send ctx.reply(\"…\") as a streaming placeholder");
 });
-

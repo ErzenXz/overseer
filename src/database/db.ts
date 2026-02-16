@@ -2,11 +2,13 @@ import Database from "better-sqlite3";
 import { readFileSync, existsSync, mkdirSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { randomBytes } from "crypto";
 import {
   isWindows,
   normalizePath,
   getDataDir,
 } from "../lib/platform";
+import { encrypt } from "../lib/crypto";
 
 // Re-export types from the shared types file
 export type {
@@ -613,6 +615,40 @@ function initializeSchema() {
     console.log("Database schema initialized");
     console.log(`Database location: ${DB_PATH}`);
   }
+
+  // Product default: "free mode" (no confirmation prompts). Keep the catastrophic deny-list.
+  // Existing installs that want confirmations can re-enable it in Settings.
+  try {
+    db.prepare(
+      "UPDATE settings SET value = 'false', updated_at = CURRENT_TIMESTAMP WHERE key = 'tools.require_confirmation' AND value = 'true'",
+    ).run();
+  } catch {}
+
+  // Ensure every interface has an encrypted gateway token (workers authenticate to /api/gateway/* with it).
+  // We only patch missing tokens and avoid rewriting other config fields to prevent double-encryption.
+  try {
+    const rows = db
+      .prepare("SELECT id, config FROM interfaces WHERE is_active = 1")
+      .all() as Array<{ id: number; config: string }>;
+    for (const r of rows) {
+      let cfg: Record<string, unknown> | null = null;
+      try {
+        cfg = JSON.parse(r.config || "{}") as Record<string, unknown>;
+      } catch {
+        cfg = {};
+      }
+      if (cfg && typeof cfg.gateway_token === "string" && cfg.gateway_token.length >= 24) {
+        continue;
+      }
+      const token = randomBytes(32).toString("hex");
+      cfg = cfg || {};
+      cfg.gateway_token = encrypt(token);
+      db.prepare("UPDATE interfaces SET config = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
+        JSON.stringify(cfg),
+        r.id,
+      );
+    }
+  } catch {}
 
   // Fix/clean legacy artifacts that could break runtime queries.
   cleanupLegacyOldTableArtifacts();

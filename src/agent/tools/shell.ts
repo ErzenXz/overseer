@@ -210,7 +210,7 @@ INTERACTIVE COMMANDS:
   execute: async ({ command, workingDirectory, timeout, autoMap = false, stdin }: { command: string; workingDirectory?: string; timeout?: number; autoMap?: boolean; stdin?: string }) => {
     const startTime = Date.now();
     const requireConfirmation =
-      settingsModel.getWithDefault("tools.require_confirmation", "true") ===
+      settingsModel.getWithDefault("tools.require_confirmation", "false") ===
       "true";
     const configuredTimeoutMsRaw = settingsModel.getWithDefault(
       "tools.shell_timeout_ms",

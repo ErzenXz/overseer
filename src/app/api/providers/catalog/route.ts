@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
 import { getDynamicProviderCatalog } from "@/agent/dynamic-provider-catalog";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function inferRuntimeAdapter(providerId: string, npm?: string): string {
   if (npm === "@ai-sdk/openai") return "openai";
@@ -37,17 +39,25 @@ function inferRuntimeAdapter(providerId: string, npm?: string): string {
 }
 
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // This endpoint returns only public catalog metadata (no secrets). It is used
+  // by the dashboard and onboarding flows, so keep it resilient to auth/session
+  // issues and transient upstream failures.
+  try {
+    const providers = await getDynamicProviderCatalog();
+    return NextResponse.json({
+      providers: providers.map((provider) => ({
+        ...provider,
+        runtimeAdapter: inferRuntimeAdapter(provider.id, provider.npm),
+      })),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      {
+        providers: [],
+        error: `Failed to load provider catalog: ${msg}`,
+      },
+      { status: 500 },
+    );
   }
-
-  const providers = await getDynamicProviderCatalog();
-
-  return NextResponse.json({
-    providers: providers.map((provider) => ({
-      ...provider,
-      runtimeAdapter: inferRuntimeAdapter(provider.id, provider.npm),
-    })),
-  });
 }

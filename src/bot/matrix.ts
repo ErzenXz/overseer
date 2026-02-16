@@ -14,21 +14,12 @@ import { config as dotenvConfig } from "dotenv";
 import { resolve } from "path";
 import { initializeSchema } from "../database/db";
 import {
-  conversationsModel,
   interfacesModel,
-  messagesModel,
   usersModel,
 } from "../database/index";
-import { runAgentStream } from "../agent/agent";
 import { createBotLogger, splitText } from "./shared";
-import { SessionManager, estimateTokens } from "../lib/session-manager";
-import { getRateLimiter } from "../lib/rate-limiter";
 import { recordChannelEvent } from "../lib/channel-observability";
-import { getDefaultModel } from "../agent/providers";
-import { withToolContext } from "../lib/tool-context";
-import { ensureDir, getUserSandboxRoot } from "../lib/userfs";
-import { hasAnyPermission, Permission } from "../lib/permissions";
-import { extractMemoriesFromConversation } from "../agent/super-memory";
+import { streamGatewayChat } from "../gateway/sse-client";
 
 import sdk, {
   MsgType,
@@ -41,6 +32,11 @@ dotenvConfig({ path: resolve(process.cwd(), ".env") });
 initializeSchema();
 
 const MAX_MATRIX_MESSAGE = 3500;
+
+function getGatewayBaseUrl(): string {
+  const port = process.env.PORT || "3000";
+  return process.env.GATEWAY_BASE_URL || process.env.BASE_URL || `http://localhost:${port}`;
+}
 
 function getFallbackOwnerUserId(): number {
   const admin = usersModel.findAll().find((u) => u.role === "admin");
@@ -56,18 +52,44 @@ function getActiveMatrixInterfaces(): Array<{
 }> {
   const rows = interfacesModel.findActiveByType("matrix");
   if (rows.length === 0 && process.env.MATRIX_ACCESS_TOKEN) {
-    return [
-      {
-        id: -1,
-        owner_user_id: getFallbackOwnerUserId(),
+    // Backwards-compat: auto-create a DB-backed interface so gateway auth works.
+    const ownerId = getFallbackOwnerUserId();
+    try {
+      const created = interfacesModel.create({
+        type: "matrix",
         name: "Matrix (env)",
+        owner_user_id: ownerId,
         config: {
           homeserver: process.env.MATRIX_HOMESERVER,
           access_token: process.env.MATRIX_ACCESS_TOKEN,
         },
         allowed_users: [],
-      },
-    ];
+        is_active: true,
+      } as any);
+
+      return [
+        {
+          id: created.id,
+          owner_user_id: (created as any).owner_user_id ?? ownerId,
+          name: created.name,
+          config: (interfacesModel.getDecryptedConfig(created.id) || {}) as Record<string, unknown>,
+          allowed_users: interfacesModel.getAllowedUsers(created.id),
+        },
+      ];
+    } catch {
+      return [
+        {
+          id: -1,
+          owner_user_id: ownerId,
+          name: "Matrix (env)",
+          config: {
+            homeserver: process.env.MATRIX_HOMESERVER,
+            access_token: process.env.MATRIX_ACCESS_TOKEN,
+          },
+          allowed_users: [],
+        },
+      ];
+    }
   }
 
   return rows.map((r) => {
@@ -83,11 +105,6 @@ function getActiveMatrixInterfaces(): Array<{
   });
 }
 
-function isAllowedUser(userId: string, allowed: string[]): boolean {
-  if (allowed.length === 0) return true;
-  return allowed.includes(userId);
-}
-
 async function sendText(client: MatrixClient, roomId: string, body: string) {
   await client.sendMessage(roomId, { msgtype: MsgType.Text, body });
 }
@@ -99,16 +116,8 @@ async function startMatrixInstance(instance: {
   config: Record<string, unknown>;
   allowed_users: string[];
 }) {
-  const owner = usersModel.findById(instance.owner_user_id);
-  const allowSystem = owner
-    ? hasAnyPermission(owner, [
-        Permission.SYSTEM_SHELL,
-        Permission.SYSTEM_FILES_READ,
-        Permission.SYSTEM_FILES_WRITE,
-        Permission.SYSTEM_FILES_DELETE,
-      ])
-    : false;
   const logger = createBotLogger("matrix", instance.owner_user_id);
+  const gatewayToken = String((instance.config as any).gateway_token || "");
 
   const homeserver =
     typeof instance.config.homeserver === "string"
@@ -137,12 +146,9 @@ async function startMatrixInstance(instance: {
     baseUrl: homeserver,
     accessToken,
   }) as unknown as MatrixClient;
-
-  const sandboxRoot = getUserSandboxRoot({
-    kind: "web",
-    id: String(instance.owner_user_id),
-  });
-  ensureDir(sandboxRoot);
+  if (!gatewayToken || instance.id <= 0) {
+    logger.warn("Gateway auth not configured for matrix interface", { interfaceId: instance.id });
+  }
 
   let me = "";
   client.on("sync" as any, (state: string) => {
@@ -185,7 +191,6 @@ async function startMatrixInstance(instance: {
       if (!content || content.msgtype !== "m.text") return;
 
       const externalUserId = String(event.getSender?.() || "");
-      if (!isAllowedUser(externalUserId, instance.allowed_users)) return;
 
       const text = String(content.body || "").trim();
       if (!text) return;
@@ -193,112 +198,52 @@ async function startMatrixInstance(instance: {
       const roomId = room?.roomId;
       if (!roomId) return;
 
-      const rateLimiter = getRateLimiter();
-      const estimatedTokenCount = estimateTokens(text);
-      const activeModelId =
-        (getDefaultModel() as { modelId?: string } | null)?.modelId || "default";
-
-      const preCheck = await rateLimiter.checkLimit({
-        userId: String(instance.owner_user_id),
-        interfaceType: "matrix",
-        tokens: estimatedTokenCount,
-        modelId: activeModelId,
-      });
-
-      if (!preCheck.allowed) {
-        await sendText(
-          client,
-          roomId,
-          rateLimiter.getErrorMessage(preCheck) ||
-            preCheck.reason ||
-            "Rate limit exceeded",
-        );
+      if (!gatewayToken || instance.id <= 0) {
+        await sendText(client, roomId, "Gateway auth is not configured for this interface. Create/enable the interface in the admin panel.");
         return;
       }
 
-      const conversation = conversationsModel.findOrCreate({
-        owner_user_id: instance.owner_user_id,
-        interface_id: instance.id > 0 ? instance.id : undefined,
-        interface_type: "matrix",
-        external_chat_id: roomId,
-        external_user_id: externalUserId,
-        external_username: externalUserId,
-        metadata: { interfaceName: instance.name },
-      });
+      await sendText(client, roomId, "…");
 
-      const session = SessionManager.getOrCreateSession({
-        conversation_id: conversation.id,
-        interface_type: "matrix",
-        external_user_id: externalUserId,
-        external_chat_id: roomId,
-        metadata: { interfaceId: instance.id, ownerUserId: instance.owner_user_id },
-      });
+      let buffer = "";
+      let finalText = "";
+      let receiptText = "";
 
-      SessionManager.addMessage(session.id, "user", text);
-      messagesModel.create({
-        conversation_id: conversation.id,
-        role: "user",
-        content: text,
-      });
-
-      // Minimal "thinking" notice (plain text).
-      await sendText(client, roomId, "Thinking...");
-
-      const { fullText, usage } = await withToolContext(
-        {
-          sandboxRoot,
-          allowSystem,
-          actor: { kind: "web", id: String(instance.owner_user_id) },
-          conversationId: conversation.id,
-          agentSessionId: session.session_id,
-          interface: {
-            type: "matrix",
-            id: instance.id,
-            externalChatId: roomId,
-            externalUserId: externalUserId,
-          },
+      for await (const evt of streamGatewayChat({
+        baseUrl: getGatewayBaseUrl(),
+        interfaceId: instance.id,
+        interfaceToken: gatewayToken,
+        body: {
+          message: text,
+          externalChatId: roomId,
+          externalUserId: externalUserId,
+          externalUsername: externalUserId,
+          planMode: false,
+          attachments: [],
         },
-        () =>
-          runAgentStream(text, {
-            conversationId: conversation.id,
-            planMode: false,
-            sandboxRoot,
-            allowSystem,
-            actor: { kind: "web", id: String(instance.owner_user_id) },
-            onToolCall: () => SessionManager.recordToolCall(session.id),
-          }),
-      );
+      })) {
+        if (evt.type === "text_delta") {
+          buffer += evt.text || "";
+        } else if (evt.type === "tool_receipt") {
+          receiptText = evt.text;
+        } else if (evt.type === "done") {
+          finalText = evt.fullText || buffer;
+        } else if (evt.type === "error") {
+          await sendText(client, roomId, `Error: ${evt.error || "Unknown error"}`);
+          return;
+        }
+      }
 
-      const finalText = (await fullText) || "";
       const chunks = splitText(finalText || "(no output)", MAX_MATRIX_MESSAGE);
       for (const ch of chunks) {
         await sendText(client, roomId, ch);
       }
-
-      const usageData = await usage;
-      messagesModel.create({
-        conversation_id: conversation.id,
-        role: "assistant",
-        content: finalText,
-        input_tokens: usageData?.inputTokens,
-        output_tokens: usageData?.outputTokens,
-      });
-
-      if (usageData) {
-        rateLimiter.recordRequest({
-          userId: String(instance.owner_user_id),
-          conversationId: conversation.id,
-          interfaceType: "matrix",
-          inputTokens: usageData.inputTokens,
-          outputTokens: usageData.outputTokens,
-          model: activeModelId,
-        });
+      if (receiptText) {
+        const rchunks = splitText(receiptText, MAX_MATRIX_MESSAGE);
+        for (const ch of rchunks) {
+          await sendText(client, roomId, ch);
+        }
       }
-
-      extractMemoriesFromConversation(
-        instance.owner_user_id,
-        `user: ${text}\n\nassistant: ${finalText}`,
-      ).catch(() => {});
 
       recordChannelEvent({
         channel: "matrix",
@@ -307,7 +252,7 @@ async function startMatrixInstance(instance: {
         details: {
           interfaceId: instance.id,
           ownerUserId: String(instance.owner_user_id),
-          conversationId: conversation.id,
+          externalChatId: roomId,
           responseLength: finalText?.length,
         },
       });

@@ -638,13 +638,23 @@ export function useChat(options: ChatOptions = {}) {
                     break;
 
                   case "error":
-                    setError(event.error);
+                    setError(
+                      event.issueId
+                        ? `${event.error} (Issue #${event.issueId})`
+                        : event.error,
+                    );
                     setMessages((prev) =>
                       prev.map((msg) =>
                         msg.id === assistantMessageId
                           ? {
                               ...msg,
-                              content: fullText || `Error: ${event.error}`,
+                              content:
+                                fullText ||
+                                `Error: ${event.error}${
+                                  event.issueId
+                                    ? ` (Issue #${event.issueId})`
+                                    : ""
+                                }`,
                               isStreaming: false,
                             }
                           : msg,

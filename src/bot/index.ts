@@ -11,22 +11,14 @@ import { message } from "telegraf/filters";
 import { config } from "dotenv";
 import { resolve } from "path";
 
-import { runAgentStream } from "../agent/agent";
 import {
-  conversationsModel,
-  messagesModel,
   interfacesModel,
   usersModel,
 } from "../database/index";
 import { initializeSchema } from "../database/db";
-import { SessionManager } from "../lib/session-manager";
-import { extractMemoriesFromConversation } from "../agent/super-memory";
-import { createBotLogger, isRateLimited } from "./shared";
-import { withToolContext } from "../lib/tool-context";
-import { ensureDir, getUserSandboxRoot } from "../lib/userfs";
-import { getRateLimiter } from "../lib/rate-limiter";
-import { hasAnyPermission, Permission } from "../lib/permissions";
+import { createBotLogger, getHelpMessage, isRateLimited, splitText } from "./shared";
 import { recordChannelEvent } from "../lib/channel-observability";
+import { streamGatewayChat } from "../gateway/sse-client";
 
 // Load environment
 config({ path: resolve(process.cwd(), ".env") });
@@ -35,6 +27,14 @@ config({ path: resolve(process.cwd(), ".env") });
 initializeSchema();
 
 const COOLDOWN_MS = 2000;
+const TELEGRAM_MAX_MESSAGE = 3900; // keep margin under Telegram 4096 limit
+const STREAM_EDIT_DEBOUNCE_MS = 1100;
+const STREAM_MIN_CHARS_BEFORE_EDIT = 32;
+
+function getGatewayBaseUrl(): string {
+  const port = process.env.PORT || "3000";
+  return process.env.GATEWAY_BASE_URL || process.env.BASE_URL || `http://localhost:${port}`;
+}
 
 function getFallbackOwnerUserId(): number {
   const admin = usersModel.findAll().find((u) => u.role === "admin");
@@ -50,19 +50,42 @@ function getActiveTelegramInterfaces(): Array<{
 }> {
   const rows = interfacesModel.findActiveByType("telegram");
   if (rows.length === 0 && process.env.TELEGRAM_BOT_TOKEN) {
-    // Backwards-compat: allow a single env-based bot.
-    return [
-      {
-        id: -1,
-        owner_user_id: getFallbackOwnerUserId(),
+    // Backwards-compat: auto-create a DB-backed interface so gateway auth works.
+    const ownerId = getFallbackOwnerUserId();
+    const allowed = (process.env.TELEGRAM_ALLOWED_USERS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    try {
+      const created = interfacesModel.create({
+        type: "telegram",
         name: "Telegram (env)",
+        owner_user_id: ownerId,
         config: { bot_token: process.env.TELEGRAM_BOT_TOKEN },
-        allowed_users: (process.env.TELEGRAM_ALLOWED_USERS || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      },
-    ];
+        allowed_users: allowed,
+        is_active: true,
+      } as any);
+      return [
+        {
+          id: created.id,
+          owner_user_id: (created as any).owner_user_id ?? ownerId,
+          name: created.name,
+          config: (interfacesModel.getDecryptedConfig(created.id) || {}) as Record<string, unknown>,
+          allowed_users: interfacesModel.getAllowedUsers(created.id),
+        },
+      ];
+    } catch {
+      // If creation fails, fall back to env-only (gateway will be unavailable).
+      return [
+        {
+          id: -1,
+          owner_user_id: ownerId,
+          name: "Telegram (env)",
+          config: { bot_token: process.env.TELEGRAM_BOT_TOKEN },
+          allowed_users: allowed,
+        },
+      ];
+    }
   }
 
   return rows
@@ -87,18 +110,10 @@ async function startTelegramInstance(instance: {
   config: Record<string, unknown>;
   allowed_users: string[];
 }) {
-  const owner = usersModel.findById(instance.owner_user_id);
-  const allowSystem = owner
-    ? hasAnyPermission(owner, [
-        Permission.SYSTEM_SHELL,
-        Permission.SYSTEM_FILES_READ,
-        Permission.SYSTEM_FILES_WRITE,
-        Permission.SYSTEM_FILES_DELETE,
-      ])
-    : false;
   const logger = createBotLogger("telegram", instance.owner_user_id);
 
   const token = String(instance.config.bot_token || "");
+  const gatewayToken = String((instance.config as any).gateway_token || "");
   if (!token) {
     logger.warn("No bot token; skipping instance", {
       interfaceId: instance.id,
@@ -108,11 +123,6 @@ async function startTelegramInstance(instance: {
   }
 
   const bot = new Telegraf(token);
-  const sandboxRoot = getUserSandboxRoot({
-    kind: "web",
-    id: String(instance.owner_user_id),
-  });
-  ensureDir(sandboxRoot);
 
   try {
     const me = await bot.telegram.getMe();
@@ -151,142 +161,157 @@ async function startTelegramInstance(instance: {
   });
 
   bot.start(async (ctx) => {
-    await ctx.reply(
-      "Hi. I am your assistant. Send a message and I will respond.",
-    );
+    await ctx.reply("Hi. I am your assistant. Send a message and I will respond.");
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(
-      "Send a message to chat. If tools require confirmation, I’ll ask first.",
-    );
+    await ctx.reply(getHelpMessage("Overseer"));
   });
 
-  bot.on(message("text"), async (ctx) => {
+  async function handleTelegramInput(ctx: any, input: { text?: string; attachment?: { kind: "photo" | "document"; fileId: string; fileName?: string } }) {
     const externalUserId = String(ctx.from?.id || "");
     const chatId = String(ctx.chat?.id || "");
-
-    // Allowed-users check per interface.
-    if (instance.allowed_users.length > 0 && !instance.allowed_users.includes(externalUserId)) {
-      await ctx.reply("You are not allowed to use this bot.");
-      return;
-    }
 
     if (isRateLimited(`${instance.id}:${externalUserId}`, { cooldownMs: COOLDOWN_MS })) {
       return;
     }
 
-    const messageText = String(ctx.message.text || "").trim();
-    if (!messageText) return;
+    const messageTextRaw = String(input.text || "").trim();
+    const hasAttachment = !!input.attachment?.fileId;
+    const messageText = messageTextRaw || (hasAttachment ? "Analyze the attached file." : "");
+    if (!messageText && !hasAttachment) return;
 
-    const conversation = conversationsModel.findOrCreate({
-      owner_user_id: instance.owner_user_id,
-      interface_id: instance.id > 0 ? instance.id : undefined,
-      interface_type: "telegram",
-      external_chat_id: chatId,
-      external_user_id: externalUserId,
-      external_username: ctx.from?.username,
-      metadata: {
-        interfaceName: instance.name,
-      },
-    });
+    if (!gatewayToken || instance.id <= 0) {
+      await ctx.reply("Gateway auth is not configured for this interface. Create/enable the interface in the admin panel.");
+      return;
+    }
 
-    const session = SessionManager.getOrCreateSession({
-      conversation_id: conversation.id,
-      interface_type: "telegram",
-      external_user_id: externalUserId,
-      external_chat_id: chatId,
-      metadata: {
-        interfaceId: instance.id,
-        ownerUserId: instance.owner_user_id,
-      },
-    });
-
-    SessionManager.addMessage(session.id, "user", messageText);
-
-    messagesModel.create({
-      conversation_id: conversation.id,
-      role: "user",
-      content: messageText,
-    });
-
-    try {
-      // Best-effort: indicate we are working without sending placeholder messages.
-      await ctx.sendChatAction("typing");
-    } catch {}
-
-    const rateLimiter = getRateLimiter();
-
-    await withToolContext(
-      {
-        sandboxRoot,
-        allowSystem,
-        actor: { kind: "web", id: String(instance.owner_user_id) },
-        conversationId: conversation.id,
-        agentSessionId: session.session_id,
-        interface: {
-          type: "telegram",
-          id: instance.id,
-          externalChatId: chatId,
-          externalUserId,
+    const gatewayBody: Record<string, unknown> = {
+      message: messageText,
+      externalChatId: chatId,
+      externalUserId,
+      externalUsername: ctx.from?.username ?? null,
+      planMode: false,
+      steering: undefined,
+      attachments: hasAttachment && input.attachment ? [
+        {
+          source: "telegram",
+          fileId: input.attachment.fileId,
+          fileName: input.attachment.fileName ?? null,
+          kind: input.attachment.kind,
+          caption: messageTextRaw || null,
         },
+      ] : [],
+    };
+
+    // Placeholder message we will edit while streaming.
+    const placeholder = await ctx.reply("…");
+    const placeholderMessageId = placeholder?.message_id;
+
+    let buffer = "";
+    let lastEditAt = 0;
+    let lastSentLen = 0;
+    let finalText = "";
+    let receiptText: string | null = null;
+
+    for await (const evt of streamGatewayChat({
+      baseUrl: getGatewayBaseUrl(),
+      interfaceId: instance.id,
+      interfaceToken: gatewayToken,
+      body: gatewayBody,
+    })) {
+      if (evt.type === "text_delta") {
+        buffer += evt.text || "";
+        const now = Date.now();
+        const shouldEdit =
+          placeholderMessageId &&
+          now - lastEditAt >= STREAM_EDIT_DEBOUNCE_MS &&
+          buffer.length - lastSentLen >= STREAM_MIN_CHARS_BEFORE_EDIT;
+        if (!shouldEdit) continue;
+
+        const toShow =
+          buffer.length > TELEGRAM_MAX_MESSAGE
+            ? buffer.slice(0, TELEGRAM_MAX_MESSAGE - 32) + "\n\n(continuing…)"
+            : buffer;
+
+        try {
+          await ctx.telegram.editMessageText(chatId, placeholderMessageId, undefined, toShow);
+          lastEditAt = now;
+          lastSentLen = buffer.length;
+        } catch {}
+      } else if (evt.type === "tool_receipt") {
+        receiptText = evt.text;
+      } else if (evt.type === "done") {
+        finalText = evt.fullText || buffer;
+      } else if (evt.type === "error") {
+        const msg = evt.error || "Unknown error";
+        try {
+          if (placeholderMessageId) {
+            await ctx.telegram.editMessageText(chatId, placeholderMessageId, undefined, `Error: ${msg}`);
+            return;
+          }
+        } catch {}
+        await ctx.reply(`Error: ${msg}`);
+        return;
+      }
+    }
+
+    const chunks = splitText(finalText || "(no output)", TELEGRAM_MAX_MESSAGE);
+    if (placeholderMessageId) {
+      try {
+        await ctx.telegram.editMessageText(chatId, placeholderMessageId, undefined, chunks[0] || "(no output)");
+      } catch {
+        await ctx.reply(chunks[0] || "(no output)");
+      }
+      for (const ch of chunks.slice(1)) {
+        await ctx.reply(ch);
+      }
+    } else {
+      for (const ch of chunks) await ctx.reply(ch);
+    }
+
+    if (receiptText) {
+      const receiptChunks = splitText(receiptText, TELEGRAM_MAX_MESSAGE);
+      for (const ch of receiptChunks) await ctx.reply(ch);
+    }
+
+    recordChannelEvent({
+      channel: "telegram",
+      event: "message_processing",
+      ok: true,
+      details: {
+        interfaceId: instance.id,
+        ownerUserId: String(instance.owner_user_id),
+        externalChatId: chatId,
+        responseLength: finalText?.length,
       },
-      async () => {
-        const result = await runAgentStream(messageText, {
-          conversationId: conversation.id,
-          planMode: false,
-          sandboxRoot,
-          allowSystem,
-          actor: { kind: "web", id: String(instance.owner_user_id) },
-        });
+    });
+  }
 
-        let fullText = "";
-        for await (const chunk of result.textStream) {
-          fullText += chunk;
-        }
+  bot.on(message("text"), async (ctx) => {
+    const messageText = String(ctx.message.text || "").trim();
+    await handleTelegramInput(ctx, { text: messageText });
+  });
 
-        const finalText = await result.fullText;
-        const usage = await result.usage;
+  bot.on(message("photo"), async (ctx: any) => {
+    const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+    const best = photos.length > 0 ? photos[photos.length - 1] : null;
+    const caption = String(ctx.message?.caption || "").trim();
+    if (!best?.file_id) return;
+    await handleTelegramInput(ctx, {
+      text: caption,
+      attachment: { kind: "photo", fileId: String(best.file_id), fileName: `photo-${Date.now()}.jpg` },
+    });
+  });
 
-        await ctx.reply(finalText || "I couldn't generate a response. Try again.");
-
-        if (usage) {
-          rateLimiter.recordRequest({
-            userId: String(instance.owner_user_id),
-            conversationId: conversation.id,
-            interfaceType: "telegram",
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-            model: "default",
-          });
-        }
-
-        messagesModel.create({
-          conversation_id: conversation.id,
-          role: "assistant",
-          content: finalText,
-          input_tokens: usage?.inputTokens,
-          output_tokens: usage?.outputTokens,
-        });
-
-        extractMemoriesFromConversation(
-          instance.owner_user_id,
-          `user: ${messageText}\n\nassistant: ${finalText}`,
-        ).catch(() => {});
-
-        recordChannelEvent({
-          channel: "telegram",
-          event: "message_processing",
-          ok: true,
-          details: {
-            interfaceId: instance.id,
-            ownerUserId: String(instance.owner_user_id),
-            conversationId: conversation.id,
-            responseLength: finalText?.length,
-          },
-        });
-      },
-    );
+  bot.on(message("document"), async (ctx: any) => {
+    const doc = ctx.message?.document;
+    if (!doc?.file_id) return;
+    const caption = String(ctx.message?.caption || "").trim();
+    await handleTelegramInput(ctx, {
+      text: caption,
+      attachment: { kind: "document", fileId: String(doc.file_id), fileName: String(doc.file_name || `document-${Date.now()}`) },
+    });
   });
 
   await bot.launch();

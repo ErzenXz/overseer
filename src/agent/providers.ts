@@ -61,6 +61,31 @@ interface ActiveModelEntry {
   priority: number;
 }
 
+function normalizeOpenAICompatibleBaseUrl(raw?: string): string | undefined {
+  if (!raw) return raw;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+
+  // Only append /v1 when the URL has no meaningful path. Many providers use
+  // custom paths (e.g. /api/...); blindly appending /v1 would break them.
+  try {
+    const u = new URL(trimmed);
+    const pathname = u.pathname.replace(/\/+$/, "");
+    if (pathname === "" || pathname === "/") {
+      u.pathname = "/v1";
+      return u.toString();
+    }
+    return u.toString();
+  } catch {
+    // Best-effort for non-URL strings.
+    const s = trimmed.replace(/\/+$/, "");
+    if (s.endsWith("/v1")) return s;
+    // If it looks like just a host, append /v1; otherwise leave it alone.
+    if (!s.includes("/")) return `${s}/v1`;
+    return s;
+  }
+}
+
 function normalizeProviderRuntimeName(
   name: string,
   providerNpm?: string,
@@ -160,7 +185,7 @@ export function createModel(config: ProviderConfig): LanguageModel {
     case "openai-compatible": {
       const compatible = createOpenAI({
         apiKey: config.apiKey,
-        baseURL: config.baseUrl,
+        baseURL: normalizeOpenAICompatibleBaseUrl(config.baseUrl),
       });
       return compatible(config.model);
     }
@@ -247,7 +272,7 @@ export function createModel(config: ProviderConfig): LanguageModel {
 
       const compatible = createOpenAI({
         apiKey: config.apiKey,
-        baseURL: config.baseUrl,
+        baseURL: normalizeOpenAICompatibleBaseUrl(config.baseUrl),
       });
 
       return compatible(config.model);

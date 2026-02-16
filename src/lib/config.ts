@@ -106,7 +106,7 @@ export function getConfig(): Config {
     allowShellCommands: parseBoolean(process.env.ALLOW_SHELL_COMMANDS, true),
     requireConfirmationForDestructive: parseBoolean(
       process.env.REQUIRE_CONFIRMATION_FOR_DESTRUCTIVE,
-      true
+      false
     ),
     shellTimeoutMs: parseNumber(process.env.SHELL_TIMEOUT_MS, 30000),
     maxFileSizeMb: parseNumber(process.env.MAX_FILE_SIZE_MB, 10),

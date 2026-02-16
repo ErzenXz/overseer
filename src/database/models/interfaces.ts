@@ -1,5 +1,6 @@
 import { db, type Interface, type InterfaceType } from "../db";
 import { encrypt, decrypt } from "../../lib/crypto";
+import { randomBytes } from "crypto";
 
 export interface InterfaceConfig {
   bot_token?: string;
@@ -7,6 +8,7 @@ export interface InterfaceConfig {
   webhook_url?: string;
   webhook_secret?: string;
   allowed_guilds?: string[];  // Discord guild/server IDs
+  gateway_token?: string;
   [key: string]: unknown;
 }
 
@@ -27,6 +29,7 @@ const SECRET_CONFIG_KEYS = [
   "access_token",
   "refresh_token",
   "client_secret",
+  "gateway_token",
 ] as const;
 
 function encryptKnownSecrets(config: Record<string, unknown>) {
@@ -129,6 +132,10 @@ export const interfacesModel = {
   create(input: InterfaceInput): Interface {
     // Encrypt sensitive data in config
     const configToStore = { ...input.config };
+    if (typeof configToStore.gateway_token !== "string" || configToStore.gateway_token.length < 24) {
+      // 32 bytes -> 64 hex chars
+      configToStore.gateway_token = randomBytes(32).toString("hex");
+    }
     encryptKnownSecrets(configToStore);
 
     const result = db
@@ -170,6 +177,9 @@ export const interfacesModel = {
     }
     if (input.config !== undefined) {
       const configToStore = { ...input.config };
+      if (typeof configToStore.gateway_token !== "string" || configToStore.gateway_token.length < 24) {
+        configToStore.gateway_token = randomBytes(32).toString("hex");
+      }
       encryptKnownSecrets(configToStore);
       updates.push("config = ?");
       values.push(JSON.stringify(configToStore));
