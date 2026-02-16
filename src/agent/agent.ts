@@ -989,6 +989,23 @@ export async function runAgentStream(
   let finalText: string | undefined;
   let finalUsage: { inputTokens: number; outputTokens: number } | undefined;
 
+  // NOTE: Do not use Promise.resolve(finalText ?? partial) here.
+  // That expression would be evaluated before streaming runs, causing the UI to
+  // overwrite streamed output with the fallback "No output generated..." text.
+  let resolveFullText!: (text: string) => void;
+  const fullText = new Promise<string>((resolve) => {
+    resolveFullText = resolve;
+  });
+
+  let resolveUsage!: (
+    usage: { inputTokens: number; outputTokens: number } | undefined,
+  ) => void;
+  const usage = new Promise<
+    { inputTokens: number; outputTokens: number } | undefined
+  >((resolve) => {
+    resolveUsage = resolve;
+  });
+
   const textStream = (async function* () {
     let attempt = 0;
     let currentMessages = messages;
@@ -1127,26 +1144,32 @@ export async function runAgentStream(
     } finally {
       // Ensure we always resolve the receipts promise, even if the stream throws.
       resolveToolCalls(receipts);
+
+      const normalized =
+        typeof (finalText ?? partial) === "string" &&
+        String(finalText ?? partial).trim().length > 0
+          ? String(finalText ?? partial)
+          : "No output generated. Check the stream for errors and confirm your provider supports streaming/tool-calling.";
+
+      agentCache.set({
+        scope: "agent",
+        key: streamCacheKey,
+        value: { text: normalized, usage: finalUsage },
+        ttlSeconds: 180,
+        tags: ["agent", "stream"],
+      });
+
+      // Resolve after the stream is finished (even on error) so callers can
+      // reliably emit a final "done" event without clobbering streamed output.
+      resolveFullText(normalized);
+      resolveUsage(finalUsage);
     }
   })();
 
   return {
     textStream,
-    fullText: Promise.resolve(finalText ?? partial).then((text) => {
-      const normalized =
-        typeof text === "string" && text.trim().length > 0
-          ? text
-          : "No output generated. Check the stream for errors and confirm your provider supports streaming/tool-calling.";
-      agentCache.set({
-        scope: "agent",
-        key: streamCacheKey,
-        value: { text: normalized },
-        ttlSeconds: 180,
-        tags: ["agent", "stream"],
-      });
-      return normalized;
-    }),
-    usage: Promise.resolve(finalUsage),
+    fullText,
+    usage,
     toolCalls,
   };
 }
