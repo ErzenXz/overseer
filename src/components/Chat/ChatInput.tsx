@@ -2,6 +2,17 @@
 
 import { useState, useRef, useEffect } from "react";
 
+interface SandboxFileEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+}
+
+interface ListedDirResponse {
+  success: boolean;
+  entries?: SandboxFileEntry[];
+}
+
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
   resultIndex: number;
@@ -63,6 +74,9 @@ export function ChatInput({
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
+  const [allFiles, setAllFiles] = useState<string[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
@@ -108,6 +122,93 @@ export function ChatInput({
       }
     };
   }, []);
+
+  const loadAllFiles = async () => {
+    if (isLoadingFiles || allFiles.length > 0) return;
+    setIsLoadingFiles(true);
+    try {
+      const collected: string[] = [];
+      const queue: Array<{ path: string; depth: number }> = [{ path: ".", depth: 0 }];
+      const maxDepth = 4;
+
+      while (queue.length > 0) {
+        const next = queue.shift();
+        if (!next) break;
+        const res = await fetch(
+          `/api/files?action=list&path=${encodeURIComponent(next.path)}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) continue;
+        const data = (await res.json()) as ListedDirResponse;
+        const entries = Array.isArray(data.entries) ? data.entries : [];
+        for (const entry of entries) {
+          if (entry.type === "file") {
+            collected.push(entry.path);
+          } else if (entry.type === "directory" && next.depth < maxDepth) {
+            queue.push({ path: entry.path, depth: next.depth + 1 });
+          }
+        }
+      }
+
+      setAllFiles(collected.sort((a, b) => a.localeCompare(b)));
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  useEffect(() => {
+    const match = message.match(/(?:^|\s)@([^\s]*)$/);
+    if (!match) {
+      setMentionQuery(null);
+      return;
+    }
+
+    const query = match[1] ?? "";
+    setMentionQuery(query);
+    void loadAllFiles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message]);
+
+  const filteredFiles =
+    mentionQuery === null
+      ? []
+      : allFiles
+          .filter((p) => p.toLowerCase().includes(mentionQuery.toLowerCase()))
+          .slice(0, 10);
+
+  const attachExistingFile = async (path: string) => {
+    const res = await fetch(
+      `/api/files?action=download&path=${encodeURIComponent(path)}&disposition=inline`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) throw new Error("Failed to load file for attachment");
+
+    const blob = await res.blob();
+    const fileName = path.split("/").filter(Boolean).pop() || "file";
+    const file = new File([blob], fileName, {
+      type: blob.type || "application/octet-stream",
+      lastModified: Date.now(),
+    }) as File & { __sandboxPath?: string };
+
+    file.__sandboxPath = path;
+    setAttachments((prev) => {
+      if (prev.some((f) => (f as File & { __sandboxPath?: string }).__sandboxPath === path)) {
+        return prev;
+      }
+      return [...prev, file];
+    });
+  };
+
+  const handleMentionSelect = async (path: string) => {
+    // replace the currently active @query with @path
+    setMessage((prev) => prev.replace(/(?:^|\s)@([^\s]*)$/, (m) => m.replace(/@[^\s]*$/, `@${path}`)) + " ");
+    setMentionQuery(null);
+    try {
+      await attachExistingFile(path);
+    } catch {
+      // ignore non-fatal picker errors
+    }
+  };
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -159,14 +260,14 @@ export function ChatInput({
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
   return (
-    <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
+    <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-raised)]/80 backdrop-blur p-4">
       {/* Attachments preview */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">
           {attachments.map((file, index) => (
             <div
               key={index}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-surface-overlay)] rounded-lg text-sm"
+              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-surface-overlay)] rounded-xl text-sm border border-[var(--color-border)]"
             >
               <svg className="w-4 h-4 text-[var(--color-text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -185,12 +286,12 @@ export function ChatInput({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-end gap-3">
+      <form onSubmit={handleSubmit} className="relative flex items-end gap-3">
         {/* Attachment button */}
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex-shrink-0 p-2.5 text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-overlay)] rounded-lg transition-colors"
+          className="flex-shrink-0 p-2.5 text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-overlay)] rounded-xl transition-colors"
           title="Attach file"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -215,9 +316,37 @@ export function ChatInput({
             placeholder={placeholder}
             rows={1}
             disabled={isLoading}
-            className="w-full px-4 py-3 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent disabled:opacity-50 transition-all"
+            className="w-full px-4 py-3 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-2xl text-white placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent disabled:opacity-50 transition-all"
             style={{ minHeight: "48px", maxHeight: "200px" }}
           />
+
+          {mentionQuery !== null && (
+            <div className="absolute left-0 right-0 bottom-full mb-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl max-h-56 overflow-y-auto z-20">
+              <div className="px-3 py-2 text-xs text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
+                Attach from Files using @
+              </div>
+
+              {isLoadingFiles ? (
+                <div className="px-3 py-3 text-sm text-[var(--color-text-secondary)]">Loading files...</div>
+              ) : filteredFiles.length === 0 ? (
+                <div className="px-3 py-3 text-sm text-[var(--color-text-secondary)]">No matching files</div>
+              ) : (
+                <div className="py-1">
+                  {filteredFiles.map((path) => (
+                    <button
+                      key={path}
+                      type="button"
+                      onClick={() => void handleMentionSelect(path)}
+                      className="w-full text-left px-3 py-2 hover:bg-[var(--color-surface-overlay)] transition-colors"
+                    >
+                      <div className="text-sm text-[var(--color-text-primary)] truncate">{path.split("/").pop()}</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)] truncate">{path}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Voice input button */}
@@ -225,7 +354,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={toggleVoiceInput}
-            className={`flex-shrink-0 p-2.5 rounded-lg transition-colors ${
+            className={`flex-shrink-0 p-2.5 rounded-xl transition-colors ${
               isListening
                 ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
                 : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-overlay)]"
@@ -248,7 +377,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={onStop}
-            className="flex-shrink-0 p-2.5 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg transition-colors"
+            className="flex-shrink-0 p-2.5 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-xl transition-colors"
             title="Stop generating"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -259,7 +388,7 @@ export function ChatInput({
           <button
             type="submit"
             disabled={!message.trim() && attachments.length === 0}
-            className="flex-shrink-0 p-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] disabled:bg-[var(--color-border)] disabled:text-[var(--color-text-muted)] text-black rounded-lg transition-colors"
+            className="flex-shrink-0 p-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] disabled:bg-[var(--color-border)] disabled:text-[var(--color-text-muted)] text-black rounded-xl transition-colors"
             title="Send message"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,7 +400,7 @@ export function ChatInput({
 
       {/* Input hints */}
       <div className="mt-2 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-        <span>Press Enter to send, Shift+Enter for new line</span>
+        <span>Enter to send, Shift+Enter newline, @ to attach from Files</span>
         {isListening && (
           <span className="flex items-center gap-1 text-red-400">
             <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse" />

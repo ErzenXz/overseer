@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
       providerId,
       planMode,
       steering,
+      attachments,
       streamId: requestedStreamId,
     } = body;
 
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
               providerId,
               planMode: Boolean(planMode),
               steering,
-              attachments: [],
+              attachments: Array.isArray(attachments) ? attachments : [],
             },
             { emit, streamId },
           );

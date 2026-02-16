@@ -6,6 +6,11 @@ import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
 import { ChatTypingIndicator } from "./ChatTypingIndicator";
 import { useChat, type ChatMessage as ChatMessageType } from "@/hooks/useChat";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
 
 interface ChatContainerProps {
   initialConversationId?: number;
@@ -13,7 +18,6 @@ interface ChatContainerProps {
 
 export function ChatContainer({ initialConversationId }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null);
 
   const {
@@ -60,47 +64,49 @@ export function ChatContainer({ initialConversationId }: ChatContainerProps) {
       />
 
       {/* Messages */}
-      <div
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-6"
-      >
-        {messages.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <>
-            {messages.map((message, index) => (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                isLast={index === messages.length - 1}
-              />
-            ))}
-            {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
-              <ChatTypingIndicator />
-            )}
-          </>
-        )}
+      <Conversation className="flex-1">
+        <ConversationContent className="mx-auto w-full max-w-4xl px-4 py-5 space-y-6">
+          {messages.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <>
+              {messages.map((message, index) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isLast={index === messages.length - 1}
+                />
+              ))}
+              {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
+                <ChatTypingIndicator />
+              )}
+            </>
+          )}
 
-        {/* Error display */}
-        {error && (
-          <div className="flex items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
-            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm">{error}</span>
-          </div>
-        )}
+          {/* Error display */}
+          {error && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400">
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm">{error}</span>
+            </div>
+          )}
 
-        <div ref={messagesEndRef} />
-      </div>
+          <div ref={messagesEndRef} />
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
 
       {/* Input */}
-      <ChatInput
-        onSend={handleSend}
-        isLoading={isLoading}
-        onStop={stopGeneration}
-        placeholder="Message Overseer..."
-      />
+      <div className="mx-auto w-full max-w-4xl px-4 pb-4">
+        <ChatInput
+          onSend={handleSend}
+          isLoading={isLoading}
+          onStop={stopGeneration}
+          placeholder="Message Overseer..."
+        />
+      </div>
     </div>
   );
 }

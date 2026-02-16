@@ -191,9 +191,9 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   };
 
   return (
-    <div className="relative group my-3 rounded-lg overflow-hidden bg-[var(--color-surface-raised)] border border-[var(--color-border)]">
+    <div className="relative group my-3 rounded-xl overflow-hidden bg-[var(--color-surface-raised)] border border-[var(--color-border)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-overlay)] border-b border-[var(--color-border)]">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--color-surface-overlay)] border-b border-[var(--color-border)]">
         <span className="text-xs text-[var(--color-text-secondary)] font-mono">{language || "text"}</span>
         <button
           onClick={copyCode}
@@ -204,7 +204,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
       </div>
       {/* Code */}
       <pre className="p-4 overflow-x-auto">
-        <code className="text-sm font-mono text-[var(--color-text-primary)]">{code}</code>
+        <code className="text-[13px] leading-6 font-mono text-[var(--color-text-primary)]">{code}</code>
       </pre>
     </div>
   );
@@ -213,7 +213,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 // Thinking block component for extended thinking display
 function ThinkingBlock({ content, isThinking }: { content: string; isThinking?: boolean }) {
   return (
-    <div className="my-3 p-4 bg-amber-950/30 border border-amber-700/30 rounded-lg">
+    <div className="my-3 p-4 bg-amber-950/20 border border-amber-700/25 rounded-xl">
       <div className="flex items-center gap-2 mb-2 text-amber-400 text-sm font-medium">
         <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
@@ -223,7 +223,7 @@ function ThinkingBlock({ content, isThinking }: { content: string; isThinking?: 
           <span className="ml-auto text-xs text-amber-400/70">Analyzing...</span>
         )}
       </div>
-      <div className="text-sm text-amber-200/80 whitespace-pre-wrap font-mono">
+      <div className="text-[13px] leading-6 text-amber-200/80 whitespace-pre-wrap font-mono">
         {content}
       </div>
     </div>
@@ -244,15 +244,15 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
 
   return (
     <div
-      className={`flex gap-4 ${isUser ? "flex-row-reverse" : ""} ${
+      className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""} ${
         isLast ? "animate-fade-in" : ""
-      }`}
+      } py-1`}
     >
       {!isSystem && (
         <div
-          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-1 ${
             isUser
-              ? "bg-[var(--color-accent)]"
+              ? "bg-[var(--color-accent)]/85"
               : "bg-[var(--color-accent)]"
           }`}
         >
@@ -269,15 +269,15 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
       )}
 
       {/* Content */}
-      <div className={`flex-1 ${isUser ? "text-right" : ""} ${isSystem ? "max-w-[95%]" : "max-w-[80%]"}`}>
+      <div className={`flex-1 ${isUser ? "text-right" : ""} ${isSystem ? "max-w-[95%]" : "max-w-[86%]"}`}>
         {/* Message bubble */}
         <div
-          className={`inline-block text-left px-4 py-3 rounded-lg ${
+          className={`inline-block text-left ${
             isSystem
-              ? "bg-blue-500/10 text-blue-200 border border-blue-500/30"
+              ? "px-4 py-3 rounded-xl bg-blue-500/10 text-blue-200 border border-blue-500/30"
               : isUser
-              ? "bg-[var(--color-accent)] text-black"
-              : "bg-[var(--color-surface-overlay)] text-[var(--color-text-primary)]"
+              ? "px-4 py-3 rounded-2xl rounded-br-md bg-[var(--color-surface-overlay)] border border-[var(--color-border)] text-[var(--color-text-primary)]"
+              : "px-0 py-1 bg-transparent text-[var(--color-text-primary)]"
           }`}
         >
           {/* Thinking indicator for active thinking */}
@@ -293,9 +293,9 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
           )}
 
           {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            <p className="whitespace-pre-wrap text-[15px] leading-7">{message.content}</p>
           ) : (
-            <div className="prose prose-invert prose-sm max-w-none">
+            <div className="prose prose-invert prose-sm max-w-none prose-p:my-2 prose-p:leading-7 prose-li:my-1 prose-pre:my-3 prose-headings:mt-4 prose-headings:mb-2 prose-code:text-[var(--color-accent)]">
               {parsedContent}
               {message.isStreaming && (
                 <span className="inline-block w-2 h-4 bg-[var(--color-text-secondary)] animate-pulse ml-0.5" />
@@ -304,11 +304,11 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
           )}
 
           {!isUser && !isSystem && message.toolCalls && message.toolCalls.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
-              <div className="text-xs uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
+            <div className="mt-4 pt-3 border-t border-[var(--color-border)]/80 bg-[var(--color-surface-overlay)]/35 rounded-xl px-3 pb-3">
+              <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
                 Execution timeline
               </div>
-              <div className="relative pl-4 space-y-2">
+              <div className="relative pl-4 space-y-2.5">
                 <div className="absolute left-1.5 top-0 bottom-0 w-px bg-[var(--color-border)]" />
                 {message.toolCalls.map((toolCall) => (
                   <div key={toolCall.id} className="relative">
@@ -323,7 +323,7 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
 
         {/* Metadata */}
         <div
-          className={`mt-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)] ${
+          className={`mt-1.5 flex items-center gap-2 text-[11px] text-[var(--color-text-muted)] ${
             isUser ? "justify-end" : ""
           }`}
         >

@@ -40,6 +40,13 @@ export interface SendMessageOptions {
   };
 }
 
+interface InlineGatewayAttachment {
+  source: "inline";
+  fileName: string;
+  mimeType?: string;
+  base64: string;
+}
+
 interface ActiveStreamState {
   streamId: string;
   assistantMessageId: string;
@@ -94,6 +101,43 @@ function clearActiveStream() {
   const storage = getStorage();
   if (!storage) return;
   storage.removeItem(ACTIVE_STREAM_STORAGE_KEY);
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+async function uploadFileToUserFiles(file: File): Promise<string> {
+  const existingSandboxPath = (file as File & { __sandboxPath?: string }).__sandboxPath;
+  if (existingSandboxPath) {
+    return existingSandboxPath;
+  }
+
+  const form = new FormData();
+  form.append("action", "upload");
+  form.append("path", "chat/uploads");
+  form.append("file", file);
+
+  const res = await fetch("/api/files", {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error || `Upload failed (${res.status})`);
+  }
+
+  const data = await res.json().catch(() => null);
+  return typeof data?.path === "string" ? data.path : `chat/uploads/${file.name}`;
 }
 
 export function useChat(options: ChatOptions = {}) {
@@ -486,12 +530,33 @@ export function useChat(options: ChatOptions = {}) {
 
       try {
         // Prepare request body
+        let gatewayAttachments: InlineGatewayAttachment[] | undefined;
+        if (attachments && attachments.length > 0) {
+          const prepared = await Promise.all(
+            attachments.map(async (file) => {
+              // 1) Persist into actual Files area for the user
+              await uploadFileToUserFiles(file);
+
+              // 2) Send inline payload so gateway can save/process it for this conversation
+              const base64 = await fileToBase64(file);
+              return {
+                source: "inline" as const,
+                fileName: file.name,
+                mimeType: file.type || undefined,
+                base64,
+              };
+            }),
+          );
+          gatewayAttachments = prepared;
+        }
+
         const body: {
           message: string;
           conversationId?: number | null;
           providerId?: number | null;
           streamId: string;
           steering?: SendMessageOptions["steering"];
+          attachments?: InlineGatewayAttachment[];
         } = {
           message: content,
           conversationId,
@@ -501,6 +566,7 @@ export function useChat(options: ChatOptions = {}) {
               ? crypto.randomUUID()
               : `stream-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           steering: sendOptions?.steering,
+          attachments: gatewayAttachments,
         };
 
         activeStreamRef.current = {
