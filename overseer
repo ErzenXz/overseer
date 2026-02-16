@@ -320,6 +320,7 @@ cmd_update_check() {
 
 cmd_update() {
     local force_update="${1:-false}"
+    local use_stash="${2:-false}"
     echo -e "${CYAN}${BOLD}Updating Overseer...${NC}"
     echo ""
 
@@ -365,6 +366,15 @@ cmd_update() {
 
     local had_stash="false"
     if [ -n "$(git status --porcelain)" ]; then
+        if [ "$use_stash" != "true" ]; then
+            echo -e "${RED}[ERROR]${NC} Local changes detected in the Overseer install directory."
+            echo -e "${YELLOW}[INFO]${NC} This server install should stay clean; update is aborted to prevent conflicts."
+            echo -e "${YELLOW}[INFO]${NC} Options:"
+            echo -e "  - Discard local changes: ${BOLD}git reset --hard origin/main && git clean -fd${NC}"
+            echo -e "  - Keep local changes: commit them to a branch, or run: ${BOLD}./overseer update --stash${NC}"
+            return 1
+        fi
+
         if ! git stash push -u -m "overseer-auto-stash-$(date +%s)" >/dev/null 2>&1; then
             echo -e "${RED}[ERROR]${NC} Failed to stash local changes. Aborting update."
             return 1
@@ -385,9 +395,13 @@ cmd_update() {
     fi
 
     if [ "$had_stash" = "true" ]; then
-        if ! git stash pop >/dev/null 2>&1; then
-            echo -e "${YELLOW}[WARN]${NC} Could not auto-apply stashed changes cleanly."
-            echo -e "${YELLOW}[INFO]${NC} Resolve manually with: git stash list && git stash pop"
+        # Apply (don't pop) so the stash is preserved even if conflicts occur.
+        if ! git stash apply >/dev/null 2>&1; then
+            echo -e "${YELLOW}[WARN]${NC} Stashed local changes did not apply cleanly after update."
+            echo -e "${YELLOW}[INFO]${NC} Your stash was kept. Resolve manually:"
+            echo -e "  - Inspect: ${BOLD}git status && git stash list${NC}"
+            echo -e "  - Try again: ${BOLD}git stash apply${NC}"
+            echo -e "  - Or drop: ${BOLD}git stash drop${NC} (DANGEROUS: discards stash)"
             return 1
         fi
     fi
@@ -521,6 +535,8 @@ cmd_help() {
     echo "  update    Update to latest version (only applies when new commits exist)"
     echo "  update --check  Check if updates are available"
     echo "  update --force  Attempt update even if branch diverged"
+    echo "  update --stash  (Explicit) Stash local changes before pulling, then re-apply (may still conflict)"
+    echo "  update --force-stash  Combine --force + --stash"
     echo "  install-cli     Install global 'overseer' command"
     echo "  uninstall-cli   Remove global 'overseer' command"
     echo "  help      Show this help"
@@ -538,6 +554,8 @@ case "${1:-help}" in
         case "${2:-}" in
             --check|-c) cmd_update_check ;;
             --force|-f) cmd_update true ;;
+            --stash) cmd_update false true ;;
+            --force-stash) cmd_update true true ;;
             *) cmd_update ;;
         esac
         ;;

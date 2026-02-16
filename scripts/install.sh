@@ -861,9 +861,15 @@ clone_repository() {
             print_substep "Existing installation found, updating..."
             cd "$OVERSEER_DIR"
             
-            # Stash any local changes
-            git stash 2>/dev/null || true
-            git pull origin "$OVERSEER_VERSION" 2>/dev/null || {
+            if [ -n "$(git status --porcelain 2>/dev/null || true)" ]; then
+                print_error "Local changes detected in ${OVERSEER_DIR}; refusing to update during install."
+                print_warning "This installer expects a clean checkout. Fix by either:"
+                echo "  - Discard local changes: cd \"$OVERSEER_DIR\" && git reset --hard origin/$OVERSEER_VERSION && git clean -fd"
+                echo "  - Or move your changes to a branch and re-run install."
+                return 1
+            fi
+
+            git pull --ff-only origin "$OVERSEER_VERSION" 2>/dev/null || {
                 print_warning "Could not pull updates, using existing version"
             }
         else
