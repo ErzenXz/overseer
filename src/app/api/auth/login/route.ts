@@ -28,7 +28,10 @@ export async function POST(request: NextRequest) {
 
     response.cookies.set("overseer_session", result.sessionId || "", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production" && !!process.env.AUTH_COOKIE_SECURE,
+      // Default secure cookies in production (HTTPS). Allow opt-in for local HTTPS.
+      secure:
+        process.env.NODE_ENV === "production" ||
+        process.env.AUTH_COOKIE_SECURE === "true",
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60,
       path: "/",

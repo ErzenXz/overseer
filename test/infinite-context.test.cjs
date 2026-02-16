@@ -11,7 +11,7 @@ test("infinite context: persisted summary updates without deleting history", asy
   // IMPORTANT: db.ts reads DATABASE_PATH at import time.
   process.env.DATABASE_PATH = dbPath;
 
-  const { db, closeDatabase } = await import("../src/database/db.ts");
+  const { db, closeDatabase, initializeSchema } = await import("../src/database/db.ts");
   const {
     conversationsModel,
     messagesModel,
@@ -22,6 +22,7 @@ test("infinite context: persisted summary updates without deleting history", asy
   );
 
   try {
+    initializeSchema();
     const userRes = db
       .prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)")
       .run("testuser", "x", "admin");
@@ -70,4 +71,3 @@ test("infinite context: persisted summary updates without deleting history", asy
     await rm(tmp, { recursive: true, force: true });
   }
 });
-

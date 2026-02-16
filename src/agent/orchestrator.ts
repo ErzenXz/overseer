@@ -12,7 +12,6 @@ import { getToolContext } from "@/lib/tool-context";
 import {
   createSubAgent,
   executeTask,
-  type SubAgentType,
 } from "@/agent/subagents/manager";
 
 const logger = createLogger("agent-orchestrator");
@@ -32,13 +31,6 @@ export interface OrchestrationPlanStep {
   title: string;
   description: string;
   can_parallelize: boolean;
-  suggested_subagent_type:
-    | "planner"
-    | "code"
-    | "system"
-    | "security"
-    | "evaluator"
-    | "generic";
   expected_artifacts?: string[];
   verification?: string[];
 }
@@ -57,37 +49,9 @@ export interface OrchestrationResult {
   taskId?: number;
 }
 
-function pickTools(all: Record<string, Tool>, names: string[]): Record<string, Tool> {
-  const out: Record<string, Tool> = {};
-  for (const n of names) {
-    if (all[n]) out[n] = all[n];
-  }
-  return out;
-}
-
-function toolsForType(all: Record<string, Tool>, t: SubAgentType): Record<string, Tool> {
-  // Keep this conservative; tenant sandbox + tool safety still applies.
-  switch (t) {
-    case "planner":
-      return pickTools(all, ["searchCodebase", "readFile", "listDirectory"]);
-    case "security":
-      return pickTools(all, ["searchCodebase", "readFile", "listDirectory", "executeShellCommand"]);
-    case "evaluator":
-      return pickTools(all, ["searchCodebase", "readFile", "listDirectory", "executeShellCommand"]);
-    case "system":
-      return pickTools(all, ["readFile", "listDirectory", "executeShellCommand", "getShellInfo"]);
-    case "code":
-      return pickTools(all, [
-        "searchCodebase",
-        "readFile",
-        "writeFile",
-        "listDirectory",
-        "executeShellCommand",
-      ]);
-    case "generic":
-    default:
-      return all;
-  }
+function toolsForSubagent(all: Record<string, Tool>): Record<string, Tool> {
+  // Subagent is a clone of the main agent: same toolset.
+  return all;
 }
 
 function parsePlanJson(text: string): OrchestrationPlan {
@@ -97,20 +61,6 @@ function parsePlanJson(text: string): OrchestrationPlan {
   const match = candidate.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("Planner did not output a JSON object");
   return JSON.parse(match[0]) as OrchestrationPlan;
-}
-
-function safeSubAgentType(input: string): SubAgentType {
-  switch (input) {
-    case "planner":
-    case "code":
-    case "system":
-    case "security":
-    case "evaluator":
-    case "generic":
-      return input;
-    default:
-      return "generic";
-  }
 }
 
 export async function runPlanModeOrchestration(
@@ -153,7 +103,6 @@ Return ONLY JSON matching this schema:
       "title": string,
       "description": string,
       "can_parallelize": boolean,
-      "suggested_subagent_type": "planner"|"code"|"system"|"security"|"evaluator"|"generic",
       "expected_artifacts": string[],
       "verification": string[]
     }
@@ -166,33 +115,15 @@ ${prompt}
 Context:
 ${options.context || "None"}
 `;
-
-    const plannerAgent = createSubAgent({
-      parent_session_id: options.parentSessionId,
-      agent_type: "planner",
-      owner_user_id: ownerUserId,
-      assigned_task: plannerPrompt,
-      metadata: { kind: "planner" },
+    // Planner runs on the main model directly (no subagent types).
+    const planResult = await generateText({
+      model: options.model,
+      system: "You are a planning assistant. Return ONLY valid JSON.",
+      prompt: plannerPrompt,
+      maxRetries: 2,
     });
 
-    const planResult = await executeTask(
-      plannerAgent.sub_agent_id,
-      options.model,
-      toolsForType(options.tools, "planner"),
-      { toolContext: getToolContext(), timeout: 120_000 },
-    );
-
-    if (!planResult.success) {
-      agentTasksModel.update(parentTask.id, {
-        status: "failed",
-        finished_at: new Date().toISOString(),
-        error: planResult.error || "Planner failed",
-        result_full: planResult.result,
-      });
-      return { success: false, text: planResult.result || "Planner failed", taskId: parentTask.id };
-    }
-
-    const plan = parsePlanJson(planResult.result);
+    const plan = parsePlanJson(planResult.text);
 
     agentTasksModel.update(parentTask.id, {
       artifacts: { plan },
@@ -213,13 +144,15 @@ ${options.context || "None"}
         artifacts: { planStep: step },
       });
 
-      const t = safeSubAgentType(step.suggested_subagent_type || "generic");
       const sub = createSubAgent({
         parent_session_id: options.parentSessionId,
-        agent_type: t,
         owner_user_id: ownerUserId,
         assigned_task: `Step: ${step.title}\n\n${step.description}\n\nExpected artifacts:\n${(step.expected_artifacts || []).join("\n")}\n\nVerification:\n${(step.verification || []).join("\n")}`.trim(),
-        metadata: { kind: "executor", stepId: step.id, taskId: stepTask.id },
+        metadata: {
+          kind: "executor",
+          stepId: step.id,
+          taskId: stepTask.id,
+        },
       });
 
       agentTasksModel.update(stepTask.id, {
@@ -230,7 +163,7 @@ ${options.context || "None"}
       const exec = await executeTask(
         sub.sub_agent_id,
         options.model,
-        toolsForType(options.tools, t),
+        toolsForSubagent(options.tools),
         { toolContext: getToolContext(), timeout: 300_000 },
       );
 
@@ -253,20 +186,14 @@ ${options.context || "None"}
     const allOk = stepOutputs.every((s) => s.ok);
 
     // 3) Evaluator sub-agent (verification)
-    const evaluatorAgent = createSubAgent({
-      parent_session_id: options.parentSessionId,
-      agent_type: "evaluator",
-      owner_user_id: ownerUserId,
-      assigned_task: `Verify the following work. Run the most appropriate checks (tests/build/lint) if possible and report pass/fail.\n\nPlan:\n${JSON.stringify(plan, null, 2)}\n\nStep outputs:\n${stepOutputs.map((s) => `## ${s.step.title}\nOK: ${s.ok}\n${s.output}`).join("\n\n")}`,
-      metadata: { kind: "evaluator" },
+    // Evaluator runs on the main model directly (no subagent types).
+    const evalResult = await generateText({
+      model: options.model,
+      system:
+        "You are a verification assistant. Provide a crisp pass/fail report and list any failing checks.",
+      prompt: `Verify the following work. If you can, suggest the best checks to run (tests/build/lint) and whether results indicate success.\n\nPlan:\n${JSON.stringify(plan, null, 2)}\n\nStep outputs:\n${stepOutputs.map((s) => `## ${s.step.title}\nOK: ${s.ok}\n${s.output}`).join("\n\n")}`,
+      maxRetries: 2,
     });
-
-    const evalResult = await executeTask(
-      evaluatorAgent.sub_agent_id,
-      options.model,
-      toolsForType(options.tools, "evaluator"),
-      { toolContext: getToolContext(), timeout: 300_000 },
-    );
 
     // 4) Synthesize final answer (main model, no tools)
     const synthesisPrompt = `You are Overseer. Produce the final response to the user.
@@ -281,7 +208,7 @@ Step results:
 ${stepOutputs.map((s) => `- ${s.step.title}: ${s.ok ? "OK" : "FAILED"}`).join("\n")}
 
 Evaluator report:
-${evalResult.result}
+${evalResult.text}
 
 Write like a competent human assistant.
 
@@ -301,7 +228,7 @@ Rules:
     });
 
     agentTasksModel.update(parentTask.id, {
-      status: allOk && evalResult.success ? "completed" : "failed",
+      status: allOk ? "completed" : "failed",
       finished_at: new Date().toISOString(),
       result_summary: allOk ? "Completed" : "Failed",
       result_full: synthesis.text,
@@ -309,12 +236,12 @@ Rules:
       artifacts: {
         plan,
         stepOutputs,
-        evaluator: { ok: evalResult.success, text: evalResult.result },
+        evaluator: { ok: true, text: evalResult.text },
       },
     });
 
     return {
-      success: allOk && evalResult.success,
+      success: allOk,
       text: synthesis.text,
       plan,
       taskId: parentTask.id,

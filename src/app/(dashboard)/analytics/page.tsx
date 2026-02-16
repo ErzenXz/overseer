@@ -47,7 +47,54 @@ export default function AnalyticsPage() {
       const res = await fetch(`/api/analytics?days=${timeRange}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      setData(json);
+      // Defensive normalization: SQLite aggregates can arrive as strings depending on driver/serialization.
+      const normalized: AnalyticsData = {
+        ...json,
+        dailyData: Array.isArray(json.dailyData)
+          ? json.dailyData.map((d: any) => ({
+              day: String(d.day ?? ""),
+              cost: Number(d.cost ?? 0),
+              requests: Number(d.requests ?? 0),
+              tokens: Number(d.tokens ?? 0),
+            }))
+          : [],
+        modelData: Array.isArray(json.modelData)
+          ? json.modelData.map((m: any) => ({
+              model: String(m.model ?? ""),
+              cost: Number(m.cost ?? 0),
+              requests: Number(m.requests ?? 0),
+              tokens: Number(m.tokens ?? 0),
+            }))
+          : [],
+        topUsers: Array.isArray(json.topUsers)
+          ? json.topUsers.map((u: any) => ({
+              userId: String(u.userId ?? ""),
+              totalCost: Number(u.totalCost ?? 0),
+              monthlyCost: Number(u.monthlyCost ?? 0),
+              totalRequests: Number(u.totalRequests ?? 0),
+            }))
+          : [],
+        convStats: {
+          total: Number(json.convStats?.total ?? 0),
+          tokens: Number(json.convStats?.tokens ?? 0),
+          messages: Number(json.convStats?.messages ?? 0),
+        },
+        memoryStats: {
+          total: Number(json.memoryStats?.total ?? 0),
+          byCategory: (json.memoryStats?.byCategory ?? {}) as Record<string, number>,
+          avgImportance: Number(json.memoryStats?.avgImportance ?? 0),
+        },
+        subAgentStats: {
+          total: Number(json.subAgentStats?.total ?? 0),
+          by_type: (json.subAgentStats?.by_type ?? {}) as Record<string, number>,
+          completed: Number(json.subAgentStats?.completed ?? 0),
+          error: Number(json.subAgentStats?.error ?? 0),
+          working: Number(json.subAgentStats?.working ?? 0),
+        },
+        contextStats: json.contextStats ?? { totalSummaries: 0 },
+        systemHealth: json.systemHealth,
+      };
+      setData(normalized);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load analytics");
     } finally {

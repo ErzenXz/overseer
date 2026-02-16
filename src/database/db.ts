@@ -831,8 +831,19 @@ function initializeSchema() {
   schemaInitialized = true;
 }
 
-// Ensure the web app always has schema available, including during build workers.
-initializeSchema();
+function isBuildProcess(): boolean {
+  if (process.env.npm_lifecycle_event === "build") return true;
+  if (process.env.NEXT_PHASE === "phase-production-build") return true;
+  return process.argv.join(" ").includes("next build");
+}
+
+// NOTE: Do not auto-migrate/initialize on module import.
+// Next.js `next build` imports server modules in worker processes; any module-level
+// DB mutation here will run during build (bad: noisy, slow, and can create prod DBs).
+//
+// Runtime entrypoints are responsible for calling initializeSchema() early:
+// - Next.js server: src/instrumentation.ts
+// - Bot runners / scripts: call initializeSchema() explicitly (many already do)
 
 /**
  * Get the current database file path

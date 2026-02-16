@@ -39,17 +39,22 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
   const requiresBotToken = (type: InterfaceType) =>
     type === "telegram" || type === "discord" || type === "slack";
 
-  const [formData, setFormData] = useState({
-    type: "telegram" as InterfaceType,
-    name: "My Telegram Bot",
+  const initialFormData = (type: InterfaceType, allowedUsers = "") => ({
+    type,
+    name: defaultNames[type] || "My Bot",
     bot_token: "",
     client_id: "",
     allowed_guilds: "",
-    allowed_users: "",
+    matrix_homeserver: "",
+    matrix_access_token: "",
+    matrix_room_ids: "",
+    allowed_users: allowedUsers,
     slack_app_token: "",
     slack_signing_secret: "",
     config_json: "",
   });
+
+  const [formData, setFormData] = useState(() => initialFormData("telegram"));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +99,20 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                     .filter(Boolean),
                 }
               : {}),
+            ...(formData.type === "matrix" && formData.matrix_homeserver
+              ? { homeserver: formData.matrix_homeserver }
+              : {}),
+            ...(formData.type === "matrix" && formData.matrix_access_token
+              ? { access_token: formData.matrix_access_token }
+              : {}),
+            ...(formData.type === "matrix" && formData.matrix_room_ids
+              ? {
+                  room_ids: formData.matrix_room_ids
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                }
+              : {}),
             ...(formData.type === "slack" && formData.slack_app_token
               ? { app_token: formData.slack_app_token }
               : {}),
@@ -130,7 +149,15 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
 
   return (
     <>
-      <button onClick={() => setIsOpen(true)} className={buttonClass}>
+      <button
+        onClick={() => {
+          // Reset each time so stale platform-specific fields never bleed across types.
+          setError("");
+          setFormData(initialFormData("telegram"));
+          setIsOpen(true);
+        }}
+        className={buttonClass}
+      >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
         </svg>
@@ -138,7 +165,7 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-start justify-center px-4 py-8 bg-black/50 backdrop-blur-sm overflow-y-auto">
           <div className="w-full max-w-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-[var(--color-border)]">
               <h2 className="text-xl font-semibold text-white font-[var(--font-mono)]">Add Chat Interface</h2>
@@ -165,11 +192,10 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                   value={formData.type}
                   onChange={(e) => {
                     const type = e.target.value as InterfaceType;
-                    setFormData((prev) => ({
-                      ...prev,
-                      type,
-                      name: defaultNames[type] || "My Bot",
-                    }));
+                    setError("");
+                    setFormData((prev) =>
+                      initialFormData(type, prev.allowed_users || ""),
+                    );
                   }}
                   className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 >
@@ -196,26 +222,26 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Bot Token</label>
-                <input
-                  type="password"
-                  value={formData.bot_token}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, bot_token: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                  placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-                  required={requiresBotToken(formData.type)}
-                />
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                  {formData.type === "telegram"
-                    ? "Get this from @BotFather on Telegram"
-                    : formData.type === "discord"
-                      ? "Get this from the Discord Developer Portal → Bot → Token"
-                      : formData.type === "slack"
-                        ? "Slack bot token (xoxb-...). Required if you want to run the Slack interface."
-                        : "Optional for this interface type"}
-                </p>
-              </div>
+              {requiresBotToken(formData.type) && (
+                <div>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">Bot Token</label>
+                  <input
+                    type="password"
+                    value={formData.bot_token}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, bot_token: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                    placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+                    required
+                  />
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    {formData.type === "telegram"
+                      ? "Get this from @BotFather on Telegram"
+                      : formData.type === "discord"
+                        ? "Get this from the Discord Developer Portal → Bot → Token"
+                        : "Slack bot token (xoxb-...). Required if you want to run the Slack interface."}
+                  </p>
+                </div>
+              )}
 
               {formData.type === "discord" && (
                 <div>
@@ -285,7 +311,54 @@ export function AddInterfaceButton({ variant = "default" }: AddInterfaceButtonPr
                 </div>
               )}
 
-              {formData.type !== "telegram" && formData.type !== "discord" && (
+              {formData.type === "matrix" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                      Homeserver URL
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.matrix_homeserver}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, matrix_homeserver: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                      placeholder="https://matrix.org"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                      Access Token
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.matrix_access_token}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, matrix_access_token: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                      placeholder="syt_..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                      Room IDs (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.matrix_room_ids}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, matrix_room_ids: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                      placeholder="!abc:matrix.org, !def:matrix.org"
+                    />
+                  </div>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Provide a homeserver and access token to enable the Matrix interface.
+                  </p>
+                </div>
+              )}
+
+              {formData.type !== "telegram" &&
+                formData.type !== "discord" &&
+                formData.type !== "slack" &&
+                formData.type !== "matrix" && (
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
                     Config JSON (Optional)

@@ -12,6 +12,12 @@ import {
   runCronJobNow,
 } from "./cron";
 import { searchCodebase } from "./search";
+import {
+  installSkillFromGitHub,
+  listSkills,
+  setSkillActive,
+  syncBuiltinSkillsTool,
+} from "./skills-tool";
 
 /**
  * Built-in tools that do NOT depend on sub-agent tooling.
@@ -37,7 +43,12 @@ export const builtinTools = {
 
   // Search
   searchCodebase,
+
+  // Skills (management)
+  listSkills,
+  syncBuiltinSkillsTool,
+  installSkillFromGitHub,
+  setSkillActive,
 };
 
 export type BuiltinToolName = keyof typeof builtinTools;
-

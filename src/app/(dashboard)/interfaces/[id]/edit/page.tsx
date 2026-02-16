@@ -5,6 +5,7 @@ import { interfacesModel } from "@/database";
 import type { InterfaceType } from "@/types/database";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission, Permission, requirePermission } from "@/lib/permissions";
+import { EditInterfaceForm } from "./EditInterfaceForm";
 
 interface EditInterfacePageProps {
   params: Promise<{ id: string }>;
@@ -29,6 +30,11 @@ async function updateInterfaceAction(formData: FormData) {
   const clientId = String(formData.get("client_id") ?? "").trim();
   const allowedGuilds = String(formData.get("allowed_guilds") ?? "").trim();
   const allowedUsers = String(formData.get("allowed_users") ?? "").trim();
+  const slackAppToken = String(formData.get("slack_app_token") ?? "").trim();
+  const slackSigningSecret = String(formData.get("slack_signing_secret") ?? "").trim();
+  const matrixHomeserver = String(formData.get("matrix_homeserver") ?? "").trim();
+  const matrixAccessToken = String(formData.get("matrix_access_token") ?? "").trim();
+  const matrixRoomIds = String(formData.get("matrix_room_ids") ?? "").trim();
   const configJson = String(formData.get("config_json") ?? "").trim();
   const isActive = String(formData.get("is_active") ?? "") === "on";
 
@@ -70,6 +76,18 @@ async function updateInterfaceAction(formData: FormData) {
       ...(type === "discord"
         ? {
             allowed_guilds: allowedGuilds
+              .split(",")
+              .map((v) => v.trim())
+              .filter(Boolean),
+          }
+        : {}),
+      ...(type === "slack" && slackAppToken ? { app_token: slackAppToken } : {}),
+      ...(type === "slack" && slackSigningSecret ? { signing_secret: slackSigningSecret } : {}),
+      ...(type === "matrix" && matrixHomeserver ? { homeserver: matrixHomeserver } : {}),
+      ...(type === "matrix" && matrixAccessToken ? { access_token: matrixAccessToken } : {}),
+      ...(type === "matrix"
+        ? {
+            room_ids: matrixRoomIds
               .split(",")
               .map((v) => v.trim())
               .filter(Boolean),
@@ -127,6 +145,9 @@ export default async function EditInterfacePage({ params }: EditInterfacePagePro
   const allowedGuilds = Array.isArray(config.allowed_guilds)
     ? (config.allowed_guilds as string[]).join(", ")
     : "";
+  const matrixRoomIds = Array.isArray(config.room_ids)
+    ? (config.room_ids as string[]).join(", ")
+    : "";
 
   return (
     <div>
@@ -144,103 +165,30 @@ export default async function EditInterfacePage({ params }: EditInterfacePagePro
       </div>
 
       <div className="max-w-2xl bg-surface-raised border border-border rounded-lg p-6">
-        <form action={updateInterfaceAction} className="space-y-4">
-          <input type="hidden" name="id" value={iface.id} />
-
-          <div>
-            <label className="block text-sm text-white mb-2">Type</label>
-            <select
-              name="type"
-              defaultValue={iface.type}
-              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="telegram">Telegram</option>
-              <option value="discord">Discord</option>
-              <option value="slack">Slack</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="matrix">Matrix</option>
-              <option value="web">Web (Admin)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm text-white mb-2">Name</label>
-            <input
-              name="name"
-              defaultValue={iface.name}
-              required
-              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-white mb-2">Bot Token (leave blank to keep current)</label>
-            <input
-              type="password"
-              name="bot_token"
-              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-white mb-2">Extra Config JSON (optional)</label>
-            <textarea
-              name="config_json"
-              defaultValue={JSON.stringify(configForEditor, null, 2)}
-              rows={6}
-              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-accent font-(--font-mono)"
-            />
-            <p className="text-xs text-text-secondary mt-1">
-              Secrets are not shown here. Use the Bot Token field (and other dedicated fields) to update secrets.
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm text-white mb-2">Discord Client ID</label>
-            <input
-              name="client_id"
-              defaultValue={typeof config.client_id === "string" ? config.client_id : ""}
-              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-white mb-2">Allowed Guild IDs (Discord)</label>
-            <input
-              name="allowed_guilds"
-              defaultValue={allowedGuilds}
-              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-white mb-2">Allowed User IDs</label>
-            <input
-              name="allowed_users"
-              defaultValue={allowedUsers}
-              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-text-secondary">
-            <input
-              type="checkbox"
-              name="is_active"
-              defaultChecked={Boolean(iface.is_active)}
-              className="rounded border-border bg-surface-overlay text-accent focus:ring-accent"
-            />
-            Active
-          </label>
-
-          <div className="pt-2">
-            <button
-              type="submit"
-              className="px-4 py-2 rounded bg-accent hover:bg-accent-light text-black text-sm font-medium transition-colors"
-            >
-              Save Changes
-            </button>
-          </div>
-        </form>
+        <EditInterfaceForm
+          iface={{
+            id: iface.id,
+            type: iface.type,
+            name: iface.name,
+            is_active: iface.is_active,
+          }}
+          allowedUsersCsv={allowedUsers}
+          configJson={JSON.stringify(configForEditor, null, 2)}
+          discord={{
+            clientId: typeof config.client_id === "string" ? config.client_id : "",
+            allowedGuildsCsv: allowedGuilds,
+          }}
+          matrix={{
+            homeserver: typeof config.homeserver === "string" ? config.homeserver : "",
+            accessToken: typeof config.access_token === "string" ? config.access_token : "",
+            roomIdsCsv: matrixRoomIds,
+          }}
+          slack={{
+            appToken: typeof config.app_token === "string" ? config.app_token : "",
+            signingSecret: typeof config.signing_secret === "string" ? config.signing_secret : "",
+          }}
+          action={updateInterfaceAction}
+        />
       </div>
     </div>
   );

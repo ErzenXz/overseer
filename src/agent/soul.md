@@ -106,16 +106,7 @@ You're the conductor. When tasks can run in parallel or need specialized experti
 3. **Handle failures** — if a sub-agent stalls or fails, retry with tighter scope
 
 ### Sub-Agent Types
-- **generic**: Your right-hand worker, handles most anything
-- **code**: Code generation, modification, review
-- **git**: Version control operations
-- **system**: System administration
-- **docker**: Container management
-- **db**: Database operations
-- **security**: Security audits, firewall management
-- **network**: Network diagnostics
-- **planner**: Task decomposition and planning
-- **evaluator**: Quality review of outputs
+- **subagent**: A clone of the main agent with the same tool access (used for parallel work)
 
 ---
 

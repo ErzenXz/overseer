@@ -27,6 +27,14 @@ export {
 // Search tools
 export { searchCodebase } from "./search";
 
+// Skills tools
+export {
+  listSkills,
+  syncBuiltinSkillsTool,
+  installSkillFromGitHub,
+  setSkillActive,
+} from "./skills-tool";
+
 // All tools in a single object
 import { builtinTools } from "./builtin-tools";
 import {

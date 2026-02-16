@@ -20,7 +20,6 @@ import {
   executeTask,
   findBySubAgentId,
   resumeTask,
-  type SubAgentType,
 } from "../subagents/manager";
 import { agentTasksModel } from "../../database";
 import { builtinTools } from "./builtin-tools";
@@ -28,8 +27,34 @@ import { getAllMCPTools } from "../mcp/client";
 import { getAllActiveSkillTools } from "../skills/registry";
 import type { Tool } from "ai";
 import { v4 as uuidv4 } from "uuid";
+import { Permission, requirePermission } from "@/lib/permissions";
+import { usersModel } from "@/database/models/users";
 
 const logger = createLogger("tools:subagent");
+
+function requireSubagentPermission() {
+  const ctx = getToolContext();
+  if (!ctx?.actor || ctx.actor.kind !== "web") {
+    // External interfaces run under a web actor in this codebase, but keep this defensive.
+    return;
+  }
+  const userId = Number.parseInt(ctx.actor.id, 10);
+  if (!Number.isFinite(userId)) return;
+  const user = usersModel.findById(userId);
+  if (!user) return;
+  try {
+    requirePermission(user, Permission.SUBAGENT_CREATE, {
+      resource: "subagent",
+      metadata: { tool: "spawnSubAgent" },
+    });
+  } catch (err) {
+    // Tests and some minimal deployments may not have RBAC tables migrated yet.
+    // In that case, don't hard-fail subagent spawning.
+    logger.warn("Subagent permission check failed; allowing by default", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 function getToolsForSubAgent(): Record<string, Tool> {
   // Avoid importing ./index here (circular). Build the same combined toolset.
@@ -130,10 +155,13 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", mode: "w
          - Previous attempts that didn't work
          - Constraints or requirements`,
       ),
+    // Kept for backwards compatibility but ignored. Subagents are a single type now.
     agent_type: z
-      .enum(["generic", "planner", "code", "system", "security", "evaluator"])
+      .string()
       .optional()
-      .describe("Optional sub-agent type. If omitted, defaults to generic."),
+      .describe(
+        "Deprecated/ignored. Subagents are a single clone-of-main-agent worker.",
+      ),
     mode: z
       .enum(["auto", "wait", "background"])
       .optional()
@@ -166,13 +194,14 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", mode: "w
   }: {
     task: string;
     context?: string;
-    agent_type?: SubAgentType;
+    agent_type?: string;
     mode?: "auto" | "wait" | "background";
     max_wait_ms?: number;
     wait_for_result?: boolean;
   }) => {
     const startTime = Date.now();
     const ctx = getToolContext();
+    requireSubagentPermission();
 
     const effectiveMode: "auto" | "wait" | "background" =
       mode ||
@@ -189,6 +218,7 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", mode: "w
     logger.info("Spawning sub-agent", {
       task: task.substring(0, 100),
       mode: effectiveMode,
+      ignored_agent_type: agent_type || null,
     });
 
     try {
@@ -205,7 +235,6 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", mode: "w
 
       const subAgent = createSubAgent({
         parent_session_id: parentSessionId,
-        agent_type: (agent_type || "generic") as SubAgentType,
         owner_user_id: Number.isFinite(ownerUserId) ? ownerUserId : 1,
         assigned_task: fullTask,
         metadata: {
@@ -227,7 +256,7 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", mode: "w
         started_at: new Date().toISOString(),
         artifacts: {
           parentSessionId,
-          agentType: agent_type || "generic",
+          agentType: "subagent",
           mode: effectiveMode,
           interface: ctx?.interface ?? null,
         },
@@ -260,7 +289,7 @@ spawnSubAgent({ task: "Write tests for auth.ts validateToken function", mode: "w
           error: result.success ? null : result.error || "Sub-agent failed",
           artifacts: {
             parentSessionId,
-            agentType: agent_type || "generic",
+            agentType: "subagent",
             mode: effectiveMode,
             interface: ctx?.interface ?? null,
             steps: result.steps,

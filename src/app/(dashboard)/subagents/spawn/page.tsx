@@ -7,8 +7,6 @@ import { getCurrentUser } from "@/lib/auth";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-const allowedTypes = new Set(subAgentManager.getAllSubAgentTypes());
-
 async function spawnSubAgentAction(formData: FormData) {
   "use server";
 
@@ -18,9 +16,6 @@ async function spawnSubAgentAction(formData: FormData) {
   }
 
   const parentSessionId = String(formData.get("parent_session_id") ?? "manual-dashboard").trim();
-  const agentType = String(formData.get("agent_type") ?? "generic").trim() as ReturnType<
-    typeof subAgentManager.getAllSubAgentTypes
-  >[number];
   const name = String(formData.get("name") ?? "").trim();
   const task = String(formData.get("assigned_task") ?? "").trim();
 
@@ -28,13 +23,9 @@ async function spawnSubAgentAction(formData: FormData) {
     redirect("/subagents/spawn?error=Task%20is%20required");
   }
 
-  if (!allowedTypes.has(agentType)) {
-    redirect("/subagents/spawn?error=Invalid%20sub-agent%20type");
-  }
-
   subAgentManager.createSubAgent({
     parent_session_id: parentSessionId || "manual-dashboard",
-    agent_type: agentType,
+    agent_type: "subagent",
     owner_user_id: user.id,
     name: name || undefined,
     assigned_task: task,
@@ -53,7 +44,6 @@ export default async function SpawnSubAgentPage({
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : null;
   const success = typeof params.success === "string" ? params.success : null;
-  const allTypes = subAgentManager.getAllSubAgentTypes();
 
   return (
     <div>
@@ -74,34 +64,16 @@ export default async function SpawnSubAgentPage({
 
       <div className="max-w-3xl bg-surface-raised border border-border rounded-lg p-6">
         <form action={spawnSubAgentAction} className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="agent_type" className="block text-sm text-white mb-2">
-                Agent type
-              </label>
-              <select
-                id="agent_type"
-                name="agent_type"
-                className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                {allTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="parent_session_id" className="block text-sm text-white mb-2">
-                Parent session id
-              </label>
-              <input
-                id="parent_session_id"
-                name="parent_session_id"
-                defaultValue="manual-dashboard"
-                className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              />
-            </div>
+          <div>
+            <label htmlFor="parent_session_id" className="block text-sm text-white mb-2">
+              Parent session id
+            </label>
+            <input
+              id="parent_session_id"
+              name="parent_session_id"
+              defaultValue="manual-dashboard"
+              className="w-full rounded border border-border bg-surface-overlay px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent"
+            />
           </div>
 
           <div>

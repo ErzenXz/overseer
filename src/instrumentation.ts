@@ -15,6 +15,15 @@ export async function register() {
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
   try {
+    // Ensure DB schema exists before any route handlers run queries.
+    const { initializeSchema } = await import("./database/db");
+    initializeSchema();
+    console.log("[instrumentation] Database schema initialized");
+  } catch (err) {
+    console.error("[instrumentation] Failed to initialize database schema:", err);
+  }
+
+  try {
     const { startCronEngine } = await import("./lib/cron-engine");
     startCronEngine();
     console.log("[instrumentation] Cron engine started");

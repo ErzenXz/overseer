@@ -9,13 +9,14 @@ test("syncBuiltinSkills loads built-in skills including document-reader", async 
   const dbPath = join(tmp, "overseer.db");
   process.env.DATABASE_PATH = dbPath;
 
-  const { db, closeDatabase } = await import("../src/database/db.ts");
+  const { db, closeDatabase, initializeSchema } = await import("../src/database/db.ts");
   const { withToolContext } = await import("../src/lib/tool-context.ts");
   const { syncBuiltinSkills, findBySkillId } = await import(
     "../src/agent/skills/registry.ts",
   );
 
   try {
+    initializeSchema();
     const userRes = db
       .prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)")
       .run("testuser", "x", "admin");
@@ -39,4 +40,3 @@ test("syncBuiltinSkills loads built-in skills including document-reader", async 
     await rm(tmp, { recursive: true, force: true });
   }
 });
-

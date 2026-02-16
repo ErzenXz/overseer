@@ -9,13 +9,14 @@ test("skill tools expose bare names (and namespaced aliases) for model ergonomic
   const dbPath = join(tmp, "overseer.db");
   process.env.DATABASE_PATH = dbPath;
 
-  const { db, closeDatabase } = await import("../src/database/db.ts");
+  const { db, closeDatabase, initializeSchema } = await import("../src/database/db.ts");
   const { withToolContext } = await import("../src/lib/tool-context.ts");
   const { syncBuiltinSkills, getAllActiveSkillTools } = await import(
     "../src/agent/skills/registry.ts",
   );
 
   try {
+    initializeSchema();
     const userRes = db
       .prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)")
       .run("testuser", "x", "admin");
@@ -41,4 +42,3 @@ test("skill tools expose bare names (and namespaced aliases) for model ergonomic
     await rm(tmp, { recursive: true, force: true });
   }
 });
-

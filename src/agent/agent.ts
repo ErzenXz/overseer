@@ -22,6 +22,7 @@ import { createLogger } from "../lib/logger";
 import type { ModelInfo, ProviderName } from "./provider-info";
 import { agentCache } from "@/lib/agent-cache";
 import { runPlanModeOrchestration } from "@/agent/orchestrator";
+import { isRetryableModelError, withModelRetries } from "./model-retry";
 import {
   getContextSummaryForPrompt,
   ensureContextIsSummarized,
@@ -417,9 +418,35 @@ ${steeringSection}
 - Spawn sub-agents for parallelizable or specialized work.
 - Keep ownership of orchestration: assign clear goals, gather outputs, and synthesize final answer.
 - If a sub-agent stalls or fails, recover by retrying with tighter scope or alternate approach.
+
+## Skills Discipline
+
+- Skills are NOT fixed: you can manage them at runtime via tools.
+- When the user asks to install/enable/disable skills, use:
+  - listSkills
+  - syncBuiltinSkillsTool
+  - installSkillFromGitHub
+  - setSkillActive
 `;
 
   return systemPrompt;
+}
+
+function buildResumeMessages(
+  base: CoreMessage[],
+  partialAssistantText: string,
+  originalPrompt: string,
+): CoreMessage[] {
+  if (!partialAssistantText.trim()) return base;
+  return [
+    ...base,
+    { role: "assistant", content: partialAssistantText },
+    {
+      role: "user",
+      content:
+        `Continue from where you left off. Do NOT repeat any of the previous assistant text.\n\nOriginal user request:\n${originalPrompt}`.trim(),
+    },
+  ];
 }
 
 /**
@@ -472,14 +499,15 @@ export async function runAgent(
     actor?.kind === "web" && actor?.id ? parseInt(actor.id, 10) : undefined;
 
   // Get model
-  let model = options.model || getDefaultModel();
-  if (!model) {
+  const initialModel = options.model || getDefaultModel();
+  if (!initialModel) {
     return {
       success: false,
       text: "No LLM provider configured. Please add a provider in the admin panel.",
       error: "No provider configured",
     };
   }
+  let model: LanguageModel = initialModel;
 
   if (isSmallTalk(prompt)) {
     const result = await generateText({
@@ -593,7 +621,7 @@ export async function runAgent(
         ((model as { modelId?: string }).modelId ?? ""),
     ),
   );
-  model = fallbackChain[currentIndex] ?? model;
+  model = (fallbackChain[currentIndex] ?? model) as LanguageModel;
   const maxAttempts = Math.min(
     maxRetries,
     Math.max(0, fallbackChain.length - 1),
@@ -606,41 +634,59 @@ export async function runAgent(
       // Get dynamic settings based on the model's capabilities
       const modelSettings = getModelSettings(model);
 
-      const result = await generateText({
-        model,
-        system: buildSystemPrompt(prompt, steering, conversationId, {
-          root: sandboxRoot,
-          allowSystem,
-        }, ownerUserId),
-        messages,
-        tools: combinedTools,
-        stopWhen: stepCountIs(maxSteps),
-        ...(modelSettings.maxOutputTokens && {
-          maxOutputTokens: modelSettings.maxOutputTokens,
-        }),
-        ...(modelSettings.temperature !== undefined && {
-          temperature: modelSettings.temperature,
-        }),
-        ...(modelSettings.providerOptions && {
-          providerOptions: modelSettings.providerOptions,
-        }),
-        onStepFinish: ({ toolCalls, toolResults }) => {
-          if (toolCalls) {
-            for (const tc of toolCalls) {
-              const args = "args" in tc ? tc.args : undefined;
-              logger.debug("Tool called", { name: tc.toolName, args });
-              onToolCall?.(tc.toolName, args);
-            }
-          }
-          if (toolResults) {
-            for (const tr of toolResults) {
-              logger.debug("Tool result", { name: tr.toolName });
-              const result = "result" in tr ? tr.result : undefined;
-              onToolResult?.(tr.toolName, result);
-            }
-          }
+      const result = await withModelRetries(
+        () =>
+          generateText({
+            model,
+            system: buildSystemPrompt(
+              prompt,
+              steering,
+              conversationId,
+              { root: sandboxRoot, allowSystem },
+              ownerUserId,
+            ),
+            messages,
+            tools: combinedTools,
+            stopWhen: stepCountIs(maxSteps),
+            ...(modelSettings.maxOutputTokens && {
+              maxOutputTokens: modelSettings.maxOutputTokens,
+            }),
+            ...(modelSettings.temperature !== undefined && {
+              temperature: modelSettings.temperature,
+            }),
+            ...(modelSettings.providerOptions && {
+              providerOptions: modelSettings.providerOptions,
+            }),
+            onStepFinish: ({ toolCalls, toolResults }) => {
+              if (toolCalls) {
+                for (const tc of toolCalls) {
+                  const args = "args" in tc ? tc.args : undefined;
+                  logger.debug("Tool called", { name: tc.toolName, args });
+                  onToolCall?.(tc.toolName, args);
+                }
+              }
+              if (toolResults) {
+                for (const tr of toolResults) {
+                  logger.debug("Tool result", { name: tr.toolName });
+                  const result = "result" in tr ? tr.result : undefined;
+                  onToolResult?.(tr.toolName, result);
+                }
+              }
+            },
+            // Provider-level retries (SDK) + our wrapper retries.
+            maxRetries: 2,
+          }),
+        {
+          maxAttempts: 5,
+          onRetry: ({ attempt, waitMs, error }) => {
+            logger.warn("Retrying agent model call", {
+              attempt: attempt + 1,
+              waitMs,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
         },
-      });
+      );
 
       const executionTime = Date.now() - startTime;
       logger.info("Agent completed", {
@@ -725,9 +771,9 @@ export async function runAgent(
 
       // Wait before retry (exponential backoff)
       if (retry < maxAttempts) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.pow(2, retry) * 1000),
-        );
+        const check = isRetryableModelError(lastError);
+        const delayMs = check.retryable ? Math.pow(2, retry) * 1000 : 250;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
   }
@@ -766,8 +812,8 @@ export async function runAgentStream(
     actor?.kind === "web" && actor?.id ? parseInt(actor.id, 10) : undefined;
 
   // Get model
-  const model = options.model || getDefaultModel();
-  if (!model) {
+  const initialModel = options.model || getDefaultModel();
+  if (!initialModel) {
     // Return error as stream
     const errorText =
       "No LLM provider configured. Please add a provider in the admin panel.";
@@ -779,6 +825,7 @@ export async function runAgentStream(
       usage: Promise.resolve(undefined),
     };
   }
+  const model: LanguageModel = initialModel;
 
   if (isSmallTalk(prompt)) {
     const r = streamText({
@@ -886,44 +933,107 @@ export async function runAgentStream(
   // Get dynamic settings based on the model's capabilities
   const modelSettings = getModelSettings(model);
 
-  const result = streamText({
-    model,
-    system: buildSystemPrompt(prompt, steering, conversationId, {
-      root: sandboxRoot,
-      allowSystem,
-    }, ownerUserId),
-    messages,
-    tools: combinedTools,
-    stopWhen: stepCountIs(maxSteps),
-    ...(modelSettings.maxOutputTokens && {
-      maxOutputTokens: modelSettings.maxOutputTokens,
-    }),
-    ...(modelSettings.temperature !== undefined && {
-      temperature: modelSettings.temperature,
-    }),
-    ...(modelSettings.providerOptions && {
-      providerOptions: modelSettings.providerOptions,
-    }),
-    onStepFinish: ({ toolCalls, toolResults }) => {
-      if (toolCalls) {
-        for (const tc of toolCalls) {
-          const args = "args" in tc ? tc.args : undefined;
-          logger.debug("Tool called (stream)", { name: tc.toolName, args });
-          onToolCall?.(tc.toolName, args);
+  const system = buildSystemPrompt(
+    prompt,
+    steering,
+    conversationId,
+    { root: sandboxRoot, allowSystem },
+    ownerUserId,
+  );
+
+  // Resilient stream: if provider throttles mid-stream, retry and resume from partial text.
+  let partial = "";
+  let finalText: string | undefined;
+  let finalUsage: { inputTokens: number; outputTokens: number } | undefined;
+
+  const textStream = (async function* () {
+    let attempt = 0;
+    let currentMessages = messages;
+
+    while (attempt < 5) {
+      try {
+        const r = await withModelRetries(
+          async () =>
+            streamText({
+              model,
+              system,
+              messages: currentMessages,
+              tools: combinedTools,
+              stopWhen: stepCountIs(maxSteps),
+              ...(modelSettings.maxOutputTokens && {
+                maxOutputTokens: modelSettings.maxOutputTokens,
+              }),
+              ...(modelSettings.temperature !== undefined && {
+                temperature: modelSettings.temperature,
+              }),
+              ...(modelSettings.providerOptions && {
+                providerOptions: modelSettings.providerOptions,
+              }),
+              onStepFinish: ({ toolCalls, toolResults }) => {
+                if (toolCalls) {
+                  for (const tc of toolCalls) {
+                    const args = "args" in tc ? tc.args : undefined;
+                    logger.debug("Tool called (stream)", {
+                      name: tc.toolName,
+                      args,
+                    });
+                    onToolCall?.(tc.toolName, args);
+                  }
+                }
+                if (toolResults) {
+                  for (const tr of toolResults) {
+                    const result = "result" in tr ? tr.result : undefined;
+                    onToolResult?.(tr.toolName, result);
+                  }
+                }
+              },
+              maxRetries: 2,
+            }),
+          {
+            maxAttempts: 3,
+            onRetry: ({ attempt, waitMs, error }) => {
+              logger.warn("Retrying stream start", {
+                attempt: attempt + 1,
+                waitMs,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            },
+          },
+        );
+
+        for await (const chunk of r.textStream) {
+          partial += chunk;
+          yield chunk;
         }
-      }
-      if (toolResults) {
-        for (const tr of toolResults) {
-          const result = "result" in tr ? tr.result : undefined;
-          onToolResult?.(tr.toolName, result);
+
+        finalText = await Promise.resolve(r.text);
+        const u = await r.usage;
+        if (u && u.inputTokens !== undefined && u.outputTokens !== undefined) {
+          finalUsage = { inputTokens: u.inputTokens, outputTokens: u.outputTokens };
         }
+        return;
+      } catch (err) {
+        const check = isRetryableModelError(err);
+        logger.warn("Stream attempt failed", {
+          attempt: attempt + 1,
+          retryable: check.retryable,
+          error: err instanceof Error ? err.message : String(err),
+        });
+
+        if (!check.retryable || attempt >= 4) {
+          throw err;
+        }
+
+        currentMessages = buildResumeMessages(messages, partial, prompt);
+        attempt++;
+        continue;
       }
-    },
-  });
+    }
+  })();
 
   return {
-    textStream: result.textStream,
-    fullText: Promise.resolve(result.text).then((text) => {
+    textStream,
+    fullText: Promise.resolve(finalText ?? partial).then((text) => {
       agentCache.set({
         scope: "agent",
         key: streamCacheKey,
@@ -933,11 +1043,7 @@ export async function runAgentStream(
       });
       return text;
     }),
-    usage: Promise.resolve(result.usage).then((u) =>
-      u && u.inputTokens !== undefined && u.outputTokens !== undefined
-        ? { inputTokens: u.inputTokens, outputTokens: u.outputTokens }
-        : undefined,
-    ),
+    usage: Promise.resolve(finalUsage),
   };
 }
 

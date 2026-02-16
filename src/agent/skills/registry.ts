@@ -3,7 +3,7 @@
  * Modular, discoverable capabilities like Vercel's skills.sh
  */
 
-import { db, initializeSchema } from "../../database/db";
+import { db } from "../../database/db";
 import { createLogger } from "../../lib/logger";
 import { tool, type Tool } from "ai";
 import { z } from "zod";
@@ -14,8 +14,6 @@ import { scanSkillSecurity } from "./security";
 import { getToolContext } from "@/lib/tool-context";
 
 const logger = createLogger("skills");
-
-initializeSchema();
 
 // Built-in skills directory
 const BUILTIN_SKILLS_DIR = resolve(process.cwd(), "skills");

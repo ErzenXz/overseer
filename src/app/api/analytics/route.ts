@@ -22,65 +22,83 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get("days") || "30", 10);
 
+    // Ensure schema exists (cost_tracking is created by CostTracker initializer).
+    // Analytics queries hit cost_tracking directly, so we must initialize first.
+    try {
+      getCostTracker();
+    } catch {
+      // If initialization fails, we still want the page to load with partial data.
+    }
+
     // Daily cost/request/token data
-    const dailyData = (typeof ownerId === "number"
-      ? db
-          .prepare(
-            `SELECT
-              DATE(created_at) as day,
-              COALESCE(SUM(cost_usd), 0) as cost,
-              COUNT(*) as requests,
-              COALESCE(SUM(input_tokens + output_tokens), 0) as tokens
-            FROM cost_tracking
-            WHERE user_id = ? AND created_at >= datetime('now', '-' || ? || ' day')
-            GROUP BY DATE(created_at)
-            ORDER BY day ASC`,
-          )
-          .all(String(ownerId), days)
-      : db
-          .prepare(
-            `SELECT
-              DATE(created_at) as day,
-              COALESCE(SUM(cost_usd), 0) as cost,
-              COUNT(*) as requests,
-              COALESCE(SUM(input_tokens + output_tokens), 0) as tokens
-            FROM cost_tracking
-            WHERE created_at >= datetime('now', '-' || ? || ' day')
-            GROUP BY DATE(created_at)
-            ORDER BY day ASC`,
-          )
-          .all(days)) as any[];
+    let dailyData: any[] = [];
+    try {
+      dailyData = (typeof ownerId === "number"
+        ? db
+            .prepare(
+              `SELECT
+                DATE(created_at) as day,
+                CAST(COALESCE(SUM(cost_usd), 0) AS REAL) as cost,
+                CAST(COUNT(*) AS INTEGER) as requests,
+                CAST(COALESCE(SUM(input_tokens + output_tokens), 0) AS INTEGER) as tokens
+              FROM cost_tracking
+              WHERE user_id = ? AND created_at >= datetime('now', '-' || ? || ' day')
+              GROUP BY DATE(created_at)
+              ORDER BY day ASC`,
+            )
+            .all(String(ownerId), days)
+        : db
+            .prepare(
+              `SELECT
+                DATE(created_at) as day,
+                CAST(COALESCE(SUM(cost_usd), 0) AS REAL) as cost,
+                CAST(COUNT(*) AS INTEGER) as requests,
+                CAST(COALESCE(SUM(input_tokens + output_tokens), 0) AS INTEGER) as tokens
+              FROM cost_tracking
+              WHERE created_at >= datetime('now', '-' || ? || ' day')
+              GROUP BY DATE(created_at)
+              ORDER BY day ASC`,
+            )
+            .all(days)) as any[];
+    } catch {
+      dailyData = [];
+    }
 
     // Model breakdown
-    const modelData = (typeof ownerId === "number"
-      ? db
-          .prepare(
-            `SELECT
-              model,
-              COALESCE(SUM(cost_usd), 0) as cost,
-              COUNT(*) as requests,
-              COALESCE(SUM(input_tokens + output_tokens), 0) as tokens
-            FROM cost_tracking
-            WHERE user_id = ? AND created_at >= datetime('now', '-' || ? || ' day')
-            GROUP BY model
-            ORDER BY cost DESC
-            LIMIT 15`,
-          )
-          .all(String(ownerId), days)
-      : db
-          .prepare(
-            `SELECT
-              model,
-              COALESCE(SUM(cost_usd), 0) as cost,
-              COUNT(*) as requests,
-              COALESCE(SUM(input_tokens + output_tokens), 0) as tokens
-            FROM cost_tracking
-            WHERE created_at >= datetime('now', '-' || ? || ' day')
-            GROUP BY model
-            ORDER BY cost DESC
-            LIMIT 15`,
-          )
-          .all(days)) as any[];
+    let modelData: any[] = [];
+    try {
+      modelData = (typeof ownerId === "number"
+        ? db
+            .prepare(
+              `SELECT
+                model,
+                CAST(COALESCE(SUM(cost_usd), 0) AS REAL) as cost,
+                CAST(COUNT(*) AS INTEGER) as requests,
+                CAST(COALESCE(SUM(input_tokens + output_tokens), 0) AS INTEGER) as tokens
+              FROM cost_tracking
+              WHERE user_id = ? AND created_at >= datetime('now', '-' || ? || ' day')
+              GROUP BY model
+              ORDER BY cost DESC
+              LIMIT 15`,
+            )
+            .all(String(ownerId), days)
+        : db
+            .prepare(
+              `SELECT
+                model,
+                CAST(COALESCE(SUM(cost_usd), 0) AS REAL) as cost,
+                CAST(COUNT(*) AS INTEGER) as requests,
+                CAST(COALESCE(SUM(input_tokens + output_tokens), 0) AS INTEGER) as tokens
+              FROM cost_tracking
+              WHERE created_at >= datetime('now', '-' || ? || ' day')
+              GROUP BY model
+              ORDER BY cost DESC
+              LIMIT 15`,
+            )
+            .all(days)) as any[];
+    } catch {
+      modelData = [];
+    }
 
     // Top users (multi-tenant: only available when viewing all)
     const topUsers = canViewAll ? getCostTracker().getTopUsers(20) : [];
@@ -92,9 +110,9 @@ export async function GET(request: NextRequest) {
         convStats = db
           .prepare(
             `SELECT 
-              COUNT(*) as total,
-              COALESCE(SUM(total_tokens), 0) as tokens,
-              COALESCE(SUM(message_count), 0) as messages
+              CAST(COUNT(*) AS INTEGER) as total,
+              CAST(COALESCE(SUM(total_tokens), 0) AS INTEGER) as tokens,
+              CAST(COALESCE(SUM(message_count), 0) AS INTEGER) as messages
             FROM conversations
             WHERE owner_user_id = ?`,
           )
@@ -103,9 +121,9 @@ export async function GET(request: NextRequest) {
         convStats = db
           .prepare(
             `SELECT 
-              COUNT(*) as total,
-              COALESCE(SUM(total_tokens), 0) as tokens,
-              COALESCE(SUM(message_count), 0) as messages
+              CAST(COUNT(*) AS INTEGER) as total,
+              CAST(COALESCE(SUM(total_tokens), 0) AS INTEGER) as tokens,
+              CAST(COALESCE(SUM(message_count), 0) AS INTEGER) as messages
             FROM conversations`,
           )
           .get() as typeof convStats;

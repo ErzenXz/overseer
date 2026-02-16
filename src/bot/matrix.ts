@@ -1,28 +1,22 @@
 /**
- * Matrix Bot Runner (Multi-Instance, Per-User) - matrix-bot-sdk
+ * Matrix Bot Runner (Multi-Instance, Per-User) - matrix-js-sdk
  *
- * Loads all active `interfaces` rows of type "matrix" and starts one Matrix client
- * per row. Each interface row belongs to a web user (owner_user_id), and all
- * executions run inside that tenant's sandbox root: data/userfs/web/<owner>.
+ * Replaces matrix-bot-sdk to avoid deprecated request/request-promise dependency chain.
+ *
+ * Supports:
+ * - Multiple instances (one per interfaces row type=matrix)
+ * - Per-tenant sandbox roots
+ * - Basic invite auto-join
+ * - Room message handling (plain m.text)
  */
 
 import { config as dotenvConfig } from "dotenv";
 import { resolve } from "path";
-import { mkdirSync, existsSync } from "fs";
-import {
-  MatrixClient,
-  SimpleFsStorageProvider,
-  AutojoinRoomsMixin,
-  RichReply,
-  LogService,
-  LogLevel,
-} from "matrix-bot-sdk";
-
 import { initializeSchema } from "../database/db";
 import {
   conversationsModel,
-  messagesModel,
   interfacesModel,
+  messagesModel,
   usersModel,
 } from "../database/index";
 import { runAgentStream } from "../agent/agent";
@@ -36,10 +30,16 @@ import { ensureDir, getUserSandboxRoot } from "../lib/userfs";
 import { hasAnyPermission, Permission } from "../lib/permissions";
 import { extractMemoriesFromConversation } from "../agent/super-memory";
 
+import sdk, {
+  MsgType,
+  type MatrixClient,
+  type MatrixEvent,
+  type Room,
+} from "matrix-js-sdk";
+
 dotenvConfig({ path: resolve(process.cwd(), ".env") });
 initializeSchema();
 
-LogService.setLevel(LogLevel.WARN);
 const MAX_MATRIX_MESSAGE = 3500;
 
 function getFallbackOwnerUserId(): number {
@@ -88,6 +88,10 @@ function isAllowedUser(userId: string, allowed: string[]): boolean {
   return allowed.includes(userId);
 }
 
+async function sendText(client: MatrixClient, roomId: string, body: string) {
+  await client.sendMessage(roomId, { msgtype: MsgType.Text, body });
+}
+
 async function startMatrixInstance(instance: {
   id: number;
   owner_user_id: number;
@@ -129,24 +133,10 @@ async function startMatrixInstance(instance: {
     return;
   }
 
-  const storageDir = resolve(
-    process.cwd(),
-    "data",
-    "matrix",
-    instance.id > 0 ? String(instance.id) : "env",
-  );
-  if (!existsSync(storageDir)) mkdirSync(storageDir, { recursive: true });
-  const storage = new SimpleFsStorageProvider(resolve(storageDir, "bot.json"));
-
-  const client = new MatrixClient(homeserver, accessToken, storage);
-  AutojoinRoomsMixin.setupOnClient(client);
-
-  const me = await client.getUserId();
-  logger.info("Matrix client starting", {
-    interfaceId: instance.id,
-    ownerUserId: instance.owner_user_id,
-    userId: me,
-  });
+  const client = sdk.createClient({
+    baseUrl: homeserver,
+    accessToken,
+  }) as unknown as MatrixClient;
 
   const sandboxRoot = getUserSandboxRoot({
     kind: "web",
@@ -154,17 +144,54 @@ async function startMatrixInstance(instance: {
   });
   ensureDir(sandboxRoot);
 
-  client.on("room.message", async (roomId: string, event: any) => {
-    try {
-      if (!event?.content || event.content?.msgtype !== "m.text") return;
-      if (event.sender === me) return;
-      if (roomIds && !roomIds.includes(roomId)) return;
+  let me = "";
+  client.on("sync" as any, (state: string) => {
+    if (state === "PREPARED" && !me) {
+      me = client.getUserId() || "";
+      logger.info("Matrix client prepared", {
+        interfaceId: instance.id,
+        ownerUserId: instance.owner_user_id,
+        userId: me,
+      });
+    }
+  });
 
-      const externalUserId = String(event.sender || "");
+  // Auto-join on invite.
+  client.on("RoomMember.membership" as any, async (_event: MatrixEvent, member: any) => {
+    try {
+      const myId = client.getUserId();
+      if (!myId) return;
+      if (member?.userId !== myId) return;
+      if (member?.membership !== "invite") return;
+      if (!member?.roomId) return;
+      await client.joinRoom(member.roomId);
+      logger.info("Joined room", { roomId: member.roomId });
+    } catch (err) {
+      logger.warn("Failed to auto-join room", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  client.on("Room.timeline" as any, async (event: MatrixEvent, room: Room, toStartOfTimeline: boolean) => {
+    try {
+      if (toStartOfTimeline) return;
+      if (!event) return;
+      if (event.getType?.() !== "m.room.message") return;
+      if (event.getSender?.() === client.getUserId()) return;
+      if (roomIds && room && !roomIds.includes(room.roomId)) return;
+
+      const content = (event as any).getContent?.() ?? (event as any).event?.content;
+      if (!content || content.msgtype !== "m.text") return;
+
+      const externalUserId = String(event.getSender?.() || "");
       if (!isAllowedUser(externalUserId, instance.allowed_users)) return;
 
-      const text = String(event.content.body || "").trim();
+      const text = String(content.body || "").trim();
       if (!text) return;
+
+      const roomId = room?.roomId;
+      if (!roomId) return;
 
       const rateLimiter = getRateLimiter();
       const estimatedTokenCount = estimateTokens(text);
@@ -179,13 +206,13 @@ async function startMatrixInstance(instance: {
       });
 
       if (!preCheck.allowed) {
-        await client.sendMessage(roomId, {
-          msgtype: "m.text",
-          body:
-            rateLimiter.getErrorMessage(preCheck) ||
+        await sendText(
+          client,
+          roomId,
+          rateLimiter.getErrorMessage(preCheck) ||
             preCheck.reason ||
             "Rate limit exceeded",
-        });
+        );
         return;
       }
 
@@ -208,11 +235,14 @@ async function startMatrixInstance(instance: {
       });
 
       SessionManager.addMessage(session.id, "user", text);
-      messagesModel.create({ conversation_id: conversation.id, role: "user", content: text });
+      messagesModel.create({
+        conversation_id: conversation.id,
+        role: "user",
+        content: text,
+      });
 
-      const replyNotice = RichReply.createFor(roomId, event, "Thinking…", "Thinking…");
-      replyNotice["msgtype"] = "m.notice";
-      await client.sendMessage(roomId, replyNotice);
+      // Minimal "thinking" notice (plain text).
+      await sendText(client, roomId, "Thinking...");
 
       const { fullText, usage } = await withToolContext(
         {
@@ -242,9 +272,7 @@ async function startMatrixInstance(instance: {
       const finalText = (await fullText) || "";
       const chunks = splitText(finalText || "(no output)", MAX_MATRIX_MESSAGE);
       for (const ch of chunks) {
-        const reply = RichReply.createFor(roomId, event, ch, ch);
-        reply["msgtype"] = "m.text";
-        await client.sendMessage(roomId, reply);
+        await sendText(client, roomId, ch);
       }
 
       const usageData = await usage;
@@ -291,7 +319,7 @@ async function startMatrixInstance(instance: {
     }
   });
 
-  await client.start();
+  client.startClient({ initialSyncLimit: 10 } as any);
   logger.info("Matrix instance started", {
     interfaceId: instance.id,
     ownerUserId: instance.owner_user_id,

@@ -92,8 +92,8 @@ export async function rateLimitMiddleware(
 
     // Add rate limit info to response headers (for allowed requests)
     if (result.limits) {
-      request.headers.set("x-rate-limit-remaining", result.limits.rpm.limit - result.limits.rpm.current + "");
-      request.headers.set("x-rate-limit-limit", result.limits.rpm.limit + "");
+      // Note: mutating request headers does not propagate to the client.
+      // Expose rate limit headers on the response in route handlers if desired.
     }
 
     // Return null to indicate the request should proceed
