@@ -2,8 +2,17 @@ import { providersModel } from "@/database";
 import { ProvidersList } from "./ProvidersList";
 import { AddProviderButton } from "./AddProviderButton";
 import { ProviderCatalog } from "./ProviderCatalog";
+import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission } from "@/lib/permissions";
+import { redirect } from "next/navigation";
 
-export default function ProvidersPage() {
+export default async function ProvidersPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!hasPermission(user, Permission.PROVIDERS_VIEW)) {
+    redirect("/chat");
+  }
+
   const providers = providersModel.findAll();
 
   return (

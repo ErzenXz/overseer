@@ -1,7 +1,17 @@
 import { settingsModel } from "@/database";
 import { SettingsForm } from "./SettingsForm";
+import { SystemUpdatePanel } from "@/components/SystemUpdatePanel";
+import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission } from "@/lib/permissions";
+import { redirect } from "next/navigation";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!hasPermission(user, Permission.SYSTEM_SETTINGS_READ)) {
+    redirect("/chat");
+  }
+
   const settings = settingsModel.getAll();
   const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]));
 
@@ -38,6 +48,8 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+
+          <SystemUpdatePanel title="Updates" showAutoUpdate />
 
           {/* Danger Zone */}
           <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-6">

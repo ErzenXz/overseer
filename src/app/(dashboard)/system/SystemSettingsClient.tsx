@@ -1,115 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
 import type { Setting } from "@/types/database";
+import { SystemUpdatePanel } from "@/components/SystemUpdatePanel";
 
 interface SystemSettingsClientProps {
   settings: Setting[];
 }
 
 export default function SystemSettingsClient({ settings }: SystemSettingsClientProps) {
-  const [updateStatus, setUpdateStatus] = useState<{
-    head: string | null;
-    lastRun: {
-      issueId: string;
-      startedAt: string;
-      finishedAt: string;
-      ok: boolean;
-      exitCode: number | null;
-      command: string;
-      headBefore?: string | null;
-      headAfter?: string | null;
-      output: string;
-    } | null;
-  } | null>(null);
-  const [updateLoading, setUpdateLoading] = useState(false);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [autoUpdateStatus, setAutoUpdateStatus] = useState<
-    { created: boolean; jobId?: number; error?: string } | null
-  >(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const res = await fetch("/api/admin/update", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as any;
-        if (cancelled) return;
-        setUpdateStatus({
-          head: typeof data.head === "string" ? data.head : null,
-          lastRun: data.lastRun ?? null,
-        });
-      } catch (err) {
-        if (cancelled) return;
-        setUpdateError(err instanceof Error ? err.message : String(err));
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const runUpdateNow = async () => {
-    setUpdateLoading(true);
-    setUpdateError(null);
-    try {
-      const res = await fetch("/api/admin/update", { method: "POST" });
-      const data = (await res.json()) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(
-          data?.issueId
-            ? `${data?.error || "Update failed"} (Issue #${data.issueId})`
-            : data?.error || "Update failed",
-        );
-      }
-      // Refresh status after update
-      const s = await fetch("/api/admin/update", { cache: "no-store" });
-      const sd = (await s.json()) as any;
-      setUpdateStatus({
-        head: typeof sd.head === "string" ? sd.head : null,
-        lastRun: sd.lastRun ?? null,
-      });
-    } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUpdateLoading(false);
-    }
-  };
-
-  const createWeeklyAutoUpdate = async () => {
-    setAutoUpdateStatus(null);
-    try {
-      const res = await fetch("/api/cron", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "Overseer Auto Update",
-          description: "Weekly self-update via scripts/update.sh",
-          cron_expression: "0 3 * * 0",
-          timezone: "UTC",
-          enabled: true,
-          prompt:
-            "Run the shell tool to execute exactly: bash ./scripts/update.sh --yes --stash\nReturn a brief status including the exit code.",
-        }),
-      });
-      const data = (await res.json()) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Failed to create cron job (HTTP ${res.status})`);
-      }
-      setAutoUpdateStatus({ created: true, jobId: data.job?.id });
-    } catch (err) {
-      setAutoUpdateStatus({
-        created: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  };
-
   const settingsByCategory: Record<string, Setting[]> = {
     agent: settings.filter((setting) => setting.key.startsWith("agent.")),
     tools: settings.filter((setting) => setting.key.startsWith("tools.")),
@@ -155,80 +55,8 @@ export default function SystemSettingsClient({ settings }: SystemSettingsClientP
         </div>
       </div>
 
-      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-white font-[var(--font-mono)]">Updates</h2>
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-              Run the bundled updater script on this host.
-            </p>
-            {updateStatus?.head && (
-              <p className="text-xs text-[var(--color-text-muted)] mt-2">
-                Current HEAD:{" "}
-                <span className="font-mono text-[var(--color-text-secondary)]">
-                  {updateStatus.head.slice(0, 12)}
-                </span>
-              </p>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={createWeeklyAutoUpdate}
-              className="px-4 py-2 text-sm bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded transition-colors border border-[var(--color-border)]"
-            >
-              Enable Weekly Auto-Update
-            </button>
-            <button
-              onClick={runUpdateNow}
-              disabled={updateLoading}
-              className="px-4 py-2 text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded transition-colors disabled:opacity-50"
-            >
-              {updateLoading ? "Updating..." : "Update Now"}
-            </button>
-          </div>
-        </div>
-
-        {(updateError || autoUpdateStatus?.error) && (
-          <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-300">
-            {updateError || autoUpdateStatus?.error}
-          </div>
-        )}
-
-        {autoUpdateStatus?.created && (
-          <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded text-sm text-green-300">
-            Weekly auto-update cron job created{autoUpdateStatus.jobId ? ` (Job #${autoUpdateStatus.jobId})` : ""}.
-          </div>
-        )}
-
-        {updateStatus?.lastRun && (
-          <div className="mt-4 p-4 bg-[var(--color-surface-overlay)] rounded-lg border border-[var(--color-border)]">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-sm text-[var(--color-text-secondary)]">
-                Last run:{" "}
-                <span className="text-white">
-                  {new Date(updateStatus.lastRun.startedAt).toLocaleString()}
-                </span>{" "}
-                <span className="text-[var(--color-text-muted)]">
-                  (Issue #{updateStatus.lastRun.issueId})
-                </span>
-              </div>
-              <div
-                className={`text-xs px-2 py-1 rounded border ${
-                  updateStatus.lastRun.ok
-                    ? "text-green-300 border-green-500/30 bg-green-500/10"
-                    : "text-red-300 border-red-500/30 bg-red-500/10"
-                }`}
-              >
-                {updateStatus.lastRun.ok ? "SUCCESS" : "FAILED"}{" "}
-                {updateStatus.lastRun.exitCode !== null ? `(exit ${updateStatus.lastRun.exitCode})` : ""}
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-[var(--color-text-muted)] font-mono whitespace-pre-wrap max-h-64 overflow-auto">
-              {updateStatus.lastRun.output || "(no output)"}
-            </div>
-          </div>
-        )}
+      <div className="mb-6">
+        <SystemUpdatePanel title="Updates" showAutoUpdate />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

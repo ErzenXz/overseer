@@ -3,11 +3,16 @@ import { InterfacesList } from "./InterfacesList";
 import { AddInterfaceButton } from "./AddInterfaceButton";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission, Permission } from "@/lib/permissions";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function InterfacesPage() {
   const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!hasPermission(user, Permission.INTERFACES_VIEW)) {
+    redirect("/chat");
+  }
   const canViewAll = user ? hasPermission(user, Permission.TENANT_VIEW_ALL) : false;
   const interfaces = user
     ? canViewAll

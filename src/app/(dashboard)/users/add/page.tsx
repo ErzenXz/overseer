@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { usersModel } from "@/database";
+import { getCurrentUser } from "@/lib/auth";
+import { Permission, requirePermission } from "@/lib/permissions";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -10,6 +12,11 @@ const validRoles = new Set(["admin", "developer", "operator", "viewer"]);
 
 async function createUserAction(formData: FormData) {
   "use server";
+  const user = await getCurrentUser();
+  requirePermission(user, Permission.USERS_CREATE, {
+    resource: "users",
+    metadata: { action: "create_user" },
+  });
 
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
@@ -51,6 +58,13 @@ export default async function AddUserPage({
 }: {
   searchParams: SearchParams;
 }) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  requirePermission(user, Permission.USERS_CREATE, {
+    resource: "users",
+    metadata: { action: "view_add_user" },
+  });
+
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : null;
   const success = typeof params.success === "string" ? params.success : null;

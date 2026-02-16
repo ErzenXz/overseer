@@ -4,9 +4,17 @@ import { usersModel } from "@/database";
 import { getQuotaManager } from "@/lib/quota-manager";
 import { getCostTracker } from "@/lib/cost-tracker";
 import { getAllowedModels, getUserPolicy, getUserTokenUsage, upsertUserPolicy } from "@/lib/user-policy";
+import { getCurrentUser } from "@/lib/auth";
+import { Permission, requirePermission } from "@/lib/permissions";
+import { redirect } from "next/navigation";
 
 async function updateUserPolicyAction(formData: FormData) {
   "use server";
+  const user = await getCurrentUser();
+  requirePermission(user, Permission.USERS_MANAGE, {
+    resource: "users",
+    metadata: { action: "update_user_policy" },
+  });
 
   const userId = String(formData.get("user_id") ?? "").trim();
   if (!userId) return;
@@ -38,6 +46,11 @@ async function updateUserPolicyAction(formData: FormData) {
 
 async function updateTierAction(formData: FormData) {
   "use server";
+  const user = await getCurrentUser();
+  requirePermission(user, Permission.USERS_MANAGE, {
+    resource: "users",
+    metadata: { action: "update_user_tier" },
+  });
 
   const userId = String(formData.get("user_id") ?? "").trim();
   const tier = String(formData.get("tier") ?? "free").trim() as "free" | "pro" | "enterprise";
@@ -47,7 +60,14 @@ async function updateTierAction(formData: FormData) {
   revalidatePath("/users");
 }
 
-export default function UsersPage() {
+export default async function UsersPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  requirePermission(user, Permission.USERS_VIEW, {
+    resource: "users",
+    metadata: { action: "view_users" },
+  });
+
   const users = usersModel.findAll();
   const quotaManager = getQuotaManager();
   const costTracker = getCostTracker();

@@ -33,16 +33,22 @@ async function executeCommand(
   command: string,
   cwd: string,
   timeout: number,
-  stdinInput?: string
+  stdinInput?: string,
+  envOverrides?: Record<string, string | undefined>
 ): Promise<{ stdout: string; stderr: string }> {
   const normalizedCwd = normalizePath(cwd);
+  const env = {
+    ...process.env,
+    ...getPlatformEnv(),
+    ...(envOverrides || {}),
+  } as NodeJS.ProcessEnv;
 
   // If stdin input is provided, use spawn to pipe it
   if (stdinInput !== undefined) {
     return new Promise((resolve, reject) => {
       const shellCmd = isWindows() ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
       const shellArgs = isWindows() ? ["-Command", command] : ["-c", command];
-      const spawnEnv = { ...process.env, ...getPlatformEnv(), TERM: "dumb", DEBIAN_FRONTEND: "noninteractive" };
+      const spawnEnv = { ...env, TERM: "dumb", DEBIAN_FRONTEND: "noninteractive" };
 
       const child = spawn(shellCmd, shellArgs, {
         cwd: normalizedCwd,
@@ -93,7 +99,7 @@ async function executeCommand(
     return new Promise((resolve, reject) => {
       const child = spawn(shell, args, {
         cwd: normalizedCwd,
-        env: getPlatformEnv() as NodeJS.ProcessEnv,
+        env,
         shell: false,
         timeout,
       });
@@ -132,7 +138,7 @@ async function executeCommand(
     cwd: normalizedCwd,
     timeout,
     maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-    env: getPlatformEnv() as NodeJS.ProcessEnv,
+    env,
     shell: process.env.SHELL || "/bin/bash",
   });
 }
@@ -155,6 +161,16 @@ function hasDisallowedAbsolutePaths(command: string, sandboxRoot: string): boole
   }
 
   return false;
+}
+
+function hasSandboxTraversal(command: string): boolean {
+  // Block simple upward traversal patterns that can escape the sandbox when cwd
+  // is set to sandboxRoot.
+  return (
+    /(^|[^A-Za-z0-9_])\.\.([/\\]|$)/.test(command) ||
+    /\bcd\s+\.\.(\s|;|&&|\|\|)/i.test(command) ||
+    /\bpushd\s+\.\.(\s|;|&&|\|\|)/i.test(command)
+  );
 }
 
 export const executeShellCommand = tool<any, any>({
@@ -254,6 +270,13 @@ INTERACTIVE COMMANDS:
     const defaultCwd = workingDirectory || homeDir || process.cwd();
     const cwd =
       ctx?.sandboxRoot && !ctx.allowSystem ? ctx.sandboxRoot : defaultCwd;
+    const envOverrides =
+      ctx?.sandboxRoot && !ctx.allowSystem
+        ? {
+            HOME: ctx.sandboxRoot,
+            USERPROFILE: ctx.sandboxRoot,
+          }
+        : undefined;
 
     // Optionally map command between platforms
     let finalCommand = command;
@@ -269,6 +292,17 @@ INTERACTIVE COMMANDS:
           output: "",
           error:
             "Sandbox mode: absolute paths outside your sandbox are blocked. Use relative paths inside your sandbox root.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
+
+      if (hasSandboxTraversal(finalCommand)) {
+        return {
+          success: false,
+          output: "",
+          error:
+            "Sandbox mode: path traversal outside your sandbox is blocked (..). Use paths within your sandbox root.",
           executionTimeMs: Date.now() - startTime,
           platform: getPlatform(),
         };
@@ -345,7 +379,8 @@ INTERACTIVE COMMANDS:
         finalCommand,
         cwd,
         timeout || effectiveTimeoutMs,
-        stdin
+        stdin,
+        envOverrides,
       );
 
       let output = stdout || "";
@@ -491,6 +526,13 @@ NEVER use this tool preemptively — always attempt the command with executeShel
     const defaultCwd = workingDirectory || homeDir || process.cwd();
     const cwd =
       ctx?.sandboxRoot && !ctx.allowSystem ? ctx.sandboxRoot : defaultCwd;
+    const envOverrides =
+      ctx?.sandboxRoot && !ctx.allowSystem
+        ? {
+            HOME: ctx.sandboxRoot,
+            USERPROFILE: ctx.sandboxRoot,
+          }
+        : undefined;
 
     // Optionally map command between platforms
     let finalCommand = command;
@@ -505,6 +547,17 @@ NEVER use this tool preemptively — always attempt the command with executeShel
           output: "",
           error:
             "Sandbox mode: absolute paths outside your sandbox are blocked. Use relative paths inside your sandbox root.",
+          executionTimeMs: Date.now() - startTime,
+          platform: getPlatform(),
+        };
+      }
+
+      if (hasSandboxTraversal(finalCommand)) {
+        return {
+          success: false,
+          output: "",
+          error:
+            "Sandbox mode: path traversal outside your sandbox is blocked (..). Use paths within your sandbox root.",
           executionTimeMs: Date.now() - startTime,
           platform: getPlatform(),
         };
@@ -550,7 +603,9 @@ NEVER use this tool preemptively — always attempt the command with executeShel
       const { stdout, stderr } = await executeCommand(
         finalCommand,
         cwd,
-        effectiveTimeoutMs * 2 // Double timeout for dangerous commands
+        effectiveTimeoutMs * 2, // Double timeout for dangerous commands
+        undefined,
+        envOverrides,
       );
 
       let output = stdout || "";

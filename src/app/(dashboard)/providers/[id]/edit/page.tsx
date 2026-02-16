@@ -1,13 +1,21 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { providersModel } from "@/database";
 import { EditProviderForm } from "./EditProviderForm";
+import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, Permission } from "@/lib/permissions";
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
 export default async function EditProviderPage({ params }: PageProps) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!hasPermission(user, Permission.PROVIDERS_VIEW)) {
+    redirect("/chat");
+  }
+
   const { id } = await params;
   const providerId = Number.parseInt(id, 10);
 

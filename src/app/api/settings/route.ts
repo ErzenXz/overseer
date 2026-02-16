@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { settingsModel } from "@/database";
 import { getCurrentUser } from "@/lib/auth";
+import { Permission, requirePermission } from "@/lib/permissions";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  requirePermission(user, Permission.SYSTEM_SETTINGS_READ, {
+    resource: "settings",
+    metadata: { action: "read_settings" },
+  });
 
   const settings = settingsModel.getAll();
   return NextResponse.json({ settings });
@@ -17,6 +22,10 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  requirePermission(user, Permission.SYSTEM_SETTINGS_WRITE, {
+    resource: "settings",
+    metadata: { action: "write_settings" },
+  });
 
   try {
     const body = await request.json();
