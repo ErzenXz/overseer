@@ -31,10 +31,16 @@ export function LoginForm() {
       }
 
       const redirectParam = new URLSearchParams(window.location.search).get("redirect");
-      const redirect =
+      const redirectCandidate =
         redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
           ? redirectParam
           : "/admin/dashboard";
+      const redirect = redirectCandidate.startsWith("/login")
+        ? "/admin/dashboard"
+        : redirectCandidate;
+
+      // Avoid leaving the UI in a permanent loading state if navigation bounces.
+      setLoading(false);
       router.push(redirect);
       router.refresh();
     } catch {
