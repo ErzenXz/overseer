@@ -1,6 +1,8 @@
 import { StatsCard } from "@/components/StatsCard";
 import * as mcpClient from "@/agent/mcp/client";
 import { MCPServersList } from "./MCPServersList";
+import { ServerIcon, NetworkIcon, CheckCircle2Icon, WrenchIcon, PlusIcon, TerminalIcon, GlobeIcon, ActivityIcon, InfoIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function MCPPage() {
   const allServers = mcpClient.getAllServers();
@@ -9,80 +11,81 @@ export default function MCPPage() {
   const totalTools = connectionStatus.reduce((acc, s) => acc + s.tools, 0);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">MCP Servers</h1>
-          <p className="text-[var(--color-text-secondary)] mt-1">Manage Model Context Protocol server connections</p>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">MCP Servers</h1>
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground border border-border/50 uppercase tracking-wider">
+              Integration
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+            <NetworkIcon className="w-4 h-4" />
+            Manage Model Context Protocol server connections and tools
+          </p>
         </div>
         <a
-          href="/mcp/add"
-          className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors"
+          href="/admin/mcp/add"
+          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 w-full sm:w-auto"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
+          <PlusIcon className="w-4 h-4" />
           Add MCP Server
         </a>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <StatsCard
           title="Total Servers"
           value={allServers.length}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-            </svg>
-          }
+          icon={<ServerIcon className="w-5 h-5" />}
           color="accent"
         />
         <StatsCard
           title="Connected"
           value={connectedCount}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          }
+          icon={<CheckCircle2Icon className="w-5 h-5" />}
           color="success"
         />
         <StatsCard
           title="Active Servers"
           value={allServers.filter(s => s.is_active).length}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
+          icon={<ActivityIcon className="w-5 h-5" />}
           color="info"
         />
         <StatsCard
           title="Available Tools"
           value={totalTools}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          }
-          color="accent"
+          icon={<WrenchIcon className="w-5 h-5" />}
+          color="warning"
         />
       </div>
 
       {/* Connection Status */}
       {connectionStatus.length > 0 && (
-        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Active Connections</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="rounded-xl border border-border bg-card shadow-sm p-5 md:p-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2 mb-4 uppercase">
+            <ActivityIcon className="w-4 h-4 text-primary" />
+            Active Connections
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {connectionStatus.map((status) => (
-              <div key={status.server} className="flex items-center justify-between p-4 bg-[var(--color-surface-overlay)] rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-green-500" />
-                  <span className="text-white font-medium">{status.server}</span>
+              <div key={status.server} className="flex items-center justify-between p-3.5 bg-muted/30 border border-border/50 rounded-lg hover:bg-muted/50 transition-colors group">
+                <div className="flex items-center gap-3 truncate pr-2">
+                  <div className="relative flex h-2.5 w-2.5 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
+                  </div>
+                  <span className="text-sm font-medium text-foreground truncate">{status.server}</span>
                 </div>
-                <span className="text-sm text-[var(--color-text-secondary)]">{status.tools} tools</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="px-2 py-0.5 rounded-md bg-background border border-border text-xs font-mono text-muted-foreground group-hover:border-primary/30 transition-colors">
+                    {status.tools}
+                  </span>
+                  <WrenchIcon className="w-3.5 h-3.5 text-muted-foreground/70" />
+                </div>
               </div>
             ))}
           </div>
@@ -91,46 +94,59 @@ export default function MCPPage() {
 
       {/* Servers List */}
       {allServers.length === 0 ? (
-        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-12 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-overlay)] flex items-center justify-center">
-            <svg className="w-8 h-8 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-            </svg>
+        <div className="rounded-xl border border-border bg-card shadow-sm p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+          <div className="w-16 h-16 mb-6 rounded-2xl bg-muted flex items-center justify-center ring-1 ring-border/50">
+            <NetworkIcon className="w-8 h-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-medium text-white mb-2">No MCP servers configured</h3>
-          <p className="text-[var(--color-text-secondary)] mb-6">Add MCP servers to extend your agent with additional tools and capabilities</p>
+          <h3 className="text-lg font-semibold tracking-tight text-foreground mb-2">No MCP servers configured</h3>
+          <p className="text-sm text-muted-foreground max-w-md mb-6">
+            Add MCP servers to extend your agent with additional tools, integrations, and capabilities.
+          </p>
           <a
-            href="/mcp/add"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors"
+            href="/admin/mcp/add"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
+            <PlusIcon className="w-4 h-4" />
             Add Your First Server
           </a>
         </div>
       ) : (
-        <MCPServersList servers={allServers} connectionStatus={connectionStatus} />
+        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <MCPServersList servers={allServers} connectionStatus={connectionStatus} />
+        </div>
       )}
 
       {/* Info Section */}
-      <div className="mt-8 bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">About MCP</h2>
-        <p className="text-[var(--color-text-secondary)] text-sm mb-4">
+      <div className="rounded-xl border border-border bg-card shadow-sm p-5 md:p-6 bg-gradient-to-br from-card to-muted/20">
+        <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2 mb-3 uppercase">
+          <InfoIcon className="w-4 h-4 text-primary" />
+          About MCP
+        </h2>
+        <p className="text-sm text-muted-foreground mb-5 max-w-3xl leading-relaxed">
           Model Context Protocol (MCP) allows your agent to connect to external servers that provide additional tools and capabilities.
-          MCP servers can be run locally (stdio) or accessed remotely (SSE).
+          MCP servers can be run locally via standard input/output (stdio) or accessed remotely via Server-Sent Events (SSE).
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg">
-            <h3 className="font-medium text-white mb-2">STDIO Servers</h3>
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              Run local processes that communicate via stdin/stdout. Good for tools that need filesystem access.
+          <div className="p-4 bg-background border border-border/50 rounded-lg hover:border-border transition-colors group">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-md bg-blue-500/10 text-blue-500 flex items-center justify-center group-hover:bg-blue-500/20 transition-colors">
+                <TerminalIcon className="w-4 h-4" />
+              </div>
+              <h3 className="font-semibold text-sm text-foreground">STDIO Servers</h3>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-10">
+              Run local processes that communicate via stdin/stdout. Best for tools that need direct filesystem access or local execution.
             </p>
           </div>
-          <div className="p-4 bg-[var(--color-surface-overlay)] rounded-lg">
-            <h3 className="font-medium text-white mb-2">SSE Servers</h3>
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              Connect to remote servers via Server-Sent Events. Good for shared services and cloud tools.
+          <div className="p-4 bg-background border border-border/50 rounded-lg hover:border-border transition-colors group">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-md bg-purple-500/10 text-purple-500 flex items-center justify-center group-hover:bg-purple-500/20 transition-colors">
+                <GlobeIcon className="w-4 h-4" />
+              </div>
+              <h3 className="font-semibold text-sm text-foreground">SSE Servers</h3>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-10">
+              Connect to remote servers via Server-Sent Events. Best for shared services, APIs, and cloud-hosted tools.
             </p>
           </div>
         </div>

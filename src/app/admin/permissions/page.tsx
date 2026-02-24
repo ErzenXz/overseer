@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
 import { PermissionBadge } from "@/components/admin/PermissionBadge";
+import { ShieldCheckIcon, UsersIcon, KeyIcon, LockIcon, PlusIcon, SearchIcon, CheckIcon, ShieldIcon, DatabaseIcon, MessageSquareIcon, WrenchIcon, LayersIcon, XIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // Define permission categories and permissions
 const PERMISSION_CATEGORIES = {
@@ -97,81 +99,76 @@ export default function PermissionsPage() {
   const grantedPermissions = rolePermissions.length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">Permissions Management</h1>
-          <p className="text-[var(--color-text-secondary)] mt-1">Manage role-based access control and custom permissions</p>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Permissions</h1>
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground border border-border/50 uppercase tracking-wider">
+              Access Control
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+            <ShieldCheckIcon className="w-4 h-4" />
+            Manage role-based access control and custom permissions
+          </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
+        <button className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 w-full sm:w-auto">
+          <PlusIcon className="w-4 h-4" />
           Create Custom Role
         </button>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <StatsCard
           title="Total Permissions"
           value={totalPermissions}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          }
+          icon={<KeyIcon className="w-5 h-5" />}
           color="accent"
         />
         <StatsCard
-          title="Permission Categories"
+          title="Categories"
           value={Object.keys(PERMISSION_CATEGORIES).length}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-          }
-          color="accent"
+          icon={<LayersIcon className="w-5 h-5" />}
+          color="info"
         />
         <StatsCard
           title="Default Roles"
           value={3}
           subtitle="Admin, User, Viewer"
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-          }
+          icon={<UsersIcon className="w-5 h-5" />}
           color="success"
         />
         <StatsCard
           title="Granted to Role"
           value={grantedPermissions}
           subtitle={`${selectedRole} permissions`}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          }
-          color="info"
+          icon={<ShieldCheckIcon className="w-5 h-5" />}
+          color="warning"
         />
       </div>
 
       {/* Role Selector and Search */}
-      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-8">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-2">Select Role to View Permissions</h2>
-            <div className="flex gap-2">
+      <div className="rounded-xl border border-border bg-card shadow-sm p-5 md:p-6 bg-gradient-to-br from-card to-muted/20">
+        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
+          <div className="w-full md:w-auto">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2 mb-3 uppercase">
+              <UsersIcon className="w-4 h-4 text-primary" />
+              Select Role
+            </h2>
+            <div className="flex gap-2 p-1 rounded-lg bg-muted/50 border border-border/50 inline-flex w-full sm:w-auto overflow-x-auto custom-scrollbar">
               {["admin", "user", "viewer"].map((role) => (
                 <button
                   key={role}
                   onClick={() => setSelectedRole(role)}
-                  className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                  className={cn(
+                    "px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap flex-1 sm:flex-none",
                     selectedRole === role
-                      ? "bg-[var(--color-accent-dim)] text-[var(--color-accent)] border border-[var(--color-accent-border)]"
-                      : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-overlay)] border border-transparent"
-                  }`}
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/80"
+                  )}
                 >
                   {role.charAt(0).toUpperCase() + role.slice(1)}
                 </button>
@@ -179,13 +176,14 @@ export default function PermissionsPage() {
             </div>
           </div>
 
-          <div className="w-full md:w-64">
+          <div className="w-full md:w-72 relative">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search permissions..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white placeholder-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-accent)]"
+              className="w-full h-10 pl-9 pr-4 bg-background border border-input rounded-md text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors placeholder:text-muted-foreground"
             />
           </div>
         </div>
@@ -194,87 +192,104 @@ export default function PermissionsPage() {
       {/* Permission Categories */}
       <div className="space-y-6">
         {filteredCategories.map((category) => (
-          <div key={category.key} className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
+          <div key={category.key} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-border/50 bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold text-white font-[var(--font-mono)]">{category.name}</h3>
-                <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-                  {category.permissions.filter(p => rolePermissions.includes(p)).length} of {category.permissions.length} granted
+                <h3 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
+                  {category.key === "system" ? <DatabaseIcon className="w-4 h-4 text-primary" /> :
+                   category.key === "users" ? <UsersIcon className="w-4 h-4 text-primary" /> :
+                   category.key === "content" ? <MessageSquareIcon className="w-4 h-4 text-primary" /> :
+                   category.key === "tools" ? <WrenchIcon className="w-4 h-4 text-primary" /> :
+                   <ShieldIcon className="w-4 h-4 text-primary" />}
+                  {category.name}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <span className="font-medium text-foreground">{category.permissions.filter(p => rolePermissions.includes(p)).length}</span> of {category.permissions.length} granted
                 </p>
               </div>
               <div className="flex gap-2">
-                <button className="px-3 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 rounded-lg transition-colors">
+                <button className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-success hover:text-success-foreground bg-success/10 hover:bg-success rounded-md transition-colors border border-success/20">
+                  <CheckIcon className="w-3.5 h-3.5" />
                   Grant All
                 </button>
-                <button className="px-3 py-1.5 text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors">
+                <button className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-destructive hover:text-destructive-foreground bg-destructive/10 hover:bg-destructive rounded-md transition-colors border border-destructive/20">
+                  <XIcon className="w-3.5 h-3.5" />
                   Revoke All
                 </button>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {category.permissions.map((permission) => (
-                <PermissionBadge
-                  key={permission}
-                  permission={permission}
-                  category={category.key}
-                  granted={rolePermissions.includes(permission)}
-                />
-              ))}
+            <div className="p-5">
+              <div className="flex flex-wrap gap-2">
+                {category.permissions.map((permission) => (
+                  <PermissionBadge
+                    key={permission}
+                    permission={permission}
+                    category={category.key}
+                    granted={rolePermissions.includes(permission)}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         ))}
 
         {filteredCategories.length === 0 && (
-          <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-12 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-overlay)] flex items-center justify-center">
-              <svg className="w-8 h-8 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+          <div className="rounded-xl border border-border bg-card shadow-sm p-12 text-center flex flex-col items-center justify-center min-h-[300px]">
+            <div className="w-16 h-16 mb-6 rounded-2xl bg-muted flex items-center justify-center ring-1 ring-border/50">
+              <SearchIcon className="w-8 h-8 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-medium text-white mb-2">No permissions found</h3>
-            <p className="text-[var(--color-text-secondary)]">Try adjusting your search query</p>
+            <h3 className="text-lg font-semibold tracking-tight text-foreground mb-2">No permissions found</h3>
+            <p className="text-sm text-muted-foreground">
+              Try adjusting your search query "{searchQuery}"
+            </p>
           </div>
         )}
       </div>
 
       {/* Permission Matrix */}
-      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mt-8">
-        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Permission Matrix</h2>
+      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden mt-8">
+        <div className="px-5 py-4 border-b border-border/50 bg-muted/20">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2 uppercase">
+            <LockIcon className="w-4 h-4 text-primary" />
+            Permission Matrix
+          </h2>
+        </div>
+        
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left border-b border-[var(--color-border)]">
-                <th className="px-4 py-3 font-medium text-[var(--color-text-secondary)]">Permission</th>
-                <th className="px-4 py-3 font-medium text-[var(--color-text-secondary)] text-center">Admin</th>
-                <th className="px-4 py-3 font-medium text-[var(--color-text-secondary)] text-center">User</th>
-                <th className="px-4 py-3 font-medium text-[var(--color-text-secondary)] text-center">Viewer</th>
+            <thead className="text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/10 border-b border-border/50">
+              <tr>
+                <th className="px-5 py-3 font-semibold text-left">Permission</th>
+                <th className="px-5 py-3 font-semibold text-center w-24">Admin</th>
+                <th className="px-5 py-3 font-semibold text-center w-24">User</th>
+                <th className="px-5 py-3 font-semibold text-center w-24">Viewer</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+            <tbody className="divide-y divide-border/50 font-mono text-xs">
               {Object.entries(PERMISSION_CATEGORIES).flatMap(([_, category]) =>
                 category.permissions.map((permission) => (
-                  <tr key={permission} className="hover:bg-[var(--color-surface-overlay)] transition-colors">
-                    <td className="px-4 py-3 text-[var(--color-text-primary)]">{permission}</td>
-                    <td className="px-4 py-3 text-center">
+                  <tr key={permission} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-5 py-3 text-foreground">{permission}</td>
+                    <td className="px-5 py-3 text-center">
                       {ROLE_PERMISSIONS.admin.includes(permission) ? (
-                        <span className="text-green-400">✓</span>
+                        <div className="flex justify-center"><CheckIcon className="w-4 h-4 text-success" /></div>
                       ) : (
-                        <span className="text-[var(--color-text-muted)]">—</span>
+                        <span className="text-muted-foreground/50">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-5 py-3 text-center">
                       {ROLE_PERMISSIONS.user.includes(permission) ? (
-                        <span className="text-green-400">✓</span>
+                        <div className="flex justify-center"><CheckIcon className="w-4 h-4 text-success" /></div>
                       ) : (
-                        <span className="text-[var(--color-text-muted)]">—</span>
+                        <span className="text-muted-foreground/50">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-5 py-3 text-center">
                       {ROLE_PERMISSIONS.viewer.includes(permission) ? (
-                        <span className="text-green-400">✓</span>
+                        <div className="flex justify-center"><CheckIcon className="w-4 h-4 text-success" /></div>
                       ) : (
-                        <span className="text-[var(--color-text-muted)]">—</span>
+                        <span className="text-muted-foreground/50">—</span>
                       )}
                     </td>
                   </tr>

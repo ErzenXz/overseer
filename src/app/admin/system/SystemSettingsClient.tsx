@@ -4,6 +4,8 @@ import { useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
 import type { Setting } from "@/types/database";
 import { SystemUpdatePanel } from "@/components/SystemUpdatePanel";
+import { SettingsIcon, RotateCcwIcon, SaveIcon, ActivityIcon, BotIcon, WrenchIcon, ShieldCheckIcon, CheckCircle2Icon, XIcon, DatabaseIcon, PowerOffIcon, Trash2Icon, RefreshCcwIcon, ZapIcon, ShieldAlertIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SystemSettingsClientProps {
   settings: Setting[];
@@ -33,23 +35,28 @@ export default function SystemSettingsClient({ settings }: SystemSettingsClientP
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">System Settings</h1>
-          <p className="text-[var(--color-text-secondary)] mt-1">Configure global system behavior and limits</p>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">System Settings</h1>
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground border border-border/50 uppercase tracking-wider">
+              Global
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+            <SettingsIcon className="w-4 h-4" />
+            Configure global system behavior, limits, and security
+          </p>
         </div>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium rounded border border-[var(--color-border)] transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 w-full sm:w-auto">
+            <RotateCcwIcon className="w-4 h-4" />
             Reset to Defaults
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black text-sm font-medium rounded transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
+          <button className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 w-full sm:w-auto">
+            <SaveIcon className="w-4 h-4" />
             Save All Changes
           </button>
         </div>
@@ -59,92 +66,82 @@ export default function SystemSettingsClient({ settings }: SystemSettingsClientP
         <SystemUpdatePanel title="Updates" showAutoUpdate />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
         <StatsCard
           title="Total Settings"
           value={settings.length}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          }
+          icon={<SettingsIcon className="w-5 h-5" />}
           color="accent"
         />
         <StatsCard
           title="Agent Settings"
           value={settingsByCategory.agent.length}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-          }
+          icon={<BotIcon className="w-5 h-5" />}
           color="success"
         />
         <StatsCard
           title="Tool Settings"
           value={settingsByCategory.tools.length}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
-          }
-          color="accent"
+          icon={<WrenchIcon className="w-5 h-5" />}
+          color="info"
         />
         <StatsCard
           title="Security Settings"
           value={settingsByCategory.security.length || 0}
-          icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          }
-          color="danger"
+          icon={<ShieldCheckIcon className="w-5 h-5" />}
+          color="warning"
         />
       </div>
 
-      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-6">
-        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Agent Configuration</h2>
-        <div className="space-y-4">
+      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden mb-8">
+        <div className="px-5 py-4 border-b border-border/50 bg-muted/20">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2 uppercase">
+            <BotIcon className="w-4 h-4 text-primary" />
+            Agent Configuration
+          </h2>
+        </div>
+        <div className="divide-y divide-border/50">
           {settingsByCategory.agent.map((setting) => (
-            <div key={setting.key} className="flex items-center justify-between p-4 bg-[var(--color-surface-overlay)] rounded-lg">
+            <div key={setting.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 hover:bg-muted/10 transition-colors group">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-sm font-medium text-white">{setting.key}</h3>
-                </div>
+                <h3 className="text-sm font-medium text-foreground">{setting.key}</h3>
                 {setting.description && (
-                  <p className="text-xs text-[var(--color-text-muted)]">{setting.description}</p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-2xl">{setting.description}</p>
                 )}
               </div>
               {editingSetting === setting.key ? (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:w-auto w-full">
                   <input
                     type="text"
                     value={editValue}
                     onChange={(event) => setEditValue(event.target.value)}
-                    className="px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-white text-sm focus:outline-none focus:border-[var(--color-accent)]"
+                    className="flex-1 sm:w-48 h-9 px-3 bg-background border border-input rounded-md text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors"
                   />
-                  <button
-                    onClick={handleSave}
-                    className="px-3 py-1 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 rounded transition-colors"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setEditingSetting(null)}
-                    className="px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:text-white rounded transition-colors"
-                  >
-                    Cancel
-                  </button>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={handleSave}
+                      className="inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-medium rounded-md bg-success/10 text-success hover:bg-success hover:text-success-foreground transition-colors border border-success/20"
+                    >
+                      <CheckCircle2Icon className="w-3.5 h-3.5" />
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingSetting(null)}
+                      className="inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-medium rounded-md bg-background border border-input text-foreground hover:bg-accent hover:text-accent-foreground transition-colors shadow-sm"
+                    >
+                      <XIcon className="w-3.5 h-3.5" />
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <code className="text-sm text-[var(--color-accent)] px-3 py-1 bg-[var(--color-accent-dim)] rounded">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <code className="flex-1 sm:flex-none text-sm font-medium text-foreground px-3 py-1.5 bg-muted/30 border border-border/50 rounded-md truncate max-w-[200px] text-right" title={setting.value}>
                     {setting.value}
                   </code>
                   <button
                     onClick={() => handleEdit(setting.key, setting.value)}
-                    className="px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-border)] rounded transition-colors"
+                    className="inline-flex items-center justify-center h-8 px-3 text-xs font-medium rounded-md bg-background border border-input text-foreground hover:bg-accent hover:text-accent-foreground transition-colors shadow-sm opacity-0 group-hover:opacity-100 focus-within:opacity-100 shrink-0"
                   >
                     Edit
                   </button>
@@ -155,48 +152,55 @@ export default function SystemSettingsClient({ settings }: SystemSettingsClientP
         </div>
       </div>
 
-      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-6">
-        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Tool Configuration</h2>
-        <div className="space-y-4">
+      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden mb-8">
+        <div className="px-5 py-4 border-b border-border/50 bg-muted/20">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2 uppercase">
+            <WrenchIcon className="w-4 h-4 text-primary" />
+            Tool Configuration
+          </h2>
+        </div>
+        <div className="divide-y divide-border/50">
           {settingsByCategory.tools.map((setting) => (
-            <div key={setting.key} className="flex items-center justify-between p-4 bg-[var(--color-surface-overlay)] rounded-lg">
+            <div key={setting.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 hover:bg-muted/10 transition-colors group">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-sm font-medium text-white">{setting.key}</h3>
-                </div>
+                <h3 className="text-sm font-medium text-foreground">{setting.key}</h3>
                 {setting.description && (
-                  <p className="text-xs text-[var(--color-text-muted)]">{setting.description}</p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-2xl">{setting.description}</p>
                 )}
               </div>
               {editingSetting === setting.key ? (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:w-auto w-full">
                   <input
                     type="text"
                     value={editValue}
                     onChange={(event) => setEditValue(event.target.value)}
-                    className="px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-white text-sm focus:outline-none focus:border-[var(--color-accent)]"
+                    className="flex-1 sm:w-48 h-9 px-3 bg-background border border-input rounded-md text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors"
                   />
-                  <button
-                    onClick={handleSave}
-                    className="px-3 py-1 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 rounded transition-colors"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setEditingSetting(null)}
-                    className="px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:text-white rounded transition-colors"
-                  >
-                    Cancel
-                  </button>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={handleSave}
+                      className="inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-medium rounded-md bg-success/10 text-success hover:bg-success hover:text-success-foreground transition-colors border border-success/20"
+                    >
+                      <CheckCircle2Icon className="w-3.5 h-3.5" />
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingSetting(null)}
+                      className="inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-medium rounded-md bg-background border border-input text-foreground hover:bg-accent hover:text-accent-foreground transition-colors shadow-sm"
+                    >
+                      <XIcon className="w-3.5 h-3.5" />
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <code className="text-sm text-[var(--color-accent)] px-3 py-1 bg-[var(--color-accent-dim)] rounded">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <code className="flex-1 sm:flex-none text-sm font-medium text-foreground px-3 py-1.5 bg-muted/30 border border-border/50 rounded-md truncate max-w-[200px] text-right" title={setting.value}>
                     {setting.value}
                   </code>
                   <button
                     onClick={() => handleEdit(setting.key, setting.value)}
-                    className="px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-border)] rounded transition-colors"
+                    className="inline-flex items-center justify-center h-8 px-3 text-xs font-medium rounded-md bg-background border border-input text-foreground hover:bg-accent hover:text-accent-foreground transition-colors shadow-sm opacity-0 group-hover:opacity-100 focus-within:opacity-100 shrink-0"
                   >
                     Edit
                   </button>
@@ -207,28 +211,42 @@ export default function SystemSettingsClient({ settings }: SystemSettingsClientP
         </div>
       </div>
 
-      <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg p-6 mb-6">
-        <h2 className="text-lg font-semibold text-white font-[var(--font-mono)] mb-4">Quota & Rate Limits</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden mb-8">
+        <div className="px-5 py-4 border-b border-border/50 bg-muted/20">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2 uppercase">
+            <ActivityIcon className="w-4 h-4 text-primary" />
+            Quota & Rate Limits
+          </h2>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-6">
           {["free", "pro", "enterprise"].map((tier) => (
-            <div key={tier} className="p-4 bg-[var(--color-surface-overlay)] rounded-lg border-l-4 border-[var(--color-accent)]">
-              <h3 className="font-medium text-white capitalize mb-3">{tier} Tier</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">Messages/day</span>
-                  <span className="text-white font-medium">
+            <div key={tier} className="flex flex-col p-5 bg-background border border-border/50 rounded-xl hover:border-primary/30 transition-colors group relative overflow-hidden">
+              <div className={cn(
+                "absolute top-0 left-0 w-full h-1",
+                tier === "free" ? "bg-muted-foreground/30" : 
+                tier === "pro" ? "bg-primary" : 
+                "bg-gradient-to-r from-purple-500 to-primary"
+              )} />
+              <h3 className="font-semibold text-foreground capitalize mb-4 flex items-center gap-2">
+                {tier} Tier
+                {tier === "enterprise" && <ZapIcon className="w-3.5 h-3.5 text-purple-500 fill-purple-500/20" />}
+              </h3>
+              <div className="space-y-3 text-sm flex-1">
+                <div className="flex items-center justify-between pb-2 border-b border-border/50">
+                  <span className="text-muted-foreground">Messages/day</span>
+                  <span className="font-semibold text-foreground font-mono">
                     {tier === "free" ? "100" : tier === "pro" ? "1,000" : "Unlimited"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">Tokens/day</span>
-                  <span className="text-white font-medium">
+                <div className="flex items-center justify-between pb-2 border-b border-border/50">
+                  <span className="text-muted-foreground">Tokens/day</span>
+                  <span className="font-semibold text-foreground font-mono">
                     {tier === "free" ? "50K" : tier === "pro" ? "500K" : "Unlimited"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">Sessions</span>
-                  <span className="text-white font-medium">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Sessions</span>
+                  <span className="font-semibold text-foreground font-mono">
                     {tier === "free" ? "5" : tier === "pro" ? "50" : "Unlimited"}
                   </span>
                 </div>
@@ -238,27 +256,36 @@ export default function SystemSettingsClient({ settings }: SystemSettingsClientP
         </div>
       </div>
 
-      <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
-        <div className="flex items-start gap-3 mb-4">
-          <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <div>
-            <h3 className="text-sm font-medium text-red-400 mb-1">Dangerous Operations</h3>
-            <p className="text-sm text-[var(--color-text-secondary)]">
-              These operations can significantly impact system behavior. Use with caution.
-            </p>
+      <div className="rounded-xl border border-destructive/20 bg-destructive/5 overflow-hidden">
+        <div className="px-5 py-4 border-b border-destructive/10 bg-destructive/10">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center shrink-0">
+              <ShieldAlertIcon className="w-4 h-4 text-destructive" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-destructive uppercase tracking-wider">Dangerous Operations</h3>
+              <p className="text-xs text-destructive/80 mt-1">
+                These operations can significantly impact system behavior and user data. Use with extreme caution.
+              </p>
+            </div>
           </div>
         </div>
-        <div className="flex gap-3">
-          <button className="px-4 py-2 text-sm text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg transition-colors">
+        <div className="p-5 flex flex-col sm:flex-row flex-wrap gap-3">
+          <button className="inline-flex items-center justify-center gap-2 h-9 px-4 text-xs font-medium rounded-md bg-background border border-destructive/20 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-sm">
+            <RefreshCcwIcon className="w-3.5 h-3.5" />
             Clear All Caches
           </button>
-          <button className="px-4 py-2 text-sm text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg transition-colors">
+          <button className="inline-flex items-center justify-center gap-2 h-9 px-4 text-xs font-medium rounded-md bg-background border border-destructive/20 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-sm">
+            <DatabaseIcon className="w-3.5 h-3.5" />
             Reset Database
           </button>
-          <button className="px-4 py-2 text-sm text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg transition-colors">
+          <button className="inline-flex items-center justify-center gap-2 h-9 px-4 text-xs font-medium rounded-md bg-background border border-destructive/20 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-sm">
+            <PowerOffIcon className="w-3.5 h-3.5" />
             Revoke All Sessions
+          </button>
+          <button className="inline-flex items-center justify-center gap-2 h-9 px-4 text-xs font-medium rounded-md bg-background border border-destructive/20 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-sm">
+            <Trash2Icon className="w-3.5 h-3.5" />
+            Purge System Logs
           </button>
         </div>
       </div>

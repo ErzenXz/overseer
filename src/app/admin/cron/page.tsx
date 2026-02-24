@@ -567,10 +567,10 @@ export default function CronPage() {
                   </div>
                 )}
               </div>
-            ))}
+            );
+          })}
           </div>
         )}
-      </div>
     </div>
   );
 }

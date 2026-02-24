@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import { PlayIcon, StopCircleIcon, PlusIcon, XIcon, ClockIcon, ActivityIcon, CheckCircle2Icon, XCircleIcon, AlertCircleIcon, Settings2Icon, FileTextIcon, TerminalIcon, CpuIcon, Trash2Icon, DownloadIcon, Edit2Icon, CopyIcon, UploadIcon, FolderPlusIcon, FilePlusIcon, SearchIcon, SortAscIcon, SortDescIcon, FileIcon, ImageIcon, FileCodeIcon, LayoutGridIcon, LayoutListIcon, FolderOpenIcon } from "lucide-react";
 
 type Entry = {
   name: string;
@@ -59,6 +60,8 @@ function isPdf(name: string): boolean {
   return name.toLowerCase().endsWith(".pdf");
 }
 
+import { cn } from "@/lib/utils";
+
 export function FilesClient() {
   const [cwd, setCwd] = useState<string>(".");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -77,6 +80,7 @@ export function FilesClient() {
   const [previewName, setPreviewName] = useState<string>("");
   const [previewContent, setPreviewContent] = useState<string>("");
   const [previewMeta, setPreviewMeta] = useState<Entry | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -395,16 +399,16 @@ export function FilesClient() {
                 <span key={c.path}>
                   <button
                     onClick={() => loadDir(c.path)}
-                    className="hover:text-white transition-colors"
+                    className="hover:text-foreground text-muted-foreground transition-colors font-medium"
                   >
                     {c.label}
                   </button>
-                  {idx < breadcrumbs.length - 1 ? " / " : ""}
+                  {idx < breadcrumbs.length - 1 ? <span className="text-muted-foreground/50 mx-1">/</span> : ""}
                 </span>
               ))}
             </div>
-            <div className="h-4 w-px bg-[var(--color-border)] mx-1 hidden md:block" />
-            <div className="text-[10px] font-[var(--font-mono)] px-2 py-1 rounded-full bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)]">
+            <div className="h-4 w-px bg-border mx-1 hidden md:block" />
+            <div className="text-[10px] font-mono px-2 py-0.5 rounded border border-border/50 bg-muted/30 text-muted-foreground">
               {selectedArray.length > 0
                 ? `${selectedArray.length} selected`
                 : `${entries.length} items`}
@@ -413,231 +417,370 @@ export function FilesClient() {
 
           <div className="flex items-center gap-2">
             <div className="relative">
+              <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search"
-                className="w-[220px] md:w-[320px] px-3 py-2 text-sm rounded-lg bg-[var(--color-surface-overlay)] border border-[var(--color-border)] text-white outline-none focus:border-[var(--color-accent)]"
+                placeholder="Search files..."
+                className="w-[200px] md:w-[260px] h-8 pl-8 pr-3 text-xs rounded-md bg-background border border-input text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
               />
-              <div className="pointer-events-none absolute right-3 top-2.5 text-[10px] text-[var(--color-text-muted)] font-[var(--font-mono)]">
-                /
-              </div>
+              {query && (
+                <button 
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <XIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
+            <div className="h-4 w-px bg-border mx-1 hidden md:block" />
             <button
               onClick={newFolder}
-              className="px-3 py-2 text-xs rounded-lg bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-white transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 text-xs font-medium rounded-md bg-background border border-input text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              title="New folder"
             >
-              New folder
+              <FolderPlusIcon className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline-block">New folder</span>
             </button>
             <button
               onClick={newTextFile}
-              className="px-3 py-2 text-xs rounded-lg bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-white transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 text-xs font-medium rounded-md bg-background border border-input text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              title="New file"
             >
-              New file
+              <FilePlusIcon className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline-block">New file</span>
             </button>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-2 text-xs rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
             >
+              <UploadIcon className="w-3.5 h-3.5" />
               Upload
             </button>
           </div>
         </div>
 
-        <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center gap-2 flex-wrap">
+        {/* Toolbar */}
+        <div className="px-4 py-2 border-b border-border/50 flex items-center gap-2 flex-wrap bg-muted/10">
+          <div className="flex items-center gap-1 bg-muted/30 border border-border/50 rounded-md p-0.5">
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1.5 rounded-sm transition-colors ${viewMode === "list" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              title="List view"
+            >
+              <LayoutListIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 rounded-sm transition-colors ${viewMode === "grid" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              title="Grid view"
+            >
+              <LayoutGridIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-border mx-1" />
+
           <button
             onClick={downloadSelected}
             disabled={!selectedPrimary}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-white transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-transparent hover:bg-accent hover:text-accent-foreground text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            title="Download"
           >
-            Download
+            <DownloadIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline-block">Download</span>
           </button>
           <button
             onClick={renameSelected}
             disabled={!selectedPrimary}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-white transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-transparent hover:bg-accent hover:text-accent-foreground text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            title="Rename"
           >
-            Rename
-          </button>
-          <button
-            onClick={deleteSelected}
-            disabled={selectedArray.length === 0}
-            className="px-3 py-1.5 text-xs rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-200 transition-colors disabled:opacity-50"
-          >
-            Delete
+            <Edit2Icon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline-block">Rename</span>
           </button>
           <button
             onClick={copyPath}
             disabled={!selectedPrimary}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-white transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-transparent hover:bg-accent hover:text-accent-foreground text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            title="Copy path"
           >
-            Copy path
+            <CopyIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline-block">Copy path</span>
+          </button>
+          <button
+            onClick={deleteSelected}
+            disabled={selectedArray.length === 0}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            title="Delete"
+          >
+            <Trash2Icon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline-block">Delete</span>
           </button>
 
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-[10px] font-[var(--font-mono)] text-[var(--color-text-muted)]">
-              Sort:
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Sort
             </span>
-            <button
-              onClick={() => toggleSort("name")}
-              className={`px-2 py-1 text-[10px] rounded-md border font-[var(--font-mono)] ${
-                sortKey === "name"
-                  ? "bg-[var(--color-accent)] text-black border-transparent"
-                  : "bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-white"
-              }`}
-            >
-              name
-            </button>
-            <button
-              onClick={() => toggleSort("modifiedAt")}
-              className={`px-2 py-1 text-[10px] rounded-md border font-[var(--font-mono)] ${
-                sortKey === "modifiedAt"
-                  ? "bg-[var(--color-accent)] text-black border-transparent"
-                  : "bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-white"
-              }`}
-            >
-              modified
-            </button>
-            <button
-              onClick={() => toggleSort("size")}
-              className={`px-2 py-1 text-[10px] rounded-md border font-[var(--font-mono)] ${
-                sortKey === "size"
-                  ? "bg-[var(--color-accent)] text-black border-transparent"
-                  : "bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-white"
-              }`}
-            >
-              size
-            </button>
+            <div className="flex items-center gap-1 bg-muted/30 border border-border/50 rounded-md p-0.5">
+              <button
+                onClick={() => toggleSort("name")}
+                className={`px-2 py-1 text-[10px] font-medium rounded-sm transition-colors ${
+                  sortKey === "name"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Name {sortKey === "name" && (sortDir === "asc" ? "↑" : "↓")}
+              </button>
+              <button
+                onClick={() => toggleSort("modifiedAt")}
+                className={`px-2 py-1 text-[10px] font-medium rounded-sm transition-colors ${
+                  sortKey === "modifiedAt"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Date {sortKey === "modifiedAt" && (sortDir === "asc" ? "↑" : "↓")}
+              </button>
+              <button
+                onClick={() => toggleSort("size")}
+                className={`px-2 py-1 text-[10px] font-medium rounded-sm transition-colors ${
+                  sortKey === "size"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Size {sortKey === "size" && (sortDir === "asc" ? "↑" : "↓")}
+              </button>
+            </div>
           </div>
         </div>
 
         {error ? (
-          <div className="px-4 py-3 text-xs text-red-300 bg-red-500/10 border-b border-red-500/20">
+          <div className="px-4 py-3 text-sm text-destructive bg-destructive/10 border-b border-destructive/20 flex items-center gap-2">
+            <AlertCircleIcon className="w-4 h-4" />
             {error}
           </div>
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px] gap-6">
         <div
-          className="relative bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-xl overflow-hidden"
+          className="relative bg-card border border-border rounded-xl shadow-sm overflow-hidden"
           {...dropOverlayHandlers}
         >
           {dragging ? (
-            <div className="absolute inset-0 z-10 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-              <div className="px-4 py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-overlay)] text-white">
-                Drop files to upload into <span className="font-[var(--font-mono)]">{cwd}</span>
+            <div className="absolute inset-0 z-10 bg-background/80 backdrop-blur-sm flex items-center justify-center border-2 border-dashed border-primary/50 m-2 rounded-lg">
+              <div className="flex flex-col items-center gap-2 text-primary">
+                <UploadIcon className="w-8 h-8 animate-bounce" />
+                <div className="font-medium">Drop files to upload into</div>
+                <div className="font-mono text-xs bg-primary/10 px-2 py-1 rounded-md">{cwd}</div>
               </div>
             </div>
           ) : null}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-[var(--font-mono)] bg-[var(--color-surface-overlay)]">
-                <tr className="border-b border-[var(--color-border)]">
-                  <th className="text-left px-4 py-3">Name</th>
-                  <th className="text-left px-3 py-3 w-[140px]">Type</th>
-                  <th className="text-left px-3 py-3 w-[140px]">Size</th>
-                  <th className="text-left px-4 py-3 w-[220px]">Modified</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
-                {loading ? (
+          {viewMode === "list" ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted/30 border-b border-border/50">
                   <tr>
-                    <td colSpan={4} className="px-4 py-6 text-[var(--color-text-muted)]">
-                      Loading...
-                    </td>
+                    <th className="text-left px-4 py-3 font-medium">Name</th>
+                    <th className="text-left px-3 py-3 w-[120px] font-medium">Type</th>
+                    <th className="text-left px-3 py-3 w-[100px] font-medium">Size</th>
+                    <th className="text-left px-4 py-3 w-[180px] font-medium">Modified</th>
                   </tr>
-                ) : filteredSorted.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-10 text-[var(--color-text-muted)]">
-                      {query.trim() ? "No matches." : "Empty folder."}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSorted.map((e) => {
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-12 text-center text-muted-foreground">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-6 h-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                          <span className="text-sm font-medium">Loading files...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredSorted.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-16 text-center text-muted-foreground">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-2">
+                            {query.trim() ? <SearchIcon className="w-5 h-5 opacity-50" /> : <FolderOpenIcon className="w-5 h-5 opacity-50" />}
+                          </div>
+                          <span className="text-sm font-medium text-foreground">{query.trim() ? "No matches found" : "Folder is empty"}</span>
+                          <span className="text-xs">{query.trim() ? "Try adjusting your search query." : "Upload files or create a new folder."}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSorted.map((e) => {
+                      const isSelected = selected.has(e.path);
+                      return (
+                        <tr
+                          key={e.path}
+                          onClick={(evt) => onRowClick(evt, e)}
+                          className={cn(
+                            "cursor-pointer transition-colors group",
+                            isSelected 
+                              ? "bg-primary/5 hover:bg-primary/10" 
+                              : "hover:bg-muted/50"
+                          )}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                "flex items-center justify-center w-8 h-8 rounded-md transition-colors",
+                                e.type === "directory"
+                                  ? "bg-blue-500/10 text-blue-500 group-hover:bg-blue-500/20"
+                                  : isImage(e.name) ? "bg-purple-500/10 text-purple-500 group-hover:bg-purple-500/20"
+                                  : isTextLike(e.name) ? "bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20"
+                                  : "bg-muted text-muted-foreground group-hover:bg-muted/80"
+                              )}>
+                                {e.type === "directory" ? <FolderOpenIcon className="w-4 h-4 fill-current/20" /> :
+                                 isImage(e.name) ? <ImageIcon className="w-4 h-4" /> :
+                                 isTextLike(e.name) ? <FileCodeIcon className="w-4 h-4" /> :
+                                 <FileIcon className="w-4 h-4" />}
+                              </div>
+                              <span className={cn(
+                                "font-medium truncate max-w-[200px] sm:max-w-[300px]",
+                                isSelected ? "text-primary" : "text-foreground"
+                              )}>{e.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-xs text-muted-foreground capitalize">
+                            {e.type}
+                          </td>
+                          <td className="px-3 py-3 text-xs text-muted-foreground font-mono">
+                            {e.type === "file" ? formatBytes(e.size) : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">
+                            {new Date(e.modifiedAt).toLocaleDateString()} {new Date(e.modifiedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-4 min-h-[400px]">
+              {loading ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground py-20">
+                  <div className="w-6 h-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                  <span className="text-sm font-medium">Loading files...</span>
+                </div>
+              ) : filteredSorted.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground py-20">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-2">
+                    {query.trim() ? <SearchIcon className="w-5 h-5 opacity-50" /> : <FolderOpenIcon className="w-5 h-5 opacity-50" />}
+                  </div>
+                  <span className="text-sm font-medium text-foreground">{query.trim() ? "No matches found" : "Folder is empty"}</span>
+                  <span className="text-xs">{query.trim() ? "Try adjusting your search query." : "Upload files or create a new folder."}</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {filteredSorted.map((e) => {
                     const isSelected = selected.has(e.path);
                     return (
-                      <tr
+                      <div
                         key={e.path}
                         onClick={(evt) => onRowClick(evt, e)}
-                        className={`cursor-pointer transition-colors ${
-                          isSelected ? "bg-[var(--color-surface-overlay)]" : "hover:bg-[var(--color-surface-overlay)]"
-                        }`}
+                        className={cn(
+                          "cursor-pointer group flex flex-col items-center gap-3 p-3 rounded-xl border transition-all duration-200",
+                          isSelected 
+                            ? "bg-primary/5 border-primary/30 shadow-sm ring-1 ring-primary/20" 
+                            : "bg-card border-border hover:border-primary/30 hover:shadow-sm"
+                        )}
                       >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`text-[10px] font-[var(--font-mono)] px-2 py-1 rounded-full border ${
-                                e.type === "directory"
-                                  ? "bg-white/5 border-white/10 text-white"
-                                  : "bg-[var(--color-surface-overlay)] border-[var(--color-border)] text-[var(--color-text-muted)]"
-                              }`}
-                            >
-                              {e.type === "directory" ? "folder" : "file"}
-                            </span>
-                            <div className="text-white">{e.name}</div>
+                        <div className={cn(
+                          "flex items-center justify-center w-14 h-14 rounded-2xl transition-colors",
+                          e.type === "directory"
+                            ? "bg-blue-500/10 text-blue-500 group-hover:bg-blue-500/20"
+                            : isImage(e.name) ? "bg-purple-500/10 text-purple-500 group-hover:bg-purple-500/20"
+                            : isTextLike(e.name) ? "bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20"
+                            : "bg-muted text-muted-foreground group-hover:bg-muted/80"
+                        )}>
+                          {e.type === "directory" ? <FolderOpenIcon className="w-7 h-7 fill-current/20" /> :
+                           isImage(e.name) ? <ImageIcon className="w-7 h-7" /> :
+                           isTextLike(e.name) ? <FileCodeIcon className="w-7 h-7" /> :
+                           <FileIcon className="w-7 h-7" />}
+                        </div>
+                        <div className="w-full text-center space-y-0.5">
+                          <div className={cn(
+                            "text-sm font-medium truncate w-full px-1",
+                            isSelected ? "text-primary" : "text-foreground"
+                          )} title={e.name}>
+                            {e.name}
                           </div>
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-secondary)]">
-                          {e.type}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-secondary)]">
-                          {e.type === "file" ? formatBytes(e.size) : ""}
-                        </td>
-                        <td className="px-4 py-3 text-[var(--color-text-secondary)]">
-                          {new Date(e.modifiedAt).toLocaleString()}
-                        </td>
-                      </tr>
+                          {e.type === "file" && (
+                            <div className="text-[10px] text-muted-foreground font-mono">
+                              {formatBytes(e.size)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-[var(--color-border)]">
-            <div className="text-xs text-[var(--color-text-muted)] font-[var(--font-mono)]">
+        {/* Preview Panel */}
+        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden flex flex-col h-full lg:sticky lg:top-8 max-h-[calc(100vh-8rem)]">
+          <div className="px-5 py-4 border-b border-border/50 bg-muted/20">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
               Preview
-            </div>
-            <div className="text-sm text-white mt-1">
-              {previewName || (selectedPrimary ? selectedPrimary.split("/").pop() : "Select a file")}
+            </h2>
+            <div className="text-xs text-muted-foreground mt-1 truncate" title={previewName || (selectedPrimary ? selectedPrimary.split("/").pop() : "Select a file")}>
+              {previewName || (selectedPrimary ? selectedPrimary.split("/").pop() : "Select a file to view details")}
             </div>
           </div>
 
-          <div className="p-4">
+          <div className="p-5 flex-1 overflow-y-auto custom-scrollbar">
             {previewPath && previewMeta?.type === "file" ? (
-              <div className="space-y-3">
-                <div className="text-[11px] text-[var(--color-text-muted)] font-[var(--font-mono)]">
+              <div className="space-y-6">
+                <div className="text-[10px] text-muted-foreground font-mono bg-muted/30 p-2 rounded-md border border-border/50 break-all">
                   {previewPath}
                 </div>
 
                 {isImage(previewName) ? (
-                  <div className="rounded-lg overflow-hidden border border-[var(--color-border)] bg-black/30">
+                  <div className="rounded-xl overflow-hidden border border-border bg-black/10 flex items-center justify-center min-h-[200px] p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewDownloadUrl} alt={previewName} className="w-full h-auto" />
+                    <img src={previewDownloadUrl} alt={previewName} className="max-w-full max-h-[300px] object-contain rounded-lg" />
                   </div>
                 ) : isPdf(previewName) ? (
-                  <div className="rounded-lg overflow-hidden border border-[var(--color-border)] bg-black/30">
+                  <div className="rounded-xl overflow-hidden border border-border bg-muted/10">
                     <iframe
                       src={previewDownloadUrl}
-                      className="w-full h-[420px]"
+                      className="w-full h-[400px]"
                       title={previewName}
                     />
                   </div>
                 ) : isTextLike(previewName) ? (
-                  <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-overlay)] text-white font-[var(--font-mono)] max-h-[420px] overflow-auto">
-                    {previewContent || (loading ? "Loading..." : "")}
-                  </pre>
+                  <div className="rounded-xl border border-border overflow-hidden bg-muted/10">
+                    <div className="px-3 py-1.5 bg-muted/30 border-b border-border flex justify-between items-center text-[10px] font-mono text-muted-foreground">
+                      <span>Source</span>
+                      {loading && <span className="animate-pulse">Loading...</span>}
+                    </div>
+                    <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed p-4 font-mono max-h-[400px] overflow-auto custom-scrollbar text-foreground">
+                      {previewContent}
+                    </pre>
+                  </div>
                 ) : (
-                  <div className="text-sm text-[var(--color-text-secondary)]">
-                    No preview available for this file type.
+                  <div className="rounded-xl border border-border border-dashed p-8 flex flex-col items-center justify-center text-center gap-3 bg-muted/10">
+                    <FileIcon className="w-10 h-10 text-muted-foreground/50" />
+                    <div className="text-sm font-medium text-foreground">No preview available</div>
+                    <div className="text-xs text-muted-foreground max-w-[200px]">
+                      This file format cannot be previewed in the browser.
+                    </div>
                   </div>
                 )}
 
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => {
                       if (!previewPath) return;
@@ -649,46 +792,58 @@ export function FilesClient() {
                         "noopener,noreferrer",
                       );
                     }}
-                    className="px-3 py-2 text-xs rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black transition-colors"
+                    className="inline-flex items-center justify-center gap-2 h-9 px-4 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm w-full"
                   >
-                    Download
+                    <DownloadIcon className="w-3.5 h-3.5" />
+                    Download File
                   </button>
                   <button
                     onClick={() => setPreviewPath(null)}
-                    className="px-3 py-2 text-xs rounded-lg bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] text-white transition-colors"
+                    className="inline-flex items-center justify-center gap-2 h-9 px-4 text-xs font-medium rounded-md bg-background border border-input text-foreground hover:bg-accent hover:text-accent-foreground transition-colors w-full"
                   >
-                    Clear
+                    <XIcon className="w-3.5 h-3.5" />
+                    Close Preview
                   </button>
                 </div>
 
-                <div className="pt-3 border-t border-[var(--color-border)]">
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-[var(--font-mono)]">
-                        Type
-                      </div>
-                      <div className="text-white mt-1">{previewMeta.type}</div>
+                <div className="pt-5 border-t border-border/50">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">File Information</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Type</div>
+                      <div className="font-medium text-foreground capitalize">{previewMeta.type}</div>
                     </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-[var(--font-mono)]">
-                        Size
-                      </div>
-                      <div className="text-white mt-1">{formatBytes(previewMeta.size)}</div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Size</div>
+                      <div className="font-medium text-foreground font-mono">{formatBytes(previewMeta.size)}</div>
                     </div>
-                    <div className="col-span-2">
-                      <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-[var(--font-mono)]">
-                        Modified
-                      </div>
-                      <div className="text-white mt-1">
-                        {new Date(previewMeta.modifiedAt).toLocaleString()}
+                    <div className="col-span-2 space-y-1">
+                      <div className="text-xs text-muted-foreground">Last Modified</div>
+                      <div className="font-medium text-foreground">
+                        {new Date(previewMeta.modifiedAt).toLocaleString(undefined, {
+                          weekday: 'short',
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-[var(--color-text-muted)]">
-                Select a file to preview it. You can also drag and drop files anywhere in the list to upload.
+              <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+                  <ImageIcon className="w-8 h-8 text-muted-foreground/50" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-medium text-foreground">No File Selected</h3>
+                  <p className="text-xs text-muted-foreground max-w-[200px] mx-auto">
+                    Select a file from the list to preview its contents and view details.
+                  </p>
+                </div>
               </div>
             )}
           </div>

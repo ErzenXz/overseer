@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Skill } from "@/agent/skills/registry";
+import { SearchIcon, PlayCircleIcon, PauseCircleIcon, Edit2Icon, Trash2Icon, BoxIcon, GithubIcon, FolderIcon, ShoppingBagIcon, ActivityIcon, ClockIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SkillsListProps {
   skills: Skill[];
@@ -79,133 +81,167 @@ export function SkillsList({ skills }: SkillsListProps) {
   };
 
   return (
-    <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg">
+    <div className="w-full">
       {/* Search and Filter */}
-      <div className="p-4 border-b border-[var(--color-border)] flex flex-col md:flex-row gap-4">
-        <div className="flex-1">
+      <div className="p-4 sm:p-5 border-b border-border/50 bg-muted/10 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+        <div className="relative w-full md:w-80">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search skills..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-4 py-2 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white placeholder-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-accent)]"
+            className="w-full h-9 pl-9 pr-4 bg-background border border-input rounded-md text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors placeholder:text-muted-foreground"
           />
         </div>
-        <div className="flex gap-2">
-          {["all", "builtin", "github", "local", "marketplace"].map((source) => (
+        <div className="flex gap-2 w-full md:w-auto overflow-x-auto custom-scrollbar pb-2 md:pb-0">
+          {(["all", "builtin", "github", "local", "marketplace"] as const).map((source) => (
             <button
               key={source}
               onClick={() => setFilter(source)}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-full transition-colors whitespace-nowrap",
                 filter === source
-                  ? "bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
-                  : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-border)]"
-              }`}
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-background border border-input text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              )}
             >
-              {source.charAt(0).toUpperCase() + source.slice(1)}
+              {source === "all" ? "All Sources" : source.charAt(0).toUpperCase() + source.slice(1)}
             </button>
           ))}
         </div>
       </div>
 
       {/* Skills Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4 sm:p-5 bg-muted/5">
         {filteredSkills.map((skill) => {
           const triggers = parseTriggers(skill.triggers);
 
           return (
             <div
               key={skill.id}
-              className={`border rounded-lg p-6 ${
-                skill.is_active ? "border-[var(--color-border)] bg-[var(--color-surface-overlay)]" : "border-[var(--color-border)] bg-[var(--color-surface)] opacity-60"
-              }`}
+              className={cn(
+                "group relative flex flex-col rounded-xl border transition-all duration-200",
+                skill.is_active 
+                  ? "bg-card border-border hover:border-primary/30 hover:shadow-md" 
+                  : "bg-muted/30 border-border/50 opacity-80 hover:opacity-100"
+              )}
             >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      skill.is_active
-                        ? "bg-[var(--color-accent)]"
-                        : "bg-[var(--color-surface-overlay)]"
-                    }`}
-                  >
-                    <svg className={`w-5 h-5 ${skill.is_active ? "text-black" : "text-white"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white">{skill.name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className={`text-xs px-2 py-0.5 rounded ${sourceColors[skill.source]}`}>
-                        {skill.source}
-                      </span>
-                      <span className="text-xs text-[var(--color-text-muted)]">v{skill.version}</span>
-                      {skill.author && (
-                        <span className="text-xs text-[var(--color-text-muted)]">by {skill.author}</span>
+              <div className="p-5 flex-1">
+                <div className="flex items-start justify-between mb-3 gap-4">
+                  <div className="flex items-start gap-3.5 min-w-0">
+                    <div
+                      className={cn(
+                        "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border shadow-sm transition-colors",
+                        skill.is_active
+                          ? "bg-primary/10 text-primary border-primary/20"
+                          : "bg-muted text-muted-foreground border-border/50"
                       )}
+                    >
+                      {skill.source === "builtin" ? <BoxIcon className="w-6 h-6" /> :
+                       skill.source === "github" ? <GithubIcon className="w-6 h-6" /> :
+                       skill.source === "local" ? <FolderIcon className="w-6 h-6" /> :
+                       skill.source === "marketplace" ? <ShoppingBagIcon className="w-6 h-6" /> :
+                       <ActivityIcon className="w-6 h-6" />}
+                    </div>
+                    <div className="min-w-0 pt-0.5">
+                      <h3 className={cn(
+                        "font-semibold text-base truncate",
+                        skill.is_active ? "text-foreground" : "text-muted-foreground"
+                      )} title={skill.name}>{skill.name}</h3>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        <span className={cn(
+                          "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border",
+                          skill.source === "builtin" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
+                          skill.source === "github" ? "bg-purple-500/10 text-purple-500 border-purple-500/20" :
+                          skill.source === "local" ? "bg-green-500/10 text-green-500 border-green-500/20" :
+                          "bg-orange-500/10 text-orange-500 border-orange-500/20"
+                        )}>
+                          {skill.source}
+                        </span>
+                        <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.5 bg-muted/50 border border-border/50 rounded">
+                          v{skill.version}
+                        </span>
+                      </div>
                     </div>
                   </div>
+                  <div className="shrink-0">
+                    <button
+                      onClick={() => handleToggleActive(skill.id, !!skill.is_active)}
+                      className={cn(
+                        "p-1.5 rounded-md transition-colors",
+                        skill.is_active
+                          ? "text-success hover:bg-success/10 hover:text-success"
+                          : "text-muted-foreground hover:bg-warning/10 hover:text-warning"
+                      )}
+                      title={skill.is_active ? "Disable skill" : "Enable skill"}
+                    >
+                      {skill.is_active ? <PauseCircleIcon className="w-5 h-5" /> : <PlayCircleIcon className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleToggleActive(skill.id, !!skill.is_active)}
-                    className={`p-1.5 rounded-lg transition-colors ${
-                      skill.is_active
-                        ? "text-green-400 hover:bg-green-500/10"
-                        : "text-[var(--color-text-muted)] hover:bg-[var(--color-border)]"
-                    }`}
-                    title={skill.is_active ? "Active - Click to disable" : "Disabled - Click to enable"}
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </button>
+
+                <div className="mb-4 text-sm text-muted-foreground line-clamp-2 min-h-[40px]">
+                  {skill.description ? skill.description : <span className="italic opacity-50">No description provided</span>}
                 </div>
-              </div>
 
-              {skill.description && (
-                <p className="text-sm text-[var(--color-text-secondary)] mb-4">{skill.description}</p>
-              )}
-
-              {triggers.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-xs text-[var(--color-text-muted)] mb-2">Triggers:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {triggers.slice(0, 5).map((trigger, i) => (
-                      <span key={i} className="text-xs px-2 py-1 bg-[var(--color-surface-overlay)] text-[var(--color-text-primary)] rounded">
+                {triggers.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {triggers.slice(0, 3).map((trigger, i) => (
+                      <span key={i} className="text-[10px] font-medium px-2 py-0.5 bg-accent/10 text-accent-foreground border border-accent/20 rounded-full truncate max-w-[120px]" title={trigger}>
                         {trigger}
                       </span>
                     ))}
-                    {triggers.length > 5 && (
-                      <span className="text-xs text-[var(--color-text-muted)]">+{triggers.length - 5} more</span>
+                    {triggers.length > 3 && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 text-muted-foreground bg-muted/30 border border-border/50 rounded-full">
+                        +{triggers.length - 3}
+                      </span>
                     )}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="text-[10px] text-muted-foreground/50 italic">No triggers defined</div>
+                )}
+                
+                {skill.author && (
+                  <div className="mt-3 text-[11px] text-muted-foreground">
+                    Author: <span className="font-medium text-foreground">{skill.author}</span>
+                  </div>
+                )}
+              </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-[var(--color-border)]">
-                <div className="text-xs text-[var(--color-text-muted)]">
-                  {skill.use_count > 0 && (
-                    <span>Used {skill.use_count} times</span>
-                  )}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-border/50 bg-muted/10 rounded-b-xl">
+                <div className="flex items-center gap-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span className="flex items-center gap-1" title="Usage count">
+                    <ActivityIcon className="w-3.5 h-3.5" />
+                    {skill.use_count}
+                  </span>
                   {skill.last_used_at && (
-                    <span className="ml-2">Last: {new Date(skill.last_used_at).toLocaleDateString()}</span>
+                    <span className="flex items-center gap-1" title="Last used">
+                      <ClockIcon className="w-3.5 h-3.5" />
+                      {new Date(skill.last_used_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
                   <a
-                    href={`/skills/${skill.id}/edit`}
-                    className="px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-white bg-[var(--color-surface-overlay)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
+                    href={`/admin/skills/${skill.id}/edit`}
+                    className="p-1.5 text-muted-foreground hover:text-foreground bg-background hover:bg-accent border border-input hover:border-accent rounded-md transition-colors shadow-sm"
+                    title="Configure"
                   >
-                    Configure
+                    <Edit2Icon className="w-3.5 h-3.5" />
                   </a>
                   {!skill.is_builtin && (
                     <button
                       onClick={() => handleDelete(skill.id, !!skill.is_builtin)}
                       disabled={actioningId === skill.id}
-                      className="px-3 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-1.5 text-muted-foreground hover:text-destructive bg-background hover:bg-destructive/10 border border-input hover:border-destructive/20 rounded-md transition-colors shadow-sm disabled:opacity-50"
+                      title="Delete"
                     >
-                      {actioningId === skill.id ? "..." : "Delete"}
+                      {actioningId === skill.id ? (
+                        <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Trash2Icon className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   )}
                 </div>
@@ -216,8 +252,14 @@ export function SkillsList({ skills }: SkillsListProps) {
       </div>
 
       {filteredSkills.length === 0 && (
-        <div className="p-8 text-center text-[var(--color-text-muted)]">
-          No skills match the current filter
+        <div className="p-12 text-center flex flex-col items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
+            <SearchIcon className="w-6 h-6 text-muted-foreground/50" />
+          </div>
+          <h3 className="text-sm font-medium text-foreground mb-1">No skills found</h3>
+          <p className="text-xs text-muted-foreground">
+            No skills match your search or filter criteria.
+          </p>
         </div>
       )}
     </div>

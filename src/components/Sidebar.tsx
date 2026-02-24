@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { 
+  MessageSquareIcon, LayoutDashboardIcon, BarChart2Icon, MessageCircleIcon, 
+  FileTextIcon, ActivityIcon, CheckSquareIcon, FolderOpenIcon, ClockIcon, 
+  NetworkIcon, ServerIcon, BoxesIcon, CloudIcon, LayoutTemplateIcon, 
+  SparklesIcon, WrenchIcon, UsersIcon, SettingsIcon, LogOutIcon, 
+  CommandIcon
+} from "lucide-react";
 
 interface User {
   username: string;
@@ -36,11 +43,7 @@ const navigationSections: NavSection[] = [
         href: "/",
         badge: "AI",
         requires: ["agent:execute"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-          </svg>
-        ),
+        icon: <MessageSquareIcon className="w-4 h-4" />,
       },
     ],
   },
@@ -51,44 +54,25 @@ const navigationSections: NavSection[] = [
         name: "Dashboard",
         href: "/admin/dashboard",
         requires: ["agent:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zm-10 9a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zm10-2a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5z" />
-          </svg>
-        ),
+        icon: <LayoutDashboardIcon className="w-4 h-4" />,
       },
       {
         name: "Analytics",
         href: "/admin/analytics",
         requires: ["agent:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3v18h18" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 14l3-3 3 2 4-5" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 8h.01" />
-          </svg>
-        ),
+        icon: <BarChart2Icon className="w-4 h-4" />,
       },
       {
         name: "Conversations",
         href: "/admin/conversations",
         requires: ["conversations:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a2 2 0 01-2-2v-1" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 4H5a2 2 0 00-2 2v6a2 2 0 002 2h2v3l3-3h5a2 2 0 002-2V6a2 2 0 00-2-2z" />
-          </svg>
-        ),
+        icon: <MessageCircleIcon className="w-4 h-4" />,
       },
       {
         name: "Logs",
         href: "/admin/audit",
         requires: ["audit:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h10M4 18h7" />
-          </svg>
-        ),
+        icon: <FileTextIcon className="w-4 h-4" />,
       },
     ],
   },
@@ -99,80 +83,42 @@ const navigationSections: NavSection[] = [
         name: "Sessions",
         href: "/admin/sessions",
         requires: ["agent:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        ),
+        icon: <ActivityIcon className="w-4 h-4" />,
       },
       {
         name: "Tasks",
         href: "/admin/tasks",
         requires: ["agent:view"],
-        icon: (
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9 5h10M9 9h10M9 13h10M9 17h10M5 6h.01M5 10h.01M5 14h.01M5 18h.01"
-            />
-          </svg>
-        ),
+        icon: <CheckSquareIcon className="w-4 h-4" />,
       },
       {
         name: "Files",
         href: "/admin/files",
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-          </svg>
-        ),
+        icon: <FolderOpenIcon className="w-4 h-4" />,
       },
       {
         name: "Cron Jobs",
         href: "/admin/cron",
         requires: ["agent:configure"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        ),
+        icon: <ClockIcon className="w-4 h-4" />,
       },
       {
         name: "Sub-agents",
         href: "/admin/subagents",
         requires: ["subagent:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        ),
+        icon: <NetworkIcon className="w-4 h-4" />,
       },
       {
         name: "MCP Servers",
         href: "/admin/mcp",
         requires: ["mcp:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-          </svg>
-        ),
+        icon: <ServerIcon className="w-4 h-4" />,
       },
       {
         name: "Skills",
         href: "/admin/skills",
         requires: ["skills:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-          </svg>
-        ),
+        icon: <BoxesIcon className="w-4 h-4" />,
       },
     ],
   },
@@ -183,42 +129,25 @@ const navigationSections: NavSection[] = [
         name: "Providers",
         href: "/admin/providers",
         requires: ["providers:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-        ),
+        icon: <CloudIcon className="w-4 h-4" />,
       },
       {
         name: "Interfaces",
         href: "/admin/interfaces",
         requires: ["interfaces:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
-        ),
+        icon: <LayoutTemplateIcon className="w-4 h-4" />,
       },
       {
         name: "Soul",
         href: "/admin/soul",
         requires: ["agent:configure"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-        ),
+        icon: <SparklesIcon className="w-4 h-4" />,
       },
       {
         name: "Tools",
         href: "/admin/tools",
         requires: ["agent:configure"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        ),
+        icon: <WrenchIcon className="w-4 h-4" />,
       },
     ],
   },
@@ -229,21 +158,13 @@ const navigationSections: NavSection[] = [
         name: "Users",
         href: "/admin/users",
         requires: ["users:view"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-        ),
+        icon: <UsersIcon className="w-4 h-4" />,
       },
       {
         name: "Settings",
         href: "/admin/settings",
         requires: ["system:settings:read"],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-          </svg>
-        ),
+        icon: <SettingsIcon className="w-4 h-4" />,
       },
     ],
   },
@@ -277,10 +198,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
       <div className="px-5 py-5 border-b border-border/50">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm">
-            <svg className="w-4 h-4 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
+            <CommandIcon className="w-4 h-4 text-primary-foreground" />
           </div>
           <div>
             <h1 className="text-[15px] font-semibold tracking-tight text-foreground">Overseer</h1>
@@ -347,9 +265,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
           onClick={handleLogout}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
+          <LogOutIcon className="w-4 h-4" />
           Sign out
         </button>
       </div>
