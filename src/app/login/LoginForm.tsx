@@ -30,7 +30,11 @@ export function LoginForm() {
         return;
       }
 
-      const redirect = new URLSearchParams(window.location.search).get("redirect") || "/dashboard";
+      const redirectParam = new URLSearchParams(window.location.search).get("redirect");
+      const redirect =
+        redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
+          ? redirectParam
+          : "/admin/dashboard";
       router.push(redirect);
       router.refresh();
     } catch {

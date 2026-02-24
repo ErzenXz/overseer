@@ -11,7 +11,7 @@ export default function OnboardingPage() {
           <h1 className="text-xl font-semibold text-white font-[var(--font-mono)]">Onboarding already completed</h1>
           <p className="text-[var(--color-text-secondary)] mt-2">You already have providers configured.</p>
           <a
-            href="/dashboard"
+            href="/admin/dashboard"
             className="inline-flex mt-6 px-5 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-light)] text-black font-medium rounded-lg transition-colors"
           >
             Go to Dashboard

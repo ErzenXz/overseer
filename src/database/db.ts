@@ -602,6 +602,76 @@ function cleanupLegacyOldTableArtifacts() {
   }
 }
 
+function ensurePermissionsSchema() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS role_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT NOT NULL,
+        permission TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(role, permission)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_role_permissions_role
+      ON role_permissions(role);
+
+      CREATE TABLE IF NOT EXISTS user_custom_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        permission TEXT NOT NULL,
+        granted INTEGER NOT NULL DEFAULT 1,
+        granted_by INTEGER,
+        reason TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE SET NULL,
+        UNIQUE(user_id, permission)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_user_custom_permissions_user
+      ON user_custom_permissions(user_id);
+
+      CREATE TABLE IF NOT EXISTS security_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        username TEXT,
+        action TEXT NOT NULL,
+        resource TEXT,
+        permission TEXT,
+        result TEXT NOT NULL CHECK (result IN ('allowed', 'denied')),
+        reason TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        metadata TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_security_audit_log_user
+      ON security_audit_log(user_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_security_audit_log_action
+      ON security_audit_log(action, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_security_audit_log_result
+      ON security_audit_log(result, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_security_audit_log_created
+      ON security_audit_log(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (err) {
+    console.warn("Warning: failed to ensure permissions schema:", err);
+  }
+}
+
 // Initialize schema
 function initializeSchema() {
   if (schemaInitialized) {
@@ -615,6 +685,9 @@ function initializeSchema() {
     console.log("Database schema initialized");
     console.log(`Database location: ${DB_PATH}`);
   }
+
+  // Keep RBAC tables available for older databases that predate permission migration.
+  ensurePermissionsSchema();
 
   // Product default: "free mode" (no confirmation prompts). Keep the catastrophic deny-list.
   // Existing installs that want confirmations can re-enable it in Settings.
