@@ -3,6 +3,7 @@ import { readFileSync, existsSync, mkdirSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
+import bcrypt from "bcrypt";
 import {
   isWindows,
   normalizePath,
@@ -672,6 +673,32 @@ function ensurePermissionsSchema() {
   }
 }
 
+function ensureDefaultAdminUser() {
+  try {
+    const userCount = db
+      .prepare("SELECT COUNT(*) as count FROM users")
+      .get() as { count: number } | undefined;
+
+    if ((userCount?.count || 0) > 0) {
+      return;
+    }
+
+    const username =
+      process.env.DEFAULT_ADMIN_USERNAME || process.env.ADMIN_USERNAME || "admin";
+    const password =
+      process.env.DEFAULT_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || "changeme123";
+
+    const passwordHash = bcrypt.hashSync(password, 12);
+    db.prepare(
+      "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')"
+    ).run(username, passwordHash);
+
+    console.log(`[auth] Created default admin user '${username}' during startup bootstrap`);
+  } catch (err) {
+    console.warn("Warning: failed to bootstrap default admin user:", err);
+  }
+}
+
 // Initialize schema
 function initializeSchema() {
   if (schemaInitialized) {
@@ -688,6 +715,8 @@ function initializeSchema() {
 
   // Keep RBAC tables available for older databases that predate permission migration.
   ensurePermissionsSchema();
+  // Ensure at least one admin exists, especially for fresh deploys without `pnpm db:init`.
+  ensureDefaultAdminUser();
 
   // Product default: "free mode" (no confirmation prompts). Keep the catastrophic deny-list.
   // Existing installs that want confirmations can re-enable it in Settings.

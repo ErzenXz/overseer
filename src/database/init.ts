@@ -22,14 +22,19 @@ async function initDatabase() {
   console.log("");
 
   // Check if admin user exists
+  const configuredUsername =
+    process.env.DEFAULT_ADMIN_USERNAME || process.env.ADMIN_USERNAME || "admin";
+  const configuredPassword =
+    process.env.DEFAULT_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || "changeme123";
+
   const adminUser = db
     .prepare("SELECT * FROM users WHERE username = ?")
-    .get(process.env.DEFAULT_ADMIN_USERNAME || "admin") as User | undefined;
+    .get(configuredUsername) as User | undefined;
 
   if (!adminUser) {
     // Create default admin user
-    const username = process.env.DEFAULT_ADMIN_USERNAME || "admin";
-    const password = process.env.DEFAULT_ADMIN_PASSWORD || "changeme123";
+    const username = configuredUsername;
+    const password = configuredPassword;
     const passwordHash = await bcrypt.hash(password, 12);
 
     db.prepare(
