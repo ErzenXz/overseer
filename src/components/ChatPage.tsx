@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AssistantRuntimeProvider,
   type ToolCallMessagePartProps,
+  INTERNAL,
   useAssistantRuntime,
   useAuiState,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
@@ -76,7 +77,7 @@ const streamdownPlugins = {
   cjk,
 };
 
-const StreamdownText = () => {
+const StreamdownText = INTERNAL.withSmoothContextProvider(() => {
   return (
     <StreamdownTextPrimitive
       plugins={streamdownPlugins}
@@ -87,7 +88,7 @@ const StreamdownText = () => {
       linkSafety={{ enabled: false }}
     />
   );
-};
+});
 
 function ToolFallback({ toolName, args, result, status }: ToolCallMessagePartProps) {
   const [expanded, setExpanded] = useState(false);
