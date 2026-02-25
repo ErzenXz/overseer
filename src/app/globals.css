@@ -2,8 +2,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@assistant-ui/react-ui/styles/index.css";
+@import "@assistant-ui/react-ui/styles/markdown.css";
+@import "@assistant-ui/react-ui/styles/themes/shadcn-extras.css";
 
 @source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@assistant-ui/react-ui/dist/**/*.js";
+@source "../node_modules/@assistant-ui/react-ui/dist/**/*.mjs";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -49,6 +54,30 @@
 
 .card-hover:hover {
   border-color: var(--ring);
+}
+
+/* ── assistant-ui → shadcn theme bridge ── */
+:root {
+  --aui-background: var(--background);
+  --aui-foreground: var(--foreground);
+  --aui-card: var(--card);
+  --aui-card-foreground: var(--card-foreground);
+  --aui-popover: var(--popover);
+  --aui-popover-foreground: var(--popover-foreground);
+  --aui-primary: var(--primary);
+  --aui-primary-foreground: var(--primary-foreground);
+  --aui-secondary: var(--secondary);
+  --aui-secondary-foreground: var(--secondary-foreground);
+  --aui-muted: var(--muted);
+  --aui-muted-foreground: var(--muted-foreground);
+  --aui-accent: var(--accent);
+  --aui-accent-foreground: var(--accent-foreground);
+  --aui-destructive: var(--destructive);
+  --aui-border: var(--border);
+  --aui-input: var(--input);
+  --aui-ring: var(--ring);
+  --aui-radius: var(--radius);
+  --aui-thread-max-width: 48rem;
 }
 
 @theme inline {

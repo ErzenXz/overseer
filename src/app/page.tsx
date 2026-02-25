@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { providersModel } from "@/database";
-import { ChatContainer } from "@/components/Chat";
+import ChatPage from "@/components/ChatPage";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
@@ -15,9 +15,5 @@ export default async function HomePage() {
     redirect("/admin/onboarding");
   }
 
-  return (
-    <div className="h-screen flex flex-col bg-background">
-      <ChatContainer />
-    </div>
-  );
+  return <ChatPage />;
 }
