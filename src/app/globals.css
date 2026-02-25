@@ -7,6 +7,8 @@
 @import "@assistant-ui/react-ui/styles/themes/shadcn-extras.css";
 
 @source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@assistant-ui/react-streamdown/dist/**/*.js";
+@source "../node_modules/@assistant-ui/react-streamdown/dist/**/*.mjs";
 @source "../node_modules/@assistant-ui/react-ui/dist/**/*.js";
 @source "../node_modules/@assistant-ui/react-ui/dist/**/*.mjs";
 

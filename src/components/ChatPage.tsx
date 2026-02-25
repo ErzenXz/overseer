@@ -1,11 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AssistantRuntimeProvider, type ToolCallMessagePartProps } from "@assistant-ui/react";
-import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
-import { DefaultChatTransport } from "ai";
-import { Thread } from "@assistant-ui/react-ui";
-import { makeMarkdownText } from "@assistant-ui/react-ui";
+import {
+  AssistantRuntimeProvider,
+  type ToolCallMessagePartProps,
+  MessagePrimitive,
+  ChainOfThoughtPrimitive,
+  AuiIf,
+  useAssistantRuntime,
+  useAuiState,
+  unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
+  type unstable_RemoteThreadListAdapter as RemoteThreadListAdapter,
+} from "@assistant-ui/react";
+import {
+  useChatRuntime,
+  AssistantChatTransport,
+} from "@assistant-ui/react-ai-sdk";
+import {
+  Thread,
+  AssistantMessage,
+  AssistantActionBar,
+  BranchPicker,
+} from "@assistant-ui/react-ui";
+import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
+import { createAssistantStream } from "assistant-stream";
+import { code } from "@streamdown/code";
+import { math } from "@streamdown/math";
+import { mermaid } from "@streamdown/mermaid";
+import { cjk } from "@streamdown/cjk";
 import {
   LayoutDashboardIcon,
   MoonIcon,
@@ -23,6 +45,8 @@ import {
   Loader2Icon,
   AlertCircleIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
+  SlidersHorizontalIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +54,6 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { useTheme } from "@/components/ThemeProvider";
 import { cn } from "@/lib/utils";
 
-/* ── Types ── */
 interface ProviderOption {
   id: number;
   displayName: string;
@@ -39,19 +62,39 @@ interface ProviderOption {
 }
 
 interface ConversationItem {
-  id: number;
+  id: string;
   title: string;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
 }
 
-/* ── Markdown renderer with code block styling ── */
-const MarkdownText = makeMarkdownText({
-  className: "aui-md-root",
-});
+type SteeringConfig = {
+  tone: "concise" | "balanced" | "deep";
+  responseStyle: "direct" | "explanatory" | "mentor";
+  includeReasoningSummary: boolean;
+};
 
-/* ── Tool call fallback component ── */
+const streamdownPlugins = {
+  code,
+  math,
+  mermaid,
+  cjk,
+};
+
+const StreamdownText = () => {
+  return (
+    <StreamdownTextPrimitive
+      plugins={streamdownPlugins}
+      shikiTheme={["github-light", "github-dark"]}
+      controls
+      caret="block"
+      containerClassName="aui-md-root"
+      linkSafety={{ enabled: false }}
+    />
+  );
+};
+
 function ToolFallback({ toolName, args, result, status }: ToolCallMessagePartProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -78,15 +121,12 @@ function ToolFallback({ toolName, args, result, status }: ToolCallMessagePartPro
 
   return (
     <div className="my-2 rounded-lg border border-border bg-muted/30 overflow-hidden">
-      {/* Header */}
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
       >
         <WrenchIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        <span className="text-xs font-medium text-foreground truncate">
-          {toolName}
-        </span>
+        <span className="text-xs font-medium text-foreground truncate">{toolName}</span>
         <span className="flex items-center gap-1 ml-auto text-[10px] text-muted-foreground">
           {statusIcon}
           <span>{statusLabel}</span>
@@ -94,15 +134,14 @@ function ToolFallback({ toolName, args, result, status }: ToolCallMessagePartPro
         <ChevronDownIcon
           className={cn(
             "h-3.5 w-3.5 text-muted-foreground transition-transform",
-            expanded && "rotate-180"
+            expanded && "rotate-180",
           )}
         />
       </button>
 
-      {/* Details */}
       {expanded && (
         <div className="border-t border-border px-3 py-2 space-y-2">
-          {args && (
+          {args !== undefined && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                 Arguments
@@ -118,9 +157,7 @@ function ToolFallback({ toolName, args, result, status }: ToolCallMessagePartPro
                 Result
               </p>
               <pre className="text-[11px] font-mono text-foreground/80 bg-muted rounded-md p-2 overflow-x-auto max-h-40">
-                {typeof result === "string"
-                  ? result
-                  : JSON.stringify(result, null, 2)}
+                {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
               </pre>
             </div>
           )}
@@ -130,7 +167,71 @@ function ToolFallback({ toolName, args, result, status }: ToolCallMessagePartPro
   );
 }
 
-/* ── Time grouping ── */
+const ChainOfThought = () => {
+  return (
+    <ChainOfThoughtPrimitive.Root className="my-2 rounded-lg border border-border bg-muted/20">
+      <ChainOfThoughtPrimitive.AccordionTrigger className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors">
+        <AuiIf condition={(s) => s.chainOfThought.collapsed}>
+          <ChevronRightIcon className="h-3.5 w-3.5" />
+        </AuiIf>
+        <AuiIf condition={(s) => !s.chainOfThought.collapsed}>
+          <ChevronDownIcon className="h-3.5 w-3.5" />
+        </AuiIf>
+        Thinking
+      </ChainOfThoughtPrimitive.AccordionTrigger>
+
+      <AuiIf condition={(s) => !s.chainOfThought.collapsed}>
+        <ChainOfThoughtPrimitive.Parts
+          components={{
+            Reasoning: ({ text }) => (
+              <div className="px-3 pb-2 text-sm text-muted-foreground whitespace-pre-wrap">{text}</div>
+            ),
+            tools: {
+              Fallback: ToolFallback,
+            },
+          }}
+        />
+      </AuiIf>
+    </ChainOfThoughtPrimitive.Root>
+  );
+};
+
+const CustomAssistantMessage = () => {
+  return (
+    <AssistantMessage.Root>
+      <AssistantMessage.Avatar />
+      <div className="aui-assistant-message-content">
+        <MessagePrimitive.Parts
+          components={{
+            Text: StreamdownText,
+            ChainOfThought,
+          }}
+        />
+      </div>
+      <BranchPicker />
+      <AssistantActionBar />
+    </AssistantMessage.Root>
+  );
+};
+
+function deriveTitleFromThreadMessages(messages: readonly unknown[]): string {
+  for (const message of messages) {
+    const record = message as { role?: string; content?: Array<{ type?: string; text?: string }> };
+    if (record?.role !== "user" || !Array.isArray(record.content)) continue;
+
+    const text = record.content
+      .filter((part) => part?.type === "text")
+      .map((part) => part?.text ?? "")
+      .join(" ")
+      .trim();
+
+    if (!text) continue;
+    return text.length > 80 ? `${text.slice(0, 80).trim()}…` : text;
+  }
+
+  return "New chat";
+}
+
 function groupConversations(convos: ConversationItem[]) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -158,24 +259,220 @@ function groupConversations(convos: ConversationItem[]) {
   return groups.filter((g) => g.items.length > 0);
 }
 
-/* ── Conversation Sidebar ── */
-function ConversationSidebar({
-  conversations,
-  activeId,
-  onSelect,
-  onNew,
-  onDelete,
-  search,
-  onSearchChange,
+function useOverseerRuntime(selectedProviderId: string, steering: SteeringConfig) {
+  const transport = useMemo(
+    () =>
+      new AssistantChatTransport({
+        api: "/api/webui/chat",
+        prepareSendMessagesRequest: async (request) => {
+          return {
+            ...request,
+            body: {
+              ...request.body,
+              providerId: selectedProviderId ? Number(selectedProviderId) : undefined,
+              steering,
+            },
+          };
+        },
+      }),
+    [selectedProviderId, steering],
+  );
+
+  const adapter = useMemo<RemoteThreadListAdapter>(
+    () => ({
+      async list() {
+        const res = await fetch("/api/webui/threads?limit=150", { cache: "no-store" });
+        if (!res.ok) return { threads: [] };
+
+        const data = (await res.json()) as {
+          threads?: Array<{ id: string; title?: string; status?: "regular" | "archived" }>;
+        };
+
+        return {
+          threads: (data.threads ?? []).map((thread) => ({
+            remoteId: String(thread.id),
+            externalId: String(thread.id),
+            status: thread.status ?? "regular",
+            title: thread.title,
+          })),
+        };
+      },
+
+      async initialize() {
+        const res = await fetch("/api/webui/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to initialize thread");
+        }
+
+        const data = (await res.json()) as { thread: { id: string } };
+        const remoteId = String(data.thread.id);
+        return {
+          remoteId,
+          externalId: remoteId,
+        };
+      },
+
+      async rename(remoteId, newTitle) {
+        await fetch(`/api/webui/threads/${encodeURIComponent(remoteId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: newTitle }),
+        });
+      },
+
+      async archive() {
+        // Archiving is not implemented in Overseer yet.
+      },
+
+      async unarchive() {
+        // Archiving is not implemented in Overseer yet.
+      },
+
+      async delete(remoteId) {
+        await fetch(`/api/webui/threads/${encodeURIComponent(remoteId)}`, {
+          method: "DELETE",
+        });
+      },
+
+      async fetch(remoteId) {
+        const res = await fetch(`/api/webui/threads/${encodeURIComponent(remoteId)}`, {
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          return {
+            status: "regular" as const,
+            remoteId,
+            externalId: remoteId,
+            title: "New chat",
+          };
+        }
+
+        const data = (await res.json()) as { thread?: { id?: string; title?: string } };
+        return {
+          status: "regular" as const,
+          remoteId,
+          externalId: String(data.thread?.id ?? remoteId),
+          title: data.thread?.title,
+        };
+      },
+
+      async generateTitle(remoteId, unstable_messages) {
+        const title = deriveTitleFromThreadMessages(unstable_messages);
+
+        fetch(`/api/webui/threads/${encodeURIComponent(remoteId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        }).catch(() => {});
+
+        return createAssistantStream(async (controller) => {
+          controller.appendText(title);
+        });
+      },
+    }),
+    [],
+  );
+
+  return useRemoteThreadListRuntime({
+    runtimeHook: () => useChatRuntime({ transport }),
+    adapter,
+  });
+}
+
+function ChatWorkspace({
+  providers,
+  selectedProviderId,
+  setSelectedProviderId,
+  steering,
+  setSteering,
 }: {
-  conversations: ConversationItem[];
-  activeId: number | null;
-  onSelect: (id: number) => void;
-  onNew: () => void;
-  onDelete: (id: number) => void;
-  search: string;
-  onSearchChange: (v: string) => void;
+  providers: ProviderOption[];
+  selectedProviderId: string;
+  setSelectedProviderId: (value: string) => void;
+  steering: SteeringConfig;
+  setSteering: (value: SteeringConfig) => void;
 }) {
+  const runtime = useAssistantRuntime();
+  const threadState = useAuiState((s) => s.threads);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [search, setSearch] = useState("");
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === "dark";
+  const didInitialSelectRef = useRef(false);
+
+  const activeThreadId = threadState.mainThreadId;
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const res = await fetch("/api/webui/threads?limit=150", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { threads?: ConversationItem[] };
+      setConversations(data.threads ?? []);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadConversations();
+    const interval = setInterval(loadConversations, 5000);
+    return () => clearInterval(interval);
+  }, [loadConversations]);
+
+  const loadThreadMessages = useCallback(async (threadId: string) => {
+    const res = await fetch(`/api/webui/threads/${encodeURIComponent(threadId)}/messages`, {
+      cache: "no-store",
+    });
+
+    if (!res.ok) return;
+
+    const data = (await res.json()) as { messages?: unknown[] };
+    if (!Array.isArray(data.messages)) return;
+
+    runtime.thread.importExternalState(data.messages);
+  }, [runtime]);
+
+  const handleSelectConversation = useCallback(async (id: string) => {
+    await runtime.threads.switchToThread(id);
+    await loadThreadMessages(id);
+  }, [runtime, loadThreadMessages]);
+
+  useEffect(() => {
+    if (didInitialSelectRef.current) return;
+    if (conversations.length === 0) return;
+    if (activeThreadId && /^\d+$/.test(activeThreadId)) {
+      didInitialSelectRef.current = true;
+      return;
+    }
+
+    didInitialSelectRef.current = true;
+    void handleSelectConversation(conversations[0].id);
+  }, [conversations, activeThreadId, handleSelectConversation]);
+
+  const handleNewChat = useCallback(async () => {
+    await runtime.threads.switchToNewThread();
+  }, [runtime]);
+
+  const handleDeleteConversation = useCallback(
+    async (id: string) => {
+      try {
+        await runtime.threads.getItemById(id).delete();
+        setConversations((prev) => prev.filter((c) => c.id !== id));
+      } catch {
+        // ignore
+      }
+    },
+    [runtime],
+  );
+
+  const selectedProvider = providers.find((p) => String(p.id) === selectedProviderId);
+
   const filtered = useMemo(() => {
     if (!search.trim()) return conversations;
     const q = search.toLowerCase();
@@ -185,246 +482,19 @@ function ConversationSidebar({
   const groups = useMemo(() => groupConversations(filtered), [filtered]);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* New chat */}
-      <div className="p-2">
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-2 h-9 px-3 text-sm text-foreground/80 hover:bg-accent hover:text-foreground"
-          onClick={onNew}
-        >
-          <PlusIcon className="h-4 w-4" />
-          New chat
-        </Button>
-      </div>
-
-      {/* Search */}
-      <div className="px-2 pb-2">
-        <div className="relative">
-          <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search conversations..."
-            className="h-8 pl-8 text-xs bg-muted/50 border-0 focus-visible:ring-1"
-          />
-        </div>
-      </div>
-
-      {/* Conversation list */}
-      <div className="flex-1 overflow-y-auto px-2 custom-scrollbar">
-        {groups.length === 0 && (
-          <p className="px-3 py-8 text-center text-xs text-muted-foreground">
-            {search ? "No matches" : "No conversations yet"}
-          </p>
-        )}
-        {groups.map((group) => (
-          <div key={group.label} className="mb-3">
-            <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {group.label}
-            </p>
-            <div className="space-y-0.5">
-              {group.items.map((c) => (
-                <div
-                  key={c.id}
-                  className={cn(
-                    "group flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm cursor-pointer transition-colors",
-                    activeId === c.id
-                      ? "bg-accent text-accent-foreground"
-                      : "text-foreground/70 hover:bg-accent/50 hover:text-foreground"
-                  )}
-                  onClick={() => onSelect(c.id)}
-                >
-                  <MessageSquareIcon className="h-3.5 w-3.5 shrink-0 opacity-50" />
-                  <span className="flex-1 truncate text-[13px]">{c.title}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(c.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 hover:text-destructive transition-opacity"
-                  >
-                    <Trash2Icon className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── Chat Thread (keyed per conversation) ── */
-function ChatThread({
-  selectedProviderId,
-  conversationId,
-  onConversationCreated,
-}: {
-  selectedProviderId: string;
-  conversationId: number | null;
-  onConversationCreated: () => void;
-}) {
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: "/api/webui/chat",
-        body: selectedProviderId
-          ? { providerId: Number(selectedProviderId) }
-          : undefined,
-      }),
-    [selectedProviderId]
-  );
-
-  const runtime = useChatRuntime({ transport });
-
-  // Refresh conversation list after first message sent
-  useEffect(() => {
-    // Poll briefly after mount to catch new conversation creation
-    const timer = setTimeout(onConversationCreated, 3000);
-    return () => clearTimeout(timer);
-  }, [onConversationCreated]);
-
-  return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <Thread
-        assistantAvatar={{ fallback: "O" }}
-        welcome={{
-          message: "How can I help you today?",
-          suggestions: [
-            { prompt: "Explain how this server is set up" },
-            { prompt: "Write a Python script to monitor disk usage" },
-            { prompt: "Help me debug a networking issue" },
-            { prompt: "What can you do?" },
-          ],
-        }}
-        assistantMessage={{
-          allowCopy: true,
-          allowReload: true,
-          components: {
-            Text: MarkdownText,
-            ToolFallback: ToolFallback,
-          },
-        }}
-        userMessage={{
-          allowEdit: true,
-        }}
-        strings={{
-          composer: {
-            input: { placeholder: "Message Overseer..." },
-            send: { tooltip: "Send message" },
-          },
-          assistantMessage: {
-            reload: { tooltip: "Regenerate" },
-            copy: { tooltip: "Copy to clipboard" },
-          },
-        }}
-      />
-    </AssistantRuntimeProvider>
-  );
-}
-
-/* ── Main Chat Page ── */
-export default function ChatPage() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [providers, setProviders] = useState<ProviderOption[]>([]);
-  const [selectedProviderId, setSelectedProviderId] = useState<string>("");
-  const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
-  const { theme, setTheme } = useTheme();
-  const isDark = theme === "dark";
-  const chatKeyRef = useRef(0);
-  const [chatKey, setChatKey] = useState(0);
-
-  const toggleTheme = useCallback(() => {
-    setTheme(isDark ? "light" : "dark");
-  }, [isDark, setTheme]);
-
-  // Load providers
-  useEffect(() => {
-    fetch("/api/chat")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.providers) {
-          setProviders(data.providers);
-          const def = data.providers.find((p: ProviderOption) => p.isDefault);
-          if (def) setSelectedProviderId(String(def.id));
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Load conversations
-  const loadConversations = useCallback(() => {
-    fetch("/api/conversations")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.conversations) setConversations(data.conversations);
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    loadConversations();
-  }, [loadConversations]);
-
-  // Refresh conversations periodically
-  useEffect(() => {
-    const interval = setInterval(loadConversations, 20000);
-    return () => clearInterval(interval);
-  }, [loadConversations]);
-
-  const handleNewChat = useCallback(() => {
-    setActiveConversationId(null);
-    chatKeyRef.current += 1;
-    setChatKey(chatKeyRef.current);
-  }, []);
-
-  const handleSelectConversation = useCallback((id: number) => {
-    setActiveConversationId(id);
-    chatKeyRef.current += 1;
-    setChatKey(chatKeyRef.current);
-  }, []);
-
-  const handleDeleteConversation = useCallback(
-    async (id: number) => {
-      try {
-        await fetch(`/api/chat/${id}`, { method: "DELETE" });
-        setConversations((prev) => prev.filter((c) => c.id !== id));
-        if (activeConversationId === id) {
-          handleNewChat();
-        }
-      } catch {
-        // ignore
-      }
-    },
-    [activeConversationId, handleNewChat]
-  );
-
-  const selectedProvider = providers.find(
-    (p) => String(p.id) === selectedProviderId
-  );
-
-  return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* ── Sidebar ── */}
       <aside
         className={cn(
           "flex flex-col shrink-0 border-r border-border bg-sidebar transition-[width] duration-200 ease-in-out",
-          sidebarOpen ? "w-[280px]" : "w-0 overflow-hidden border-r-0"
+          sidebarOpen ? "w-[300px]" : "w-0 overflow-hidden border-r-0",
         )}
       >
-        {/* Sidebar header */}
         <div className="flex items-center justify-between px-3 py-3 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
               <SparklesIcon className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
-            <span className="text-sm font-semibold tracking-tight">
-              Overseer
-            </span>
+            <span className="text-sm font-semibold tracking-tight">Overseer</span>
           </div>
           <Button
             variant="ghost"
@@ -436,33 +506,79 @@ export default function ChatPage() {
           </Button>
         </div>
 
-        {/* Conversations */}
-        <ConversationSidebar
-          conversations={conversations}
-          activeId={activeConversationId}
-          onSelect={handleSelectConversation}
-          onNew={handleNewChat}
-          onDelete={handleDeleteConversation}
-          search={search}
-          onSearchChange={setSearch}
-        />
+        <div className="p-2">
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-2 h-9 px-3 text-sm text-foreground/80 hover:bg-accent hover:text-foreground"
+            onClick={handleNewChat}
+          >
+            <PlusIcon className="h-4 w-4" />
+            New chat
+          </Button>
+        </div>
 
-        {/* Sidebar footer */}
-        <div className="border-t border-border p-2 space-y-0.5">
-          {/* Model selector */}
+        <div className="px-2 pb-2">
+          <div className="relative">
+            <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search conversations..."
+              className="h-8 pl-8 text-xs bg-muted/50 border-0 focus-visible:ring-1"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-2 custom-scrollbar">
+          {groups.length === 0 && (
+            <p className="px-3 py-8 text-center text-xs text-muted-foreground">
+              {search ? "No matches" : "No conversations yet"}
+            </p>
+          )}
+          {groups.map((group) => (
+            <div key={group.label} className="mb-3">
+              <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {group.label}
+              </p>
+              <div className="space-y-0.5">
+                {group.items.map((c) => (
+                  <div
+                    key={c.id}
+                    className={cn(
+                      "group flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm cursor-pointer transition-colors",
+                      activeThreadId === c.id
+                        ? "bg-accent text-accent-foreground"
+                        : "text-foreground/70 hover:bg-accent/50 hover:text-foreground",
+                    )}
+                    onClick={() => void handleSelectConversation(c.id)}
+                  >
+                    <MessageSquareIcon className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                    <span className="flex-1 truncate text-[13px]">{c.title}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDeleteConversation(c.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 hover:text-destructive transition-opacity"
+                    >
+                      <Trash2Icon className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-border p-2 space-y-2">
           {providers.length > 0 && (
-            <div className="px-2 pb-1.5">
+            <div className="px-2">
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                 Model
               </label>
               <NativeSelect
                 value={selectedProviderId}
-                onChange={(e) => {
-                  setSelectedProviderId(e.target.value);
-                  // Force re-mount of chat thread with new transport
-                  chatKeyRef.current += 1;
-                  setChatKey(chatKeyRef.current);
-                }}
+                onChange={(e) => setSelectedProviderId(e.target.value)}
                 className="h-8 text-xs"
               >
                 {providers.map((p) => (
@@ -473,19 +589,65 @@ export default function ChatPage() {
               </NativeSelect>
             </div>
           )}
+
+          <div className="px-2 pt-1 space-y-1.5">
+            <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <SlidersHorizontalIcon className="h-3 w-3" />
+              Assistant tone
+            </div>
+
+            <NativeSelect
+              value={steering.tone}
+              onChange={(e) =>
+                setSteering({ ...steering, tone: e.target.value as SteeringConfig["tone"] })
+              }
+              className="h-8 text-xs"
+            >
+              <option value="concise">Concise</option>
+              <option value="balanced">Balanced</option>
+              <option value="deep">Deep</option>
+            </NativeSelect>
+
+            <NativeSelect
+              value={steering.responseStyle}
+              onChange={(e) =>
+                setSteering({
+                  ...steering,
+                  responseStyle: e.target.value as SteeringConfig["responseStyle"],
+                })
+              }
+              className="h-8 text-xs"
+            >
+              <option value="direct">Direct</option>
+              <option value="explanatory">Explanatory</option>
+              <option value="mentor">Mentor</option>
+            </NativeSelect>
+
+            <Button
+              variant={steering.includeReasoningSummary ? "secondary" : "ghost"}
+              size="sm"
+              className="w-full justify-start h-8 text-xs"
+              onClick={() =>
+                setSteering({
+                  ...steering,
+                  includeReasoningSummary: !steering.includeReasoningSummary,
+                })
+              }
+            >
+              Reasoning summary {steering.includeReasoningSummary ? "on" : "off"}
+            </Button>
+          </div>
+
           <Button
             variant="ghost"
             size="sm"
             className="w-full justify-start gap-2.5 h-9 px-3 text-sm text-muted-foreground hover:text-foreground"
-            onClick={toggleTheme}
+            onClick={() => setTheme(isDark ? "light" : "dark")}
           >
-            {isDark ? (
-              <SunIcon className="h-4 w-4" />
-            ) : (
-              <MoonIcon className="h-4 w-4" />
-            )}
+            {isDark ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
             {isDark ? "Light mode" : "Dark mode"}
           </Button>
+
           <Button
             variant="ghost"
             size="sm"
@@ -497,6 +659,7 @@ export default function ChatPage() {
               Admin panel
             </a>
           </Button>
+
           <Button
             variant="ghost"
             size="sm"
@@ -511,9 +674,7 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      {/* ── Main ── */}
       <main className="flex flex-1 flex-col min-w-0 overflow-hidden">
-        {/* Top bar */}
         <header className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 h-12">
           {!sidebarOpen && (
             <>
@@ -529,42 +690,106 @@ export default function ChatPage() {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                onClick={handleNewChat}
+                onClick={() => void handleNewChat()}
               >
                 <PlusIcon className="h-4 w-4" />
               </Button>
             </>
           )}
+
           <div className="flex-1" />
+
           {selectedProvider && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="font-medium">{selectedProvider.displayName}</span>
-              <span className="text-[10px] font-mono opacity-60">
-                {selectedProvider.model}
-              </span>
+              <span className="text-[10px] font-mono opacity-60">{selectedProvider.model}</span>
             </div>
           )}
+
           {sidebarOpen && (
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={handleNewChat}
+              onClick={() => void handleNewChat()}
             >
               <PlusIcon className="h-4 w-4" />
             </Button>
           )}
         </header>
 
-        {/* Chat thread — keyed to force re-mount on conversation/model change */}
-        <div className="flex-1 overflow-hidden" key={chatKey}>
-          <ChatThread
-            selectedProviderId={selectedProviderId}
-            conversationId={activeConversationId}
-            onConversationCreated={loadConversations}
+        <div className="flex-1 overflow-hidden">
+          <Thread
+            assistantAvatar={{ fallback: "O" }}
+            welcome={{
+              message: "How can I help you today?",
+              suggestions: [
+                { prompt: "Explain how this server is set up" },
+                { prompt: "Write a Python script to monitor disk usage" },
+                { prompt: "Help me debug a networking issue" },
+                { prompt: "What can you do?" },
+              ],
+            }}
+            userMessage={{
+              allowEdit: true,
+            }}
+            assistantMessage={{
+              allowCopy: true,
+              allowReload: true,
+            }}
+            components={{
+              AssistantMessage: CustomAssistantMessage,
+            }}
+            strings={{
+              composer: {
+                input: { placeholder: "Message Overseer..." },
+                send: { tooltip: "Send message" },
+              },
+              assistantMessage: {
+                reload: { tooltip: "Regenerate" },
+                copy: { tooltip: "Copy to clipboard" },
+              },
+            }}
           />
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>("");
+  const [steering, setSteering] = useState<SteeringConfig>({
+    tone: "balanced",
+    responseStyle: "direct",
+    includeReasoningSummary: false,
+  });
+
+  useEffect(() => {
+    fetch("/api/chat")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.providers) {
+          setProviders(data.providers);
+          const def = data.providers.find((p: ProviderOption) => p.isDefault);
+          if (def) setSelectedProviderId(String(def.id));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const runtime = useOverseerRuntime(selectedProviderId, steering);
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <ChatWorkspace
+        providers={providers}
+        selectedProviderId={selectedProviderId}
+        setSelectedProviderId={setSelectedProviderId}
+        steering={steering}
+        setSteering={setSteering}
+      />
+    </AssistantRuntimeProvider>
   );
 }

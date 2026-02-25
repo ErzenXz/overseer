@@ -1,9 +1,12 @@
-import { streamText, type UIMessage, convertToModelMessages } from "ai";
+import { randomUUID } from "crypto";
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  type UIMessage,
+  type UIMessageChunk,
+} from "ai";
 import { getCurrentUser } from "@/lib/auth";
-import { getDefaultModel, getModelById } from "@/agent/providers";
-import { loadSoul } from "@/agent/soul";
-import { loadUserIdentity } from "@/agent/identity";
-import { getSmartMemoryContextForUser } from "@/agent/super-memory";
+import { runGatewayChat } from "@/gateway/chat-core";
 import { createLogger } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -11,6 +14,34 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const logger = createLogger("webui-chat");
+
+type Steering = {
+  tone?: "concise" | "balanced" | "deep";
+  responseStyle?: "direct" | "explanatory" | "mentor";
+  includeReasoningSummary?: boolean;
+  prioritizeSafety?: boolean;
+  requireChecklist?: boolean;
+};
+
+function parseConversationId(rawId: unknown): number | undefined {
+  if (typeof rawId !== "string" && typeof rawId !== "number") return undefined;
+  const parsed = Number.parseInt(String(rawId), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return parsed;
+}
+
+function extractLastUserText(messages: UIMessage[]): string {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  if (!lastUser) return "";
+
+  const text = lastUser.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+
+  return text;
+}
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -21,60 +52,171 @@ export async function POST(req: Request) {
     });
   }
 
-  const body = await req.json();
-  const {
-    messages,
-    providerId,
-  }: {
-    messages: UIMessage[];
-    providerId?: number;
-  } = body;
+  const body = await req.json().catch(() => null);
+  const messages = Array.isArray(body?.messages) ? (body.messages as UIMessage[]) : [];
+  const providerId = typeof body?.providerId === "number" ? body.providerId : undefined;
+  const steering = (body?.steering ?? undefined) as Steering | undefined;
+  const conversationId = parseConversationId(body?.id);
 
-  const model = providerId ? getModelById(providerId) : getDefaultModel();
-  if (!model) {
-    return new Response(
-      JSON.stringify({ error: "No LLM provider configured" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+  const message = extractLastUserText(messages);
+  if (!message) {
+    return new Response(JSON.stringify({ error: "No user message found" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const soul = loadSoul(user.id);
-  const identity = loadUserIdentity(user.id);
-  const memoryContext = getSmartMemoryContextForUser(user.id);
-
-  const identitySection = identity.trim()
-    ? `\n\n---\n\n## Who I'm talking to\n${identity.trim()}`
-    : "";
-
-  const now = new Date().toLocaleString("en-US", {
-    weekday: "short", year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit", timeZoneName: "short",
-  });
-
-  const systemPrompt = `${soul}${identitySection}${memoryContext}
-
----
-
-- **Right now**: ${now}
-- **Talking to**: ${user.username}
-
-I talk like a person — short when short is enough, detailed when it matters. No filler, no "certainly!", no unnecessary preamble. I use markdown when it actually helps (code blocks for code, structure when content needs it). If I'm not sure about something, I say so. If something is wrong, I say that too.
-`;
-
-  logger.info("WebUI chat request", {
+  logger.info("WebUI gateway chat request", {
     userId: user.id,
-    messageCount: messages.length,
     providerId,
-    hasIdentity: !!identity.trim(),
-    hasMemory: !!memoryContext.trim(),
+    conversationId,
+    messageLength: message.length,
+    hasSteering: !!steering,
   });
 
-  const result = streamText({
-    model,
-    system: systemPrompt,
-    messages: await convertToModelMessages(messages),
-    maxRetries: 2,
+  const stream = createUIMessageStream<UIMessage>({
+    execute: async ({ writer }) => {
+      const textPartId = randomUUID();
+      let textStarted = false;
+      let finished = false;
+
+      const pendingToolCallsByName = new Map<string, string[]>();
+
+      const ensureTextStarted = () => {
+        if (textStarted) return;
+        writer.write({ type: "text-start", id: textPartId });
+        textStarted = true;
+      };
+
+      const ensureToolCallId = (toolName: string) => {
+        const queue = pendingToolCallsByName.get(toolName) ?? [];
+        if (queue.length > 0) {
+          const existing = queue.shift()!;
+          pendingToolCallsByName.set(toolName, queue);
+          return existing;
+        }
+
+        const fallbackId = `tool-${randomUUID()}`;
+        writer.write({
+          type: "tool-input-available",
+          toolName,
+          toolCallId: fallbackId,
+          input: {},
+          dynamic: true,
+        } satisfies UIMessageChunk);
+        return fallbackId;
+      };
+
+      const finishOnce = (reason: "stop" | "error") => {
+        if (finished) return;
+        finished = true;
+
+        if (textStarted) {
+          writer.write({ type: "text-end", id: textPartId });
+        }
+
+        writer.write({ type: "finish", finishReason: reason });
+      };
+
+      try {
+        writer.write({ type: "start" });
+
+        await runGatewayChat(
+          { kind: "web", webUserId: user.id },
+          {
+            message,
+            conversationId,
+            providerId,
+            steering,
+            attachments: [],
+          },
+          {
+            emit: (event) => {
+              switch (event.type) {
+                case "text_delta": {
+                  ensureTextStarted();
+                  writer.write({
+                    type: "text-delta",
+                    id: textPartId,
+                    delta: event.text,
+                  });
+                  break;
+                }
+
+                case "tool_call": {
+                  const toolCallId = `tool-${randomUUID()}`;
+                  const queue = pendingToolCallsByName.get(event.toolName) ?? [];
+                  queue.push(toolCallId);
+                  pendingToolCallsByName.set(event.toolName, queue);
+
+                  writer.write({
+                    type: "tool-input-available",
+                    toolName: event.toolName,
+                    toolCallId,
+                    input: event.args,
+                    dynamic: true,
+                  } satisfies UIMessageChunk);
+                  break;
+                }
+
+                case "tool_result": {
+                  const toolCallId = ensureToolCallId(event.toolName);
+                  writer.write({
+                    type: "tool-output-available",
+                    toolCallId,
+                    output: event.result,
+                    dynamic: true,
+                  } satisfies UIMessageChunk);
+                  break;
+                }
+
+                case "conversation_id": {
+                  writer.write({
+                    type: "message-metadata",
+                    messageMetadata: { conversationId: event.conversationId },
+                  });
+                  break;
+                }
+
+                case "done": {
+                  finishOnce("stop");
+                  break;
+                }
+
+                case "error": {
+                  writer.write({
+                    type: "error",
+                    errorText: event.error,
+                  });
+                  finishOnce("error");
+                  break;
+                }
+
+                // Currently ignored in WebUI message rendering.
+                case "stream_initialized":
+                case "tool_receipt":
+                case "session_summarized":
+                case "session_rollover":
+                  break;
+              }
+            },
+          },
+        );
+
+        finishOnce("stop");
+      } catch (error) {
+        const errorText = error instanceof Error ? error.message : "Unknown error";
+        logger.error("WebUI gateway stream failed", {
+          userId: user.id,
+          conversationId,
+          error: errorText,
+        });
+
+        writer.write({ type: "error", errorText });
+        finishOnce("error");
+      }
+    },
   });
 
-  return result.toUIMessageStreamResponse();
+  return createUIMessageStreamResponse({ stream });
 }
