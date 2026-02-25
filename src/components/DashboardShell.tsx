@@ -6,18 +6,18 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 function ShortcutsRoot({ children }: { children: React.ReactNode }) {
-  useKeyboardShortcuts();
-  return <>{children}</>;
+ useKeyboardShortcuts();
+ return <>{children}</>;
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  return (
-    <QueryProvider>
-      <ShortcutsRoot>
-        {children}
-        <CommandPalette />
-        <Toaster />
-      </ShortcutsRoot>
-    </QueryProvider>
-  );
+ return (
+  <QueryProvider>
+   <ShortcutsRoot>
+    {children}
+    <CommandPalette />
+    <Toaster />
+   </ShortcutsRoot>
+  </QueryProvider>
+ );
 }

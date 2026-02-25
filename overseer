@@ -3,8 +3,38 @@
 # Overseer Management Script
 # This file is tracked in git - ./overseer update will keep it current.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ORIGINAL_CWD="$PWD"
+
+resolve_script_dir() {
+    local source="${BASH_SOURCE[0]}"
+    while [ -h "$source" ]; do
+        local dir
+        dir="$(cd -P "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        [[ "$source" != /* ]] && source="$dir/$source"
+    done
+    cd -P "$(dirname "$source")" && pwd
+}
+
+SCRIPT_DIR="$(resolve_script_dir)"
+
+# Fallbacks for copied global scripts (non-symlink installs)
+if [ ! -d "$SCRIPT_DIR/.git" ]; then
+    if [ -n "${OVERSEER_DIR:-}" ] && [ -d "${OVERSEER_DIR}/.git" ]; then
+        SCRIPT_DIR="$OVERSEER_DIR"
+    elif [ -d "$ORIGINAL_CWD/.git" ] && [ -f "$ORIGINAL_CWD/overseer" ]; then
+        SCRIPT_DIR="$ORIGINAL_CWD"
+    elif [ -d "/opt/overseer/.git" ]; then
+        SCRIPT_DIR="/opt/overseer"
+    elif [ -d "$HOME/overseer/.git" ]; then
+        SCRIPT_DIR="$HOME/overseer"
+    fi
+fi
+
+cd "$SCRIPT_DIR" || {
+    echo "[ERROR] Could not access Overseer directory: $SCRIPT_DIR"
+    exit 1
+}
 
 # Load environment
 if [ -f ".env" ]; then

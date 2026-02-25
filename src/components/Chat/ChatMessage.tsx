@@ -5,354 +5,354 @@ import { ChatToolCall } from "./ChatToolCall";
 import type { ChatMessage as ChatMessageType, ToolCall } from "@/hooks/useChat";
 
 interface ChatMessageProps {
-  message: ChatMessageType;
-  isLast?: boolean;
+ message: ChatMessageType;
+ isLast?: boolean;
 }
 
 // Simple markdown parser
 function parseMarkdown(text: string): React.ReactNode[] {
-  const elements: React.ReactNode[] = [];
-  const lines = text.split("\n");
-  let inCodeBlock = false;
-  let codeBlockContent: string[] = [];
-  let codeBlockLang = "";
-  let key = 0;
+ const elements: React.ReactNode[] = [];
+ const lines = text.split("\n");
+ let inCodeBlock = false;
+ let codeBlockContent: string[] = [];
+ let codeBlockLang = "";
+ let key = 0;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+ for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
 
-    // Code block start/end
-    if (line.startsWith("```")) {
-      if (inCodeBlock) {
-        // End code block
-        elements.push(
-          <CodeBlock key={key++} language={codeBlockLang} code={codeBlockContent.join("\n")} />
-        );
-        inCodeBlock = false;
-        codeBlockContent = [];
-        codeBlockLang = "";
-      } else {
-        // Start code block
-        inCodeBlock = true;
-        codeBlockLang = line.slice(3).trim();
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeBlockContent.push(line);
-      continue;
-    }
-
-    // Empty line
-    if (!line.trim()) {
-      elements.push(<br key={key++} />);
-      continue;
-    }
-
-    // Headers
-    if (line.startsWith("### ")) {
-      elements.push(
-        <h3 key={key++} className="text-lg font-semibold mt-4 mb-2">
-          {parseInlineMarkdown(line.slice(4))}
-        </h3>
-      );
-      continue;
-    }
-    if (line.startsWith("## ")) {
-      elements.push(
-        <h2 key={key++} className="text-xl font-semibold mt-4 mb-2">
-          {parseInlineMarkdown(line.slice(3))}
-        </h2>
-      );
-      continue;
-    }
-    if (line.startsWith("# ")) {
-      elements.push(
-        <h1 key={key++} className="text-2xl font-bold mt-4 mb-2">
-          {parseInlineMarkdown(line.slice(2))}
-        </h1>
-      );
-      continue;
-    }
-
-    // List items
-    if (line.match(/^[-*] /)) {
-      elements.push(
-        <li key={key++} className="ml-4 list-disc">
-          {parseInlineMarkdown(line.slice(2))}
-        </li>
-      );
-      continue;
-    }
-    if (line.match(/^\d+\. /)) {
-      const content = line.replace(/^\d+\. /, "");
-      elements.push(
-        <li key={key++} className="ml-4 list-decimal">
-          {parseInlineMarkdown(content)}
-        </li>
-      );
-      continue;
-    }
-
-    // Regular paragraph
+  // Code block start/end
+  if (line.startsWith("```")) {
+   if (inCodeBlock) {
+    // End code block
     elements.push(
-      <p key={key++} className="mb-2">
-        {parseInlineMarkdown(line)}
-      </p>
+     <CodeBlock key={key++} language={codeBlockLang} code={codeBlockContent.join("\n")} />
     );
+    inCodeBlock = false;
+    codeBlockContent = [];
+    codeBlockLang = "";
+   } else {
+    // Start code block
+    inCodeBlock = true;
+    codeBlockLang = line.slice(3).trim();
+   }
+   continue;
   }
 
-  // Handle unclosed code block
-  if (inCodeBlock && codeBlockContent.length > 0) {
-    elements.push(
-      <CodeBlock key={key++} language={codeBlockLang} code={codeBlockContent.join("\n")} />
-    );
+  if (inCodeBlock) {
+   codeBlockContent.push(line);
+   continue;
   }
 
-  return elements;
+  // Empty line
+  if (!line.trim()) {
+   elements.push(<br key={key++} />);
+   continue;
+  }
+
+  // Headers
+  if (line.startsWith("### ")) {
+   elements.push(
+    <h3 key={key++} className="text-lg font-semibold mt-4 mb-2">
+     {parseInlineMarkdown(line.slice(4))}
+    </h3>
+   );
+   continue;
+  }
+  if (line.startsWith("## ")) {
+   elements.push(
+    <h2 key={key++} className="text-xl font-semibold mt-4 mb-2">
+     {parseInlineMarkdown(line.slice(3))}
+    </h2>
+   );
+   continue;
+  }
+  if (line.startsWith("# ")) {
+   elements.push(
+    <h1 key={key++} className="text-2xl font-bold mt-4 mb-2">
+     {parseInlineMarkdown(line.slice(2))}
+    </h1>
+   );
+   continue;
+  }
+
+  // List items
+  if (line.match(/^[-*] /)) {
+   elements.push(
+    <li key={key++} className="ml-4 list-disc">
+     {parseInlineMarkdown(line.slice(2))}
+    </li>
+   );
+   continue;
+  }
+  if (line.match(/^\d+\. /)) {
+   const content = line.replace(/^\d+\. /, "");
+   elements.push(
+    <li key={key++} className="ml-4 list-decimal">
+     {parseInlineMarkdown(content)}
+    </li>
+   );
+   continue;
+  }
+
+  // Regular paragraph
+  elements.push(
+   <p key={key++} className="mb-2">
+    {parseInlineMarkdown(line)}
+   </p>
+  );
+ }
+
+ // Handle unclosed code block
+ if (inCodeBlock && codeBlockContent.length > 0) {
+  elements.push(
+   <CodeBlock key={key++} language={codeBlockLang} code={codeBlockContent.join("\n")} />
+  );
+ }
+
+ return elements;
 }
 
 // Parse inline markdown (bold, italic, code, links)
 function parseInlineMarkdown(text: string): React.ReactNode[] {
-  const elements: React.ReactNode[] = [];
-  let remaining = text;
-  let key = 0;
+ const elements: React.ReactNode[] = [];
+ let remaining = text;
+ let key = 0;
 
-  while (remaining.length > 0) {
-    // Inline code
-    const codeMatch = remaining.match(/^`([^`]+)`/);
-    if (codeMatch) {
-      elements.push(
-        <code key={key++} className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono text-primary">
-          {codeMatch[1]}
-        </code>
-      );
-      remaining = remaining.slice(codeMatch[0].length);
-      continue;
-    }
-
-    // Bold
-    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
-    if (boldMatch) {
-      elements.push(<strong key={key++}>{boldMatch[1]}</strong>);
-      remaining = remaining.slice(boldMatch[0].length);
-      continue;
-    }
-
-    // Italic
-    const italicMatch = remaining.match(/^_([^_]+)_/) || remaining.match(/^\*([^*]+)\*/);
-    if (italicMatch) {
-      elements.push(<em key={key++}>{italicMatch[1]}</em>);
-      remaining = remaining.slice(italicMatch[0].length);
-      continue;
-    }
-
-    // Links
-    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
-    if (linkMatch) {
-      elements.push(
-        <a
-          key={key++}
-          href={linkMatch[2]}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary hover:underline"
-        >
-          {linkMatch[1]}
-        </a>
-      );
-      remaining = remaining.slice(linkMatch[0].length);
-      continue;
-    }
-
-    // Plain text (find next special character or end)
-    const nextSpecial = remaining.search(/[`*_\[]/);
-    if (nextSpecial === -1) {
-      elements.push(remaining);
-      break;
-    } else if (nextSpecial === 0) {
-      // Special character didn't match a pattern, treat as plain text
-      elements.push(remaining[0]);
-      remaining = remaining.slice(1);
-    } else {
-      elements.push(remaining.slice(0, nextSpecial));
-      remaining = remaining.slice(nextSpecial);
-    }
+ while (remaining.length > 0) {
+  // Inline code
+  const codeMatch = remaining.match(/^`([^`]+)`/);
+  if (codeMatch) {
+   elements.push(
+    <code key={key++} className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono text-primary">
+     {codeMatch[1]}
+    </code>
+   );
+   remaining = remaining.slice(codeMatch[0].length);
+   continue;
   }
 
-  return elements;
+  // Bold
+  const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+  if (boldMatch) {
+   elements.push(<strong key={key++}>{boldMatch[1]}</strong>);
+   remaining = remaining.slice(boldMatch[0].length);
+   continue;
+  }
+
+  // Italic
+  const italicMatch = remaining.match(/^_([^_]+)_/) || remaining.match(/^\*([^*]+)\*/);
+  if (italicMatch) {
+   elements.push(<em key={key++}>{italicMatch[1]}</em>);
+   remaining = remaining.slice(italicMatch[0].length);
+   continue;
+  }
+
+  // Links
+  const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+  if (linkMatch) {
+   elements.push(
+    <a
+     key={key++}
+     href={linkMatch[2]}
+     target="_blank"
+     rel="noopener noreferrer"
+     className="text-primary hover:underline"
+    >
+     {linkMatch[1]}
+    </a>
+   );
+   remaining = remaining.slice(linkMatch[0].length);
+   continue;
+  }
+
+  // Plain text (find next special character or end)
+  const nextSpecial = remaining.search(/[`*_\[]/);
+  if (nextSpecial === -1) {
+   elements.push(remaining);
+   break;
+  } else if (nextSpecial === 0) {
+   // Special character didn't match a pattern, treat as plain text
+   elements.push(remaining[0]);
+   remaining = remaining.slice(1);
+  } else {
+   elements.push(remaining.slice(0, nextSpecial));
+   remaining = remaining.slice(nextSpecial);
+  }
+ }
+
+ return elements;
 }
 
 // Code block component with syntax highlighting
 function CodeBlock({ language, code }: { language: string; code: string }) {
-  const copyCode = () => {
-    navigator.clipboard.writeText(code);
-  };
+ const copyCode = () => {
+  navigator.clipboard.writeText(code);
+ };
 
-  return (
-    <div className="relative group my-3 rounded-xl overflow-hidden bg-muted border border-border">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-card border-b border-border">
-        <span className="text-xs text-muted-foreground font-mono">{language || "text"}</span>
-        <button
-          onClick={copyCode}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Copy
-        </button>
-      </div>
-      {/* Code */}
-      <pre className="p-4 overflow-x-auto">
-        <code className="text-[13px] leading-6 font-mono text-foreground">{code}</code>
-      </pre>
-    </div>
-  );
+ return (
+  <div className="relative group my-3 rounded-xl overflow-hidden bg-muted border border-border">
+   {/* Header */}
+   <div className="flex items-center justify-between px-4 py-2.5 bg-card border-b border-border">
+    <span className="text-xs text-muted-foreground font-mono">{language || "text"}</span>
+    <button
+     onClick={copyCode}
+     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+    >
+     Copy
+    </button>
+   </div>
+   {/* Code */}
+   <pre className="p-4 overflow-x-auto">
+    <code className="text-[13px] leading-6 font-mono text-foreground">{code}</code>
+   </pre>
+  </div>
+ );
 }
 
 // Thinking block component for extended thinking display
 function ThinkingBlock({ content, isThinking }: { content: string; isThinking?: boolean }) {
-  return (
-    <div className="my-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-      <div className="flex items-center gap-2 mb-2 text-amber-500 text-sm font-medium">
-        <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-        </svg>
-        <span>Extended Thinking</span>
-        {isThinking && (
-          <span className="ml-auto text-xs opacity-70">Analyzing...</span>
-        )}
-      </div>
-      <div className="text-[13px] leading-6 text-amber-500/80 whitespace-pre-wrap font-mono">
-        {content}
-      </div>
-    </div>
-  );
+ return (
+  <div className="my-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+   <div className="flex items-center gap-2 mb-2 text-amber-500 text-sm font-medium">
+    <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+    </svg>
+    <span>Extended Thinking</span>
+    {isThinking && (
+     <span className="ml-auto text-xs opacity-70">Analyzing...</span>
+    )}
+   </div>
+   <div className="text-[13px] leading-6 text-amber-500/80 whitespace-pre-wrap font-mono">
+    {content}
+   </div>
+  </div>
+ );
 }
 
 export function ChatMessage({ message, isLast }: ChatMessageProps) {
-  const isUser = message.role === "user";
-  const isSystem = message.role === "system";
-  const parsedContent = useMemo(
-    () => (isUser ? null : parseMarkdown(message.content)),
-    [message.content, isUser]
-  );
+ const isUser = message.role === "user";
+ const isSystem = message.role === "system";
+ const parsedContent = useMemo(
+  () => (isUser ? null : parseMarkdown(message.content)),
+  [message.content, isUser]
+ );
 
-  // Check if message has thinking content
-  const hasThinking = message.thinking && message.thinking.length > 0;
-  const isThinking = message.isThinking && !hasThinking;
+ // Check if message has thinking content
+ const hasThinking = message.thinking && message.thinking.length > 0;
+ const isThinking = message.isThinking && !hasThinking;
 
-  return (
+ return (
+  <div
+   className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""} ${
+    isLast ? "animate-in fade-in duration-200" : ""
+   } py-1`}
+  >
+   {!isSystem && (
     <div
-      className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""} ${
-        isLast ? "animate-fade-in" : ""
-      } py-1`}
+     className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-1 ${
+      isUser
+       ? "bg-primary/90 text-primary-foreground"
+       : "bg-primary text-primary-foreground"
+     }`}
     >
-      {!isSystem && (
-        <div
-          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-1 ${
-            isUser
-              ? "bg-primary/90 text-primary-foreground"
-              : "bg-primary text-primary-foreground"
-          }`}
-        >
-          {isUser ? (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          ) : (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          )}
-        </div>
-      )}
-
-      {/* Content */}
-      <div className={`flex-1 ${isUser ? "text-right" : ""} ${isSystem ? "max-w-[95%]" : "max-w-[86%]"}`}>
-        {/* Message bubble */}
-        <div
-          className={`inline-block text-left ${
-            isSystem
-              ? "px-4 py-3 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20"
-              : isUser
-              ? "px-4 py-3 rounded-2xl rounded-br-md bg-muted border border-border text-foreground"
-              : "px-0 py-1 bg-transparent text-foreground"
-          }`}
-        >
-          {/* Thinking indicator for active thinking */}
-          {isThinking && (
-            <div className="mb-3">
-              <ThinkingBlock content="Thinking..." isThinking={true} />
-            </div>
-          )}
-
-          {/* Completed thinking content */}
-          {hasThinking && (
-            <ThinkingBlock content={message.thinking!} isThinking={false} />
-          )}
-
-          {isUser ? (
-            <p className="whitespace-pre-wrap text-[15px] leading-7">{message.content}</p>
-          ) : (
-            <div className="prose prose-invert prose-sm max-w-none prose-p:my-2 prose-p:leading-7 prose-li:my-1 prose-pre:my-3 prose-headings:mt-4 prose-headings:mb-2 prose-code:text-primary">
-              {parsedContent}
-              {message.isStreaming && (
-                <span className="inline-block w-2 h-4 bg-muted-foreground animate-pulse ml-0.5" />
-              )}
-            </div>
-          )}
-
-          {!isUser && !isSystem && message.toolCalls && message.toolCalls.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-border/80 bg-muted/35 rounded-xl px-3 pb-3">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">
-                Execution timeline
-              </div>
-              <div className="relative pl-4 space-y-2.5">
-                <div className="absolute left-1.5 top-0 bottom-0 w-px bg-border" />
-                {message.toolCalls.map((toolCall) => (
-                  <div key={toolCall.id} className="relative">
-                    <span className="absolute -left-3.5 top-3 w-2 h-2 rounded-full bg-primary" />
-                    <ChatToolCall toolCall={toolCall} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Metadata */}
-        <div
-          className={`mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground ${
-            isUser ? "justify-end" : ""
-          }`}
-        >
-          <span>
-            {message.timestamp.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-          {message.model && (
-            <>
-              <span>·</span>
-              <span>{message.model}</span>
-            </>
-          )}
-          {message.outputTokens !== undefined && (
-            <>
-              <span>·</span>
-              <span>{message.outputTokens} tokens</span>
-            </>
-          )}
-          {(hasThinking || isThinking) && (
-            <>
-              <span>·</span>
-              <span className="text-amber-500">🧠 Extended Thinking</span>
-            </>
-          )}
-        </div>
-      </div>
+     {isUser ? (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+     ) : (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+     )}
     </div>
-  );
+   )}
+
+   {/* Content */}
+   <div className={`flex-1 ${isUser ? "text-right" : ""} ${isSystem ? "max-w-[95%]" : "max-w-[86%]"}`}>
+    {/* Message bubble */}
+    <div
+     className={`inline-block text-left ${
+      isSystem
+       ? "px-4 py-3 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20"
+       : isUser
+       ? "px-4 py-3 rounded-2xl rounded-br-md bg-muted border border-border text-foreground"
+       : "px-0 py-1 bg-transparent text-foreground"
+     }`}
+    >
+     {/* Thinking indicator for active thinking */}
+     {isThinking && (
+      <div className="mb-3">
+       <ThinkingBlock content="Thinking..." isThinking={true} />
+      </div>
+     )}
+
+     {/* Completed thinking content */}
+     {hasThinking && (
+      <ThinkingBlock content={message.thinking!} isThinking={false} />
+     )}
+
+     {isUser ? (
+      <p className="whitespace-pre-wrap text-[15px] leading-7">{message.content}</p>
+     ) : (
+      <div className="prose prose-invert prose-sm max-w-none prose-p:my-2 prose-p:leading-7 prose-li:my-1 prose-pre:my-3 prose-headings:mt-4 prose-headings:mb-2 prose-code:text-primary">
+       {parsedContent}
+       {message.isStreaming && (
+        <span className="inline-block w-2 h-4 bg-muted-foreground animate-pulse ml-0.5" />
+       )}
+      </div>
+     )}
+
+     {!isUser && !isSystem && message.toolCalls && message.toolCalls.length > 0 && (
+      <div className="mt-4 pt-3 border-t border-border/80 bg-muted/35 rounded-xl px-3 pb-3">
+       <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">
+        Execution timeline
+       </div>
+       <div className="relative pl-4 space-y-2.5">
+        <div className="absolute left-1.5 top-0 bottom-0 w-px bg-border" />
+        {message.toolCalls.map((toolCall) => (
+         <div key={toolCall.id} className="relative">
+          <span className="absolute -left-3.5 top-3 w-2 h-2 rounded-full bg-primary" />
+          <ChatToolCall toolCall={toolCall} />
+         </div>
+        ))}
+       </div>
+      </div>
+     )}
+    </div>
+
+    {/* Metadata */}
+    <div
+     className={`mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground ${
+      isUser ? "justify-end" : ""
+     }`}
+    >
+     <span>
+      {message.timestamp.toLocaleTimeString([], {
+       hour: "2-digit",
+       minute: "2-digit",
+      })}
+     </span>
+     {message.model && (
+      <>
+       <span>·</span>
+       <span>{message.model}</span>
+      </>
+     )}
+     {message.outputTokens !== undefined && (
+      <>
+       <span>·</span>
+       <span>{message.outputTokens} tokens</span>
+      </>
+     )}
+     {(hasThinking || isThinking) && (
+      <>
+       <span>·</span>
+       <span className="text-amber-500">🧠 Extended Thinking</span>
+      </>
+     )}
+    </div>
+   </div>
+  </div>
+ );
 }

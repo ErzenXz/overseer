@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { TweakcnThemeProvider } from "@/components/TweakcnThemeProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const metadata: Metadata = {
@@ -23,7 +24,9 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen antialiased font-sans">
         <ThemeProvider>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TweakcnThemeProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </TweakcnThemeProvider>
         </ThemeProvider>
       </body>
     </html>

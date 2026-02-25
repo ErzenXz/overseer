@@ -5,33 +5,33 @@ import { getUserPermissions, ROLE_PERMISSIONS } from "@/lib/permissions";
 import { DashboardShell } from "@/components/DashboardShell";
 
 export default async function DashboardLayout({
-  children,
+ children,
 }: {
-  children: React.ReactNode;
+ children: React.ReactNode;
 }) {
-  const user = await getCurrentUser();
+ const user = await getCurrentUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+ if (!user) {
+  redirect("/login");
+ }
 
-  let permissions: string[] = [];
-  try {
-    permissions = getUserPermissions(user).map((p) => String(p));
-  } catch {
-    // If the permissions tables are not initialized yet, fall back to the
-    // role defaults so the UI still renders.
-    permissions = (ROLE_PERMISSIONS[user.role] || []).map((p) => String(p));
-  }
+ let permissions: string[] = [];
+ try {
+  permissions = getUserPermissions(user).map((p) => String(p));
+ } catch {
+  // If the permissions tables are not initialized yet, fall back to the
+  // role defaults so the UI still renders.
+  permissions = (ROLE_PERMISSIONS[user.role] || []).map((p) => String(p));
+ }
 
-  return (
-    <div className="h-screen flex overflow-hidden bg-background">
-      <Sidebar user={user} permissions={permissions} />
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
-        <DashboardShell>
-          <div className="p-6 lg:p-8 max-w-[1400px]">{children}</div>
-        </DashboardShell>
-      </main>
-    </div>
-  );
+ return (
+  <div className="h-screen flex overflow-hidden bg-background">
+   <Sidebar user={user} permissions={permissions} />
+   <main className="flex-1 overflow-y-auto custom-scrollbar">
+    <DashboardShell>
+     <div className="p-6 lg:p-8 max-w-[1400px]">{children}</div>
+    </DashboardShell>
+   </main>
+  </div>
+ );
 }
