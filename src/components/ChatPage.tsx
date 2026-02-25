@@ -4,9 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AssistantRuntimeProvider,
   type ToolCallMessagePartProps,
-  MessagePrimitive,
-  ChainOfThoughtPrimitive,
-  AuiIf,
   useAssistantRuntime,
   useAuiState,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
@@ -16,12 +13,7 @@ import {
   useChatRuntime,
   AssistantChatTransport,
 } from "@assistant-ui/react-ai-sdk";
-import {
-  Thread,
-  AssistantMessage,
-  AssistantActionBar,
-  BranchPicker,
-} from "@assistant-ui/react-ui";
+import { Thread } from "@assistant-ui/react-ui";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
 import { createAssistantStream } from "assistant-stream";
 import { code } from "@streamdown/code";
@@ -45,13 +37,21 @@ import {
   Loader2Icon,
   AlertCircleIcon,
   ChevronDownIcon,
-  ChevronRightIcon,
-  SlidersHorizontalIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { useTheme } from "@/components/ThemeProvider";
+import {
+  ModelSelector,
+  ModelSelectorTrigger,
+  ModelSelectorContent,
+  ModelSelectorInput,
+  ModelSelectorList,
+  ModelSelectorEmpty,
+  ModelSelectorGroup,
+  ModelSelectorItem,
+  ModelSelectorName,
+} from "@/components/ai-elements/model-selector";
 import { cn } from "@/lib/utils";
 
 interface ProviderOption {
@@ -68,12 +68,6 @@ interface ConversationItem {
   updatedAt: string;
   messageCount: number;
 }
-
-type SteeringConfig = {
-  tone: "concise" | "balanced" | "deep";
-  responseStyle: "direct" | "explanatory" | "mentor";
-  includeReasoningSummary: boolean;
-};
 
 const streamdownPlugins = {
   code,
@@ -167,52 +161,6 @@ function ToolFallback({ toolName, args, result, status }: ToolCallMessagePartPro
   );
 }
 
-const ChainOfThought = () => {
-  return (
-    <ChainOfThoughtPrimitive.Root className="my-2 rounded-lg border border-border bg-muted/20">
-      <ChainOfThoughtPrimitive.AccordionTrigger className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors">
-        <AuiIf condition={(s) => s.chainOfThought.collapsed}>
-          <ChevronRightIcon className="h-3.5 w-3.5" />
-        </AuiIf>
-        <AuiIf condition={(s) => !s.chainOfThought.collapsed}>
-          <ChevronDownIcon className="h-3.5 w-3.5" />
-        </AuiIf>
-        Thinking
-      </ChainOfThoughtPrimitive.AccordionTrigger>
-
-      <AuiIf condition={(s) => !s.chainOfThought.collapsed}>
-        <ChainOfThoughtPrimitive.Parts
-          components={{
-            Reasoning: ({ text }) => (
-              <div className="px-3 pb-2 text-sm text-muted-foreground whitespace-pre-wrap">{text}</div>
-            ),
-            tools: {
-              Fallback: ToolFallback,
-            },
-          }}
-        />
-      </AuiIf>
-    </ChainOfThoughtPrimitive.Root>
-  );
-};
-
-const CustomAssistantMessage = () => {
-  return (
-    <AssistantMessage.Root>
-      <AssistantMessage.Avatar />
-      <div className="aui-assistant-message-content">
-        <MessagePrimitive.Parts
-          components={{
-            Text: StreamdownText,
-            ChainOfThought,
-          }}
-        />
-      </div>
-      <BranchPicker />
-      <AssistantActionBar />
-    </AssistantMessage.Root>
-  );
-};
 
 function deriveTitleFromThreadMessages(messages: readonly unknown[]): string {
   for (const message of messages) {
@@ -259,7 +207,7 @@ function groupConversations(convos: ConversationItem[]) {
   return groups.filter((g) => g.items.length > 0);
 }
 
-function useOverseerRuntime(selectedProviderId: string, steering: SteeringConfig) {
+function useOverseerRuntime(selectedProviderId: string) {
   const transport = useMemo(
     () =>
       new AssistantChatTransport({
@@ -270,12 +218,11 @@ function useOverseerRuntime(selectedProviderId: string, steering: SteeringConfig
             body: {
               ...request.body,
               providerId: selectedProviderId ? Number(selectedProviderId) : undefined,
-              steering,
             },
           };
         },
       }),
-    [selectedProviderId, steering],
+    [selectedProviderId],
   );
 
   const adapter = useMemo<RemoteThreadListAdapter>(
@@ -388,20 +335,17 @@ function ChatWorkspace({
   providers,
   selectedProviderId,
   setSelectedProviderId,
-  steering,
-  setSteering,
 }: {
   providers: ProviderOption[];
   selectedProviderId: string;
   setSelectedProviderId: (value: string) => void;
-  steering: SteeringConfig;
-  setSteering: (value: SteeringConfig) => void;
 }) {
   const runtime = useAssistantRuntime();
   const threadState = useAuiState((s) => s.threads);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [search, setSearch] = useState("");
+  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark";
   const didInitialSelectRef = useRef(false);
@@ -432,10 +376,13 @@ function ChatWorkspace({
 
     if (!res.ok) return;
 
-    const data = (await res.json()) as { messages?: unknown[] };
-    if (!Array.isArray(data.messages)) return;
+    const data = (await res.json()) as {
+      externalState?: { messages?: Array<{ parentId: string | null; message: unknown }> };
+    };
 
-    runtime.thread.importExternalState(data.messages);
+    if (!data.externalState || !Array.isArray(data.externalState.messages)) return;
+
+    runtime.thread.importExternalState(data.externalState);
   }, [runtime]);
 
   const handleSelectConversation = useCallback(async (id: string) => {
@@ -470,8 +417,6 @@ function ChatWorkspace({
     },
     [runtime],
   );
-
-  const selectedProvider = providers.find((p) => String(p.id) === selectedProviderId);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return conversations;
@@ -571,73 +516,6 @@ function ChatWorkspace({
         </div>
 
         <div className="border-t border-border p-2 space-y-2">
-          {providers.length > 0 && (
-            <div className="px-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                Model
-              </label>
-              <NativeSelect
-                value={selectedProviderId}
-                onChange={(e) => setSelectedProviderId(e.target.value)}
-                className="h-8 text-xs"
-              >
-                {providers.map((p) => (
-                  <option key={p.id} value={String(p.id)}>
-                    {p.displayName} · {p.model}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-          )}
-
-          <div className="px-2 pt-1 space-y-1.5">
-            <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <SlidersHorizontalIcon className="h-3 w-3" />
-              Assistant tone
-            </div>
-
-            <NativeSelect
-              value={steering.tone}
-              onChange={(e) =>
-                setSteering({ ...steering, tone: e.target.value as SteeringConfig["tone"] })
-              }
-              className="h-8 text-xs"
-            >
-              <option value="concise">Concise</option>
-              <option value="balanced">Balanced</option>
-              <option value="deep">Deep</option>
-            </NativeSelect>
-
-            <NativeSelect
-              value={steering.responseStyle}
-              onChange={(e) =>
-                setSteering({
-                  ...steering,
-                  responseStyle: e.target.value as SteeringConfig["responseStyle"],
-                })
-              }
-              className="h-8 text-xs"
-            >
-              <option value="direct">Direct</option>
-              <option value="explanatory">Explanatory</option>
-              <option value="mentor">Mentor</option>
-            </NativeSelect>
-
-            <Button
-              variant={steering.includeReasoningSummary ? "secondary" : "ghost"}
-              size="sm"
-              className="w-full justify-start h-8 text-xs"
-              onClick={() =>
-                setSteering({
-                  ...steering,
-                  includeReasoningSummary: !steering.includeReasoningSummary,
-                })
-              }
-            >
-              Reasoning summary {steering.includeReasoningSummary ? "on" : "off"}
-            </Button>
-          </div>
-
           <Button
             variant="ghost"
             size="sm"
@@ -699,11 +577,44 @@ function ChatWorkspace({
 
           <div className="flex-1" />
 
-          {selectedProvider && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-medium">{selectedProvider.displayName}</span>
-              <span className="text-[10px] font-mono opacity-60">{selectedProvider.model}</span>
-            </div>
+          {providers.length > 0 && (
+            <ModelSelector open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+              <ModelSelectorTrigger asChild>
+                <Button variant="outline" className="h-8 max-w-[55vw] justify-between gap-2 text-xs">
+                  <span className="truncate">
+                    {providers.find((p) => String(p.id) === selectedProviderId)?.displayName ?? "Model"}
+                    {" · "}
+                    {providers.find((p) => String(p.id) === selectedProviderId)?.model ?? "Select"}
+                  </span>
+                  <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              </ModelSelectorTrigger>
+              <ModelSelectorContent className="sm:max-w-[460px]">
+                <ModelSelectorInput placeholder="Search models..." />
+                <ModelSelectorList>
+                  <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
+                  <ModelSelectorGroup heading="Available models">
+                    {providers.map((provider) => (
+                      <ModelSelectorItem
+                        key={provider.id}
+                        value={`${provider.displayName} ${provider.model}`}
+                        onSelect={() => {
+                          setSelectedProviderId(String(provider.id));
+                          setModelSelectorOpen(false);
+                        }}
+                      >
+                        <ModelSelectorName>
+                          {provider.displayName} · {provider.model}
+                        </ModelSelectorName>
+                        {String(provider.id) === selectedProviderId && (
+                          <CheckCircle2Icon className="h-3.5 w-3.5 text-primary" />
+                        )}
+                      </ModelSelectorItem>
+                    ))}
+                  </ModelSelectorGroup>
+                </ModelSelectorList>
+              </ModelSelectorContent>
+            </ModelSelector>
           )}
 
           {sidebarOpen && (
@@ -736,9 +647,10 @@ function ChatWorkspace({
             assistantMessage={{
               allowCopy: true,
               allowReload: true,
-            }}
-            components={{
-              AssistantMessage: CustomAssistantMessage,
+              components: {
+                Text: StreamdownText,
+                ToolFallback,
+              },
             }}
             strings={{
               composer: {
@@ -760,11 +672,6 @@ function ChatWorkspace({
 export default function ChatPage() {
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
-  const [steering, setSteering] = useState<SteeringConfig>({
-    tone: "balanced",
-    responseStyle: "direct",
-    includeReasoningSummary: false,
-  });
 
   useEffect(() => {
     fetch("/api/chat")
@@ -779,7 +686,7 @@ export default function ChatPage() {
       .catch(() => {});
   }, []);
 
-  const runtime = useOverseerRuntime(selectedProviderId, steering);
+  const runtime = useOverseerRuntime(selectedProviderId);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -787,8 +694,6 @@ export default function ChatPage() {
         providers={providers}
         selectedProviderId={selectedProviderId}
         setSelectedProviderId={setSelectedProviderId}
-        steering={steering}
-        setSteering={setSteering}
       />
     </AssistantRuntimeProvider>
   );

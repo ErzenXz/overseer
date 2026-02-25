@@ -34,7 +34,7 @@ function extractLastUserText(messages: UIMessage[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser) return "";
 
-  const text = lastUser.parts
+  const text = (Array.isArray(lastUser.parts) ? lastUser.parts : [])
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n")
@@ -60,10 +60,14 @@ export async function POST(req: Request) {
 
   const message = extractLastUserText(messages);
   if (!message) {
-    return new Response(JSON.stringify({ error: "No user message found" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
+    const emptyStream = createUIMessageStream<UIMessage>({
+      execute: ({ writer }) => {
+        writer.write({ type: "start" });
+        writer.write({ type: "finish", finishReason: "stop" });
+      },
     });
+
+    return createUIMessageStreamResponse({ stream: emptyStream });
   }
 
   logger.info("WebUI gateway chat request", {

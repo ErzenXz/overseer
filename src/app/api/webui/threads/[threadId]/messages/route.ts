@@ -48,7 +48,6 @@ function dbMessageToUIMessage(message: {
     };
   }
 
-  // `tool` rows (if any) are rendered as assistant text fallback.
   const toolCalls = safeParseToolCalls(message.tool_calls);
 
   const toolParts = toolCalls.map((toolCall, idx) => {
@@ -108,8 +107,22 @@ export async function GET(
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
-  const messages = messagesModel.findByConversation(conversationId, 300);
-  const uiMessages = messages.map((message) => dbMessageToUIMessage(message));
+  const dbMessages = messagesModel.findByConversation(conversationId, 300);
+  const uiMessages = dbMessages.map((message) => dbMessageToUIMessage(message));
 
-  return NextResponse.json({ messages: uiMessages });
+  // Expected by runtime.thread.importExternalState in useChatRuntime/@assistant-ui/react-ai-sdk.
+  let parentId: string | null = null;
+  const externalState = {
+    messages: uiMessages.map((message) => {
+      const item = {
+        parentId,
+        message,
+      };
+      parentId = message.id;
+      return item;
+    }),
+    headId: uiMessages.length > 0 ? uiMessages[uiMessages.length - 1]!.id : null,
+  };
+
+  return NextResponse.json({ externalState });
 }
