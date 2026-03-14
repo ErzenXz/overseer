@@ -8,7 +8,7 @@ import {
 import { getCurrentUser } from "@/lib/auth";
 import { runGatewayChat } from "@/gateway/chat-core";
 import { createLogger } from "@/lib/logger";
-import { listSkillsWithTools } from "@/agent/skills/registry";
+import { listSkillsWithToolsForUser } from "@/agent/skills/registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,11 +118,11 @@ async function extractLastUserAttachments(
   return attachments;
 }
 
-function preprocessSlashCommand(rawContent: string): string {
+function preprocessSlashCommand(rawContent: string, ownerUserId: number): string {
   const trimmed = rawContent.trim();
   if (!trimmed.startsWith("/")) return rawContent;
 
-  const activeSkills = listSkillsWithTools().filter((skill) => skill.active);
+  const activeSkills = listSkillsWithToolsForUser(ownerUserId).filter((skill) => skill.active);
 
   if (trimmed === "/skills") {
     if (activeSkills.length === 0) {
@@ -192,7 +192,7 @@ export async function POST(req: Request) {
 
   const attachments = await extractLastUserAttachments(req, messages);
   const rawMessage = extractLastUserText(messages);
-  const message = preprocessSlashCommand(rawMessage).trim() || (
+  const message = preprocessSlashCommand(rawMessage, user.id).trim() || (
     attachments.length > 0
       ? "Please analyze the attached files and use them as context for your answer."
       : ""

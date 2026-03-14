@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAui, useAuiState, ComposerPrimitive } from "@assistant-ui/react";
-import { AttachmentUI } from "@assistant-ui/react-ui";
-import { PaperclipIcon, SendHorizontalIcon, SlashIcon, CircleXIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useAui, useAuiState } from "@assistant-ui/react";
+import { AttachmentUI, Composer } from "@assistant-ui/react-ui";
+import { SlashIcon } from "lucide-react";
 
 interface SandboxFileEntry {
   name: string;
@@ -47,9 +46,6 @@ async function blobToFile(path: string): Promise<File> {
 export default function OverseerComposer() {
   const aui = useAui();
   const text = useAuiState((s) => s.composer.text);
-  const isEditing = useAuiState((s) => s.composer.isEditing);
-  const isRunning = useAuiState((s) => s.thread.isRunning);
-  const canCancel = useAuiState((s) => s.thread.capabilities.cancel);
   const canAttach = useAuiState(
     (s) => s.composer.isEditing && s.thread.capabilities.attachments,
   );
@@ -168,35 +164,21 @@ export default function OverseerComposer() {
   };
 
   return (
-    <ComposerPrimitive.Root className="aui-composer-root relative">
+    <Composer.Root className="relative">
       {canAttach && (
-        <div className="aui-composer-attachments">
-          <ComposerPrimitive.Attachments
-            components={{
-              Attachment: AttachmentUI,
-            }}
-          />
-        </div>
+        <Composer.Attachments
+          components={{
+            Attachment: AttachmentUI,
+          }}
+        />
       )}
 
       {canAttach && (
-        <ComposerPrimitive.AddAttachment asChild>
-          <button
-            type="button"
-            className="aui-composer-attach"
-            title="Attach file"
-          >
-            <PaperclipIcon />
-          </button>
-        </ComposerPrimitive.AddAttachment>
+        <Composer.AddAttachment />
       )}
 
       <div className="relative flex-1">
-        <ComposerPrimitive.Input
-          autoFocus
-          placeholder="Message Overseer..."
-          className="aui-composer-input"
-        />
+        <Composer.Input autoFocus placeholder="Message Overseer..." />
 
         {mentionQuery !== null && (
           <div className="absolute left-0 right-0 bottom-full mb-2 rounded-xl border border-border bg-card shadow-2xl max-h-56 overflow-y-auto z-20">
@@ -260,27 +242,7 @@ export default function OverseerComposer() {
         )}
       </div>
 
-      {!canCancel || !isRunning ? (
-        <ComposerPrimitive.Send asChild>
-          <button
-            type="button"
-            className={cn("aui-composer-send", !isEditing && "opacity-50")}
-            title="Send message"
-          >
-            <SendHorizontalIcon />
-          </button>
-        </ComposerPrimitive.Send>
-      ) : (
-        <ComposerPrimitive.Cancel asChild>
-          <button
-            type="button"
-            className="aui-composer-cancel"
-            title="Cancel"
-          >
-            <CircleXIcon />
-          </button>
-        </ComposerPrimitive.Cancel>
-      )}
-    </ComposerPrimitive.Root>
+      <Composer.Action />
+    </Composer.Root>
   );
 }

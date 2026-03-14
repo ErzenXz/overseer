@@ -171,10 +171,16 @@ export async function runGatewayChat(
     Permission.SYSTEM_FILES_DELETE,
   ]);
 
-  const sandboxRoot = getUserSandboxRoot({
-    kind: "web",
-    id: String(ownerUserId),
-  });
+  const sandboxRoot = auth.kind === "web"
+    ? getUserSandboxRoot({
+        kind: "web",
+        id: String(ownerUserId),
+      })
+    : getUserSandboxRoot({
+        kind: "external",
+        id: String(externalUserId),
+        interfaceType,
+      });
   ensureDir(sandboxRoot);
 
   // Conversation: find or create

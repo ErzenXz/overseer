@@ -934,3 +934,40 @@ export function listSkillsWithTools(): Array<{
     };
   });
 }
+
+export function listSkillsWithToolsForUser(ownerUserId: number): Array<{
+  id: string;
+  name: string;
+  description: string;
+  active: boolean;
+  tools: string[];
+  triggers: string[];
+}> {
+  const skills = getAllSkillsForUser(ownerUserId);
+
+  return skills.map((skill) => {
+    let tools: string[] = [];
+    let triggers: string[] = [];
+
+    if (skill.tools) {
+      const toolsDef = parseJsonValue<SkillToolDefinition[]>(skill.tools, []);
+      if (Array.isArray(toolsDef)) {
+        tools = toolsDef
+          .map((t) => (t && typeof t.name === "string" ? t.name : ""))
+          .filter(Boolean);
+      }
+    }
+    if (skill.triggers) {
+      triggers = parseStringArray(skill.triggers);
+    }
+
+    return {
+      id: skill.skill_id,
+      name: skill.name,
+      description: skill.description || "",
+      active: skill.is_active === 1,
+      tools,
+      triggers,
+    };
+  });
+}
