@@ -323,6 +323,8 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
+const streamdownPluginsCompat =
+ streamdownPlugins as unknown as MessageResponseProps["plugins"];
 
 export const MessageResponse = memo(
  ({ className, ...props }: MessageResponseProps) => (
@@ -331,7 +333,7 @@ export const MessageResponse = memo(
     "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
     className
    )}
-   plugins={streamdownPlugins}
+   plugins={streamdownPluginsCompat}
    {...props}
   />
  ),

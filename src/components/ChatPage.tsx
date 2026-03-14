@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AssistantRuntimeProvider,
   type ToolCallMessagePartProps,
@@ -77,11 +77,13 @@ const streamdownPlugins = {
   mermaid,
   cjk,
 };
+const streamdownPluginsCompat =
+  streamdownPlugins as unknown as ComponentProps<typeof StreamdownTextPrimitive>["plugins"];
 
 const StreamdownText = INTERNAL.withSmoothContextProvider(() => {
   return (
     <StreamdownTextPrimitive
-      plugins={streamdownPlugins}
+      plugins={streamdownPluginsCompat}
       shikiTheme={["github-light", "github-dark"]}
       controls
       caret="block"

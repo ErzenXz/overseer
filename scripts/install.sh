@@ -1115,6 +1115,18 @@ server {
     listen [::]:80;
     server_name ${OVERSEER_DOMAIN};
 
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:${OVERSEER_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
     location / {
         proxy_pass http://127.0.0.1:${OVERSEER_PORT};
         proxy_http_version 1.1;
