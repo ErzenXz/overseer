@@ -54,6 +54,7 @@ import {
   ModelSelectorName,
 } from "@/components/ai-elements/model-selector";
 import { cn } from "@/lib/utils";
+import OverseerComposer from "@/components/OverseerComposer";
 
 interface ProviderOption {
   id: number;
@@ -626,7 +627,7 @@ function ChatWorkspace({
 
         <div className="flex-1 overflow-hidden">
           <Thread
-            assistantAvatar={{ fallback: "O" }}
+            assistantAvatar={{ fallback: "" }}
             welcome={{
               message: "How can I help you today?",
               suggestions: [
@@ -646,6 +647,9 @@ function ChatWorkspace({
                 Text: StreamdownText,
                 ToolFallback,
               },
+            }}
+            components={{
+              Composer: OverseerComposer,
             }}
             strings={{
               composer: {
