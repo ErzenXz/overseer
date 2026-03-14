@@ -1,0 +1,12 @@
+{
+  "title": "Overseer Docs",
+  "pages": [
+    "index",
+    "quickstart",
+    "installation",
+    "guides",
+    "concepts",
+    "interfaces",
+    "api-reference"
+  ]
+}

@@ -10,7 +10,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](package.json)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**A powerful, self-hosted AI agent that gives you complete control over your server through natural language**
+**A self-hosted AI assistant for your own server, files, and tools**
 
 > Note: This project is newly renamed and hasn't been promoted yet, so the star history is effectively flat for now.
 
@@ -22,7 +22,16 @@
 
 ## 🌟 Why Overseer?
 
-Overseer is not just another chatbot. It's a **production-ready AI agent platform** that turns your server into an intelligent assistant. Chat via Telegram or Discord, manage everything through a beautiful web dashboard, and extend capabilities with skills and MCP servers.
+Overseer helps you manage your own server with a chat interface.
+
+If you are not technical, the short version is:
+
+- you open the app in your browser
+- you connect an AI provider like OpenAI
+- you ask questions or give tasks in plain English
+- Overseer works inside your own setup instead of a hosted third-party workspace
+
+You can use the web chat on its own, or later connect Telegram and Discord.
 
 ### ✨ What Makes Overseer Different?
 
@@ -33,6 +42,14 @@ Overseer is not just another chatbot. It's a **production-ready AI agent platfor
 - **🌍 Cross-Platform**: App runs on Windows, Linux, and macOS. The bash `install.sh`/`update.sh` scripts are supported on Linux/macOS; on Windows use WSL2 (or follow the Windows Server section in the deployment docs).
 - **🎨 Beautiful Admin Panel**: Modern Next.js web interface for configuration and monitoring
 - **🤖 20+ LLM Providers**: OpenAI, Anthropic, Google, Groq, Ollama, and more
+
+## 🙋 Who This Is For
+
+- People who want a private AI workspace they control themselves
+- Teams who need multiple users, permissions, and separate file areas
+- Developers and operators who want chat, files, tools, and automation in one place
+
+If you only want the shortest setup path, jump to [Quick Start](#-quick-start).
 
 ---
 
@@ -210,11 +227,14 @@ Never: Execute destructive commands without confirmation
 
 ## ⚡ Quick Start
 
+This is the easiest path for first-time users.
+
 ### Prerequisites
 
 - **Node.js** 20+ ([Download](https://nodejs.org))
 - **npm** or **pnpm**
-- **Telegram Bot Token** (from [@BotFather](https://t.me/BotFather)) or **Discord Bot Token**
+
+You do **not** need Telegram or Discord to try Overseer. The web chat works on its own.
 
 ### Installation
 
@@ -251,7 +271,7 @@ pnpm run discord      # Discord bot (optional, in another terminal)
 
 ### Configuration
 
-Edit `.env` file:
+For the smallest working setup, edit `.env` and fill in:
 
 ```env
 # Admin Credentials
@@ -276,12 +296,15 @@ DEFAULT_MODEL=gpt-4o
 OPENAI_API_KEY=sk-...
 ```
 
+Telegram and Discord are optional. You can add them later.
+
 ### First Steps
 
-1. **Access Web Admin**: http://localhost:3000
-2. **Add LLM Provider**: Settings → Providers → Add Provider
-3. **Configure Bot**: Settings → Interfaces → Telegram/Discord
-4. **Start Chatting**: Message your bot on Telegram/Discord!
+1. **Open the app**: visit `http://localhost:3000`
+2. **Log in**: use the admin username and password you set
+3. **Add an AI provider**: go to `Settings -> Providers`
+4. **Test the web chat**: ask “What can you do?”
+5. **Add bots later if you want**: go to `Settings -> Interfaces`
 
 ---
 
@@ -442,7 +465,7 @@ overseer/
 │   ├── deploy-assistant/
 │   ├── database-helper/
 │   └── ...
-├── docs-site/              # Documentation
+├── apps/docs/              # Fumadocs documentation app
 ├── scripts/                # Installation & setup scripts
 └── systemd/                # Production service files
 ```
@@ -507,7 +530,7 @@ Overseer is built on the shoulders of giants:
 
 ## 🔗 Links
 
-- **Documentation**: [docs-site/](docs-site/)
+- **Documentation App**: [apps/docs/](apps/docs/)
 - **Issues**: [GitHub Issues](https://github.com/Quad-Labs-LLC/overseer/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/Quad-Labs-LLC/overseer/discussions)
 - **Twitter**: [@overseer](https://twitter.com/overseer)

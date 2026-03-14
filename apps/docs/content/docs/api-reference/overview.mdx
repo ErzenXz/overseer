@@ -1,0 +1,46 @@
+---
+title: "API Overview"
+description: "REST API reference for Overseer"
+---
+
+# API Overview
+
+Overseer exposes a RESTful API for programmatic access to all features.
+
+## Base URL
+
+```
+Production: https://your-domain.com/api
+Development: http://localhost:3000/api
+```
+
+## Authentication
+
+All API requests require authentication via session cookies or API keys.
+
+```bash
+# Login to get session cookie
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "your-password"}'
+```
+
+## Rate Limits
+
+| Endpoint       | Limit        | Window |
+| -------------- | ------------ | ------ |
+| Authentication | 5 requests   | 15 min |
+| Chat           | 100 requests | 1 min  |
+| General        | 100 requests | 1 min  |
+
+## Error Format
+
+```json
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "Authentication required",
+    "status": 401
+  }
+}
+```

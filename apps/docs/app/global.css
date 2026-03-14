@@ -1,0 +1,39 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+:root {
+  --fd-primary: oklch(0.64 0.16 202);
+  --fd-accent: oklch(0.93 0.03 196);
+  --fd-background: oklch(0.985 0.006 95);
+  --fd-foreground: oklch(0.24 0.02 245);
+}
+
+.dark {
+  --fd-primary: oklch(0.72 0.15 198);
+  --fd-accent: oklch(0.28 0.03 220);
+  --fd-background: oklch(0.17 0.015 240);
+  --fd-foreground: oklch(0.96 0.01 95);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body), sans-serif;
+  background:
+    radial-gradient(circle at top left, color-mix(in oklab, var(--fd-primary) 12%, transparent), transparent 28%),
+    radial-gradient(circle at bottom right, color-mix(in oklab, var(--fd-accent) 70%, transparent), transparent 26%),
+    var(--fd-background);
+  color: var(--fd-foreground);
+}
+
+h1,
+h2,
+h3,
+h4,
+[data-docs-heading='true'] {
+  font-family: var(--font-display), serif;
+  letter-spacing: -0.025em;
+}

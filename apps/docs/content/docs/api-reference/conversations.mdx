@@ -1,0 +1,46 @@
+---
+title: "Conversations"
+description: "Conversation management API"
+---
+
+# Conversations API
+
+Browse and manage conversation history.
+
+## List Conversations
+
+```bash
+GET /api/conversations?page=1&limit=20
+```
+
+**Response (200):**
+
+```json
+{
+  "conversations": [
+    {
+      "id": "conv_abc123",
+      "title": "System monitoring",
+      "platform": "telegram",
+      "messageCount": 12,
+      "createdAt": "2025-01-15T10:30:00Z",
+      "updatedAt": "2025-01-15T11:45:00Z"
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "totalPages": 3
+}
+```
+
+## Get Conversation
+
+```bash
+GET /api/conversations/:id
+```
+
+## Delete Conversation
+
+```bash
+DELETE /api/conversations/:id
+```

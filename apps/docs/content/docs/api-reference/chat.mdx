@@ -1,0 +1,42 @@
+---
+title: "Chat"
+description: "Chat API endpoints"
+---
+
+# Chat
+
+Send messages and receive AI responses.
+
+## Send Message
+
+```bash
+POST /api/chat
+```
+
+<ParamField body="message" type="string" required>
+  The message to send to the agent
+</ParamField>
+
+<ParamField body="conversationId" type="string">
+  Optional conversation ID to continue an existing conversation
+</ParamField>
+
+**Request:**
+
+```json
+{
+  "message": "What's using the most CPU?",
+  "conversationId": "conv_abc123"
+}
+```
+
+**Response (200 - Streaming):**
+The response is streamed as Server-Sent Events (SSE):
+
+```
+data: {"type": "text", "content": "Checking system processes..."}
+data: {"type": "tool_call", "name": "executeCommand", "args": {"command": "top -bn1"}}
+data: {"type": "tool_result", "content": "..."}
+data: {"type": "text", "content": "The top CPU consumer is..."}
+data: {"type": "done"}
+```

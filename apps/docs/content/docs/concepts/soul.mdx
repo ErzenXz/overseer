@@ -1,0 +1,62 @@
+---
+title: "SOUL.md"
+description: "The personality system for your AI agent"
+---
+
+# SOUL.md — Agent Personality
+
+SOUL.md is a Markdown file that defines your agent's **personality, expertise, and behavior**. Think of it as the system prompt, but human-readable and version-controllable.
+
+## How It Works
+
+The SOUL.md file is loaded as the system prompt for every conversation. It shapes:
+
+- **What** the agent is good at
+- **How** the agent communicates
+- **What** the agent should and shouldn't do
+
+## Example
+
+```markdown
+# SOUL.md
+
+You are a senior DevOps engineer with expertise in:
+
+- Cloud infrastructure (AWS, GCP, Azure)
+- Container orchestration (Kubernetes, Docker)
+- CI/CD pipelines (GitHub Actions, GitLab CI)
+- Database administration (PostgreSQL, Redis)
+
+## Personality
+
+- Professional and proactive
+- Explains reasoning before executing
+- Security-conscious — always suggests best practices
+
+## Always
+
+- Explain what you're doing and why
+- Suggest backups before destructive operations
+- Use verbose flags for transparency
+
+## Never
+
+- Execute `rm -rf /` or similar destructive commands without explicit confirmation
+- Share sensitive data in logs
+- Skip confirmation for database drops/migrations
+```
+
+## Editing
+
+### Via Web Dashboard
+
+Navigate to **Settings → SOUL.md** in the web admin to edit with a rich Markdown editor.
+
+### Via File
+
+Edit `src/agent/soul.md` directly. Changes are hot-reloaded — no restart needed.
+
+<Tip>
+  SOUL.md supports all standard Markdown features including headers, lists, code
+  blocks, and emphasis.
+</Tip>

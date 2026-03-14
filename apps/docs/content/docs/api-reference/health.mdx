@@ -1,0 +1,30 @@
+---
+title: "Health"
+description: "Health check API"
+---
+
+# Health API
+
+System health and diagnostics.
+
+## Health Check
+
+```bash
+GET /api/health
+```
+
+**Response (200):**
+
+```json
+{
+  "status": "healthy",
+  "uptime": 86400,
+  "version": "1.0.0",
+  "services": {
+    "database": "connected",
+    "telegram": "running",
+    "discord": "running",
+    "agent": "ready"
+  }
+}
+```

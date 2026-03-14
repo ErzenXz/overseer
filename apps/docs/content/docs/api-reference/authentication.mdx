@@ -1,0 +1,75 @@
+---
+title: "Authentication"
+description: "Authentication API endpoints"
+---
+
+# Authentication
+
+## Login
+
+<ParamField body="username" type="string" required>
+  Admin username
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Admin password
+</ParamField>
+
+```bash
+POST /api/auth/login
+```
+
+**Request:**
+
+```json
+{
+  "username": "admin",
+  "password": "your-password"
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "role": "admin"
+  }
+}
+```
+
+## Logout
+
+```bash
+POST /api/auth/logout
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true
+}
+```
+
+## Session Check
+
+```bash
+GET /api/auth/session
+```
+
+**Response (200):**
+
+```json
+{
+  "authenticated": true,
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "role": "admin"
+  }
+}
+```

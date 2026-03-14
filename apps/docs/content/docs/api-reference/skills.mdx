@@ -1,0 +1,44 @@
+---
+title: "Skills"
+description: "Skills management API"
+---
+
+# Skills API
+
+Browse and manage installed skills.
+
+## List Skills
+
+```bash
+GET /api/skills
+```
+
+**Response (200):**
+
+```json
+{
+  "skills": [
+    {
+      "name": "security-audit",
+      "version": "1.0.0",
+      "description": "Scan for vulnerabilities",
+      "enabled": true,
+      "tools": ["securityScan", "portScan"]
+    }
+  ]
+}
+```
+
+## Enable/Disable Skill
+
+```bash
+PUT /api/skills/:name
+```
+
+**Request:**
+
+```json
+{
+  "enabled": true
+}
+```

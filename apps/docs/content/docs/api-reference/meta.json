@@ -1,0 +1,14 @@
+{
+  "title": "API Reference",
+  "pages": [
+    "overview",
+    "authentication",
+    "chat",
+    "providers",
+    "conversations",
+    "tools",
+    "skills",
+    "health",
+    "api"
+  ]
+}

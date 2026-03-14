@@ -1,0 +1,13 @@
+{
+  "title": "Guides",
+  "pages": [
+    "user-guide",
+    "deployment",
+    "security",
+    "mcp-servers",
+    "sub-agents",
+    "custom-skills",
+    "development",
+    "faq"
+  ]
+}

@@ -1,0 +1,70 @@
+---
+title: "Architecture"
+description: "System design and internals of Overseer"
+---
+
+# Architecture
+
+Overseer follows a **layered, modular architecture** designed for extensibility and security.
+
+## System Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Presentation Layer                     │
+│         (Telegram, Discord, Web Admin, API)             │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│                  Application Layer                      │
+│         (Agent Core, Tool Loop, Conversation)           │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│                    Domain Layer                         │
+│     (Tools, Skills, MCP, Providers, Sub-Agents)         │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│                  Infrastructure Layer                   │
+│        (Database, Encryption, Logging, Auth)            │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Component Breakdown
+
+### Agent Core
+
+The central orchestrator powered by Vercel AI SDK. Handles conversation management, tool execution loops, and multi-step reasoning.
+
+### Chat Interfaces
+
+- **Telegram Bot** — Full streaming responses, rich formatting, file uploads via Telegraf
+- **Discord Bot** — Server integration, slash commands, role-based access via Discord.js
+- **Web Dashboard** — Next.js admin interface with real-time chat
+- **REST API** — Programmatic access for custom integrations
+
+### Extension System
+
+- **Skills** — Modular capability packages (security audit, deploy, database, etc.)
+- **MCP Servers** — Connect to Model Context Protocol servers for unlimited tools
+- **Sub-Agents** — Dynamically spawned specialized agents for complex tasks
+
+### Data Layer
+
+- **SQLite** — Fast, embedded database via better-sqlite3
+- **AES-256-GCM** — Encryption for all sensitive data at rest
+- **Audit Logging** — Complete action history for compliance
+
+## Technology Stack
+
+| Layer             | Technology                   |
+| ----------------- | ---------------------------- |
+| **Runtime**       | Node.js 20+                  |
+| **Language**      | TypeScript 5.x               |
+| **AI Framework**  | Vercel AI SDK                |
+| **Web Framework** | Next.js                      |
+| **Database**      | SQLite (better-sqlite3)      |
+| **Telegram**      | Telegraf                     |
+| **Discord**       | Discord.js                   |
+| **Encryption**    | Node.js crypto (AES-256-GCM) |

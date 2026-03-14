@@ -1,0 +1,60 @@
+---
+title: "Providers"
+description: "LLM Provider management API"
+---
+
+# Providers API
+
+Manage LLM providers and their configurations.
+
+## List Providers
+
+```bash
+GET /api/providers
+```
+
+**Response (200):**
+
+```json
+{
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "enabled": true,
+      "models": ["gpt-4o", "gpt-4", "gpt-3.5-turbo"]
+    }
+  ]
+}
+```
+
+## Add Provider
+
+```bash
+POST /api/providers
+```
+
+**Request:**
+
+```json
+{
+  "provider": "anthropic",
+  "apiKey": "sk-ant-...",
+  "defaultModel": "claude-3-5-sonnet-20241022"
+}
+```
+
+## Set Default
+
+```bash
+PUT /api/providers/default
+```
+
+**Request:**
+
+```json
+{
+  "provider": "openai",
+  "model": "gpt-4o"
+}
+```

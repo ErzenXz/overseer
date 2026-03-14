@@ -1,0 +1,67 @@
+---
+title: "Skills"
+description: "Extensible skills system for modular capabilities"
+---
+
+# Skills System
+
+Skills are **modular capability packages** that extend what your agent can do. Inspired by Vercel's Skills.sh.
+
+## Built-in Skills
+
+| Skill                        | Description                                     |
+| ---------------------------- | ----------------------------------------------- |
+| 🔐 **Security Audit**        | Scan for vulnerabilities and harden your server |
+| 🚀 **Deploy Assistant**      | Automated deployment workflows                  |
+| 🗄️ **Database Helper**       | SQL query assistance and optimization           |
+| 🐳 **Docker Helper**         | Container management and orchestration          |
+| 🔍 **Code Review**           | Automated code analysis and suggestions         |
+| 🌐 **Web Search**            | Internet search capabilities                    |
+| ⚡ **Performance Optimizer** | System optimization and tuning                  |
+| 🎯 **API Tester**            | API testing, monitoring, and documentation      |
+| 🔧 **Git Helper**            | Advanced Git workflows and automation           |
+
+## Installing Skills
+
+Skills are automatically loaded from the `skills/` directory. Each skill has:
+
+```
+skills/
+  my-skill/
+    index.ts      # Skill implementation
+    skill.json    # Metadata and configuration
+    README.md     # Documentation
+```
+
+## Creating Custom Skills
+
+### skill.json
+
+```json
+{
+  "name": "my-custom-skill",
+  "version": "1.0.0",
+  "description": "What this skill does",
+  "author": "Your Name",
+  "tools": ["tool1", "tool2"]
+}
+```
+
+### index.ts
+
+```typescript
+import { tool } from "ai";
+import { z } from "zod";
+
+export const tools = {
+  tool1: tool({
+    description: "First tool in my skill",
+    parameters: z.object({
+      input: z.string(),
+    }),
+    execute: async ({ input }) => {
+      return { result: `Processed: ${input}` };
+    },
+  }),
+};
+```

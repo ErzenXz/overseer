@@ -20,7 +20,7 @@ They are not the same.
     providers, bots, automation, and server access.
   </Card>
   <Card title="Deploy the docs" icon="book-open">
-    Choose this if you only want to publish the help website from `docs-site/`.
+    Choose this if you only want to publish the help website from `apps/docs/`.
   </Card>
 </CardGroup>
 
@@ -105,100 +105,59 @@ docker compose up -d
 
 ## Deploy the Docs on Vercel
 
-The documentation lives in the **`docs-site/`** folder.
+The documentation now lives in the **`apps/docs/`** folder as a standalone **Fumadocs + Next.js** app.
 
 If your goal is: “I want the docs website online on Vercel”, follow this section.
 
-### Easiest option
+According to Vercel’s official docs, Vercel can auto-detect Next.js apps, and you can deploy a monorepo app by setting the **Root Directory** in Project Settings. Sources: [Next.js on Vercel](https://vercel.com/docs/frameworks/full-stack/nextjs), [Configuring a Build](https://vercel.com/docs/builds/configure-a-build), [Project Settings](https://vercel.com/docs/project-configuration/project-settings).
 
-The easiest path is:
-
-1. host the docs on Mintlify
-2. optionally point your custom domain to them with Vercel or DNS
-
-### Option A: Mintlify only
-
-1. Go to [mintlify.com/start](https://mintlify.com/start).
-2. Sign in with GitHub.
-3. Connect this repository.
-4. Set the docs path to `docs-site`.
-5. Mintlify will publish the docs for you.
-
-This is the easiest option because Mintlify is built for this exact docs format.
-
-### Option B: Vercel in front of Mintlify
-
-Use this when you want a custom domain like:
-
-- `https://yourdomain.com/docs`
-- or `https://docs.yourdomain.com`
-
-First publish on Mintlify, then create a small Vercel project that forwards traffic to it.
-
-#### Step 1: publish the docs on Mintlify
-
-Finish **Option A** first so you have a live Mintlify URL such as:
-
-`https://your-subdomain.mintlify.app`
-
-#### Step 2: create a Vercel project
-
-According to Vercel’s official docs, Vercel can auto-detect frameworks, and you can adjust **Framework Preset**, **Build Command**, and **Root Directory** in Project Settings. For a simple forwarding project, using **Other** and adjusting build settings is supported. Sources: [Next.js on Vercel](https://vercel.com/docs/frameworks/full-stack/nextjs), [Configuring a Build](https://vercel.com/docs/builds/configure-a-build), [Project Settings](https://vercel.com/docs/project-configuration/project-settings).
+### The simple Vercel flow
 
 1. Open the [Vercel Dashboard](https://vercel.com/dashboard).
 2. Click **Add New** → **Project**.
 3. Import this repository.
-4. In project settings:
-   - set **Framework Preset** to **Other**
-   - keep **Root Directory** as the repository root
-   - if needed, override the build step so it does not try to build the app just to forward docs
+4. Set **Root Directory** to `apps/docs`.
+5. Keep the detected framework as **Next.js**.
+6. Deploy.
 
-#### Step 3: add a `vercel.json`
+That is it.
 
-Create a `vercel.json` file in the repository root with rewrites like this:
+### What Vercel should run
 
-```json
-{
-  "rewrites": [
-    { "source": "/docs", "destination": "https://<your-subdomain>.mintlify.app/docs" },
-    { "source": "/docs/:path*", "destination": "https://<your-subdomain>.mintlify.app/docs/:path*" }
-  ]
-}
+Inside `apps/docs`, the important scripts are:
+
+```bash
+pnpm build
+pnpm start
 ```
 
-Replace `<your-subdomain>` with your real Mintlify subdomain.
+The build already uses the correct Next.js build mode for this standalone docs app.
 
-#### Step 4: deploy
+### Custom domain
 
-Deploy the project in Vercel.
+If you want a custom docs domain:
 
-After that, your docs will be available at a path like:
-
-`https://yourdomain.com/docs`
+1. Deploy first
+2. Open the Vercel project
+3. Go to **Settings → Domains**
+4. Add your domain, such as `docs.yourdomain.com`
 
 <Info>
-  This approach keeps the nice custom domain in Vercel while letting Mintlify do
-  the actual docs hosting and rendering.
+  If you want proper Open Graph image URLs in production, set
+  `NEXT_PUBLIC_DOCS_URL` in Vercel to your final docs URL, for example
+  `https://docs.yourdomain.com`.
 </Info>
-
-### Option C: docs on a subdomain
-
-If you want `docs.yourdomain.com` instead:
-
-1. publish on Mintlify first
-2. add `docs.yourdomain.com` in Vercel or your DNS provider
-3. point that domain to the Mintlify-hosted docs
 
 ### Local testing
 
-Run the docs locally before pushing:
+Run the docs app locally before pushing:
 
 ```bash
-cd docs-site
-npx mintlify dev
+cd apps/docs
+pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to preview. No separate build step is required for Mintlify.
+Open [http://localhost:3000](http://localhost:3000) to preview.
 
 ## Environment Checklist
 

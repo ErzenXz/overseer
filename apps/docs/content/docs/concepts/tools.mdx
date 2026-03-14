@@ -1,0 +1,51 @@
+---
+title: "Tools"
+description: "Built-in tools and custom tool development"
+---
+
+# Tools
+
+Overseer follows a **minimal built-in tools** philosophy — only essential tools are included, with extensibility via Skills and MCP for everything else.
+
+## Built-in Tools
+
+### File Operations
+
+- **Read File** — Read file contents
+- **Write File** — Create or update files
+- **List Directory** — Browse filesystem
+
+### Shell Execution
+
+- **Execute Command** — Run shell commands with safety checks
+- Dangerous commands require explicit confirmation
+- Cross-platform support (Linux, macOS, Windows)
+
+## Safety Features
+
+All shell commands go through safety checks:
+
+1. **Pattern Matching** — Known dangerous patterns (rm -rf /, etc.) are flagged
+2. **Confirmation** — Flagged commands require user approval before execution
+3. **Audit Logging** — Every command is logged with full context
+4. **Whitelisting** — Optional command whitelist mode
+
+## Custom Tools
+
+Add custom tools in `src/agent/tools/`:
+
+```typescript
+import { tool } from "ai";
+import { z } from "zod";
+
+export const myCustomTool = tool({
+  description: "What this tool does",
+  parameters: z.object({
+    input: z.string().describe("Input parameter"),
+  }),
+  execute: async ({ input }) => {
+    // Implementation
+    return { success: true, result: "Done!" };
+  },
+});
+```
