@@ -6,7 +6,7 @@
     "build": "next build --webpack",
     "dev": "next dev",
     "start": "next start",
-    "typecheck": "fumadocs-mdx && tsc --noEmit"
+    "typecheck": "fumadocs-mdx && tsc -p tsconfig.typecheck.json --noEmit"
   },
   "dependencies": {
     "fumadocs-core": "^16.6.17",

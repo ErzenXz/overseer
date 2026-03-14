@@ -3,6 +3,9 @@
   "pages": [
     "web-dashboard",
     "telegram",
-    "discord"
+    "discord",
+    "slack",
+    "whatsapp",
+    "matrix"
   ]
 }

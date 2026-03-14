@@ -10,8 +10,12 @@ Complete guide for using Overseer - from first steps to advanced features.
 ## Table of Contents
 
 - [Getting Started](#getting-started)
+- [What You Can Do in Overseer](#what-you-can-do-in-overseer)
+- [Using the Web Chat](#using-the-web-chat)
+- [Working with Files](#working-with-files)
 - [Using Telegram Bot](#using-telegram-bot)
 - [Using Discord Bot](#using-discord-bot)
+- [Other Interfaces](#other-interfaces)
 - [Web Admin Panel](#web-admin-panel)
 - [Managing LLM Providers](#managing-llm-providers)
 - [Customizing SOUL.md](#customizing-soulmd)
@@ -53,10 +57,77 @@ Complete guide for using Overseer - from first steps to advanced features.
 - [ ] Login to web admin
 - [ ] Add at least one LLM provider
 - [ ] Set default provider
-- [ ] Configure Telegram or Discord
+- [ ] Test the web chat
+- [ ] Configure any extra interface you want
 - [ ] Send test message
 - [ ] Customize SOUL.md (optional)
 - [ ] Install skills (optional)
+
+---
+
+## What You Can Do in Overseer
+
+Here is the simple version of what Overseer can do for a normal user:
+
+- chat with your AI assistant in the browser
+- upload files and images
+- attach saved files using `@`
+- use skills with `/skills` and `/<skill-name>`
+- manage your own private Files area
+- switch AI providers and models
+- connect bots and chat platforms
+- save memory, prompts, and recurring automations
+
+If you are not sure where to start, start in the **web chat**.
+
+## Using the Web Chat
+
+The web chat is the main place to talk to Overseer.
+
+### What the chat supports
+
+- normal text chat
+- file uploads
+- image attachments
+- `@` attach from your Files page
+- `/skills` to see available skills
+- `/<skill-name>` to guide the assistant toward a specific skill
+- access to your own conversation history
+
+### Useful things to try
+
+- Ask: `What can you do?`
+- Ask: `Explain this server`
+- Upload a file and ask: `Summarize this`
+- Type `@` to attach a saved file from your Files area
+- Type `/skills` to see available skills
+
+## Working with Files
+
+Each user gets their **own file sandbox** in Overseer.
+
+That means:
+
+- your files are separate from other users' files
+- uploads in chat can be saved into your own Files area
+- the Files page is your main place to browse and manage what you have uploaded
+
+### What you can do on the Files page
+
+- upload files
+- create folders
+- create text files
+- preview many common file types
+- rename or delete files
+- download files again later
+
+### Chat + Files together
+
+The web chat and Files page work together:
+
+- upload files in chat
+- attach existing files with `@`
+- keep working from your own saved file set over time
 
 ---
 
@@ -269,6 +340,24 @@ Bot: [Creates thread "Conversation with @User"]
 - **Role-Based Access**: Restrict by Discord roles
 - **Server-Specific**: Different configurations per server
 - **Thread Support**: Organized conversations
+
+---
+
+## Other Interfaces
+
+Overseer also supports these extra interfaces:
+
+- **Slack**
+- **WhatsApp**
+- **Matrix**
+
+You can read their setup pages here:
+
+- [Slack](/docs/interfaces/slack)
+- [WhatsApp](/docs/interfaces/whatsapp)
+- [Matrix](/docs/interfaces/matrix)
+
+These interfaces use the same core Overseer agent, but the web dashboard is still the easiest place for setup, files, providers, and admin tasks.
 
 ---
 

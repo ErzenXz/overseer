@@ -1,0 +1,56 @@
+---
+title: "Slack"
+description: "Slack interface guide"
+---
+
+# Slack
+
+Use Overseer inside Slack if your team already works there every day.
+
+Slack is a good fit when you want:
+
+- quick questions from a team channel
+- private direct-message conversations
+- simple operational help without opening the web dashboard
+
+## What Slack supports
+
+- team chat through Slack messages
+- one Slack app per enabled Overseer interface
+- per-owner configuration in the admin dashboard
+- allowed-user filtering
+- the same core agent, tools, skills, and MCP features as the main app
+
+## What you need
+
+In the Overseer dashboard, go to **Settings → Interfaces** and add a **Slack** interface.
+
+Slack supports these main settings:
+
+- **Bot Token**
+- **App Token** for Socket Mode
+- **Signing Secret**
+- optional **Allowed Users**
+
+## Setup Flow
+
+<Steps>
+  <Step title="Create a Slack app">
+    Open the Slack API dashboard, create a new app, and connect it to your workspace.
+  </Step>
+  <Step title="Enable bot features">
+    Add the bot user, then generate the bot token and app token you want Overseer to use.
+  </Step>
+  <Step title="Add the values in Overseer">
+    In **Settings → Interfaces**, choose **Slack** and fill in the token fields.
+  </Step>
+  <Step title="Enable the interface">
+    Save the interface, make sure it is enabled, and then start or restart the Slack runner.
+  </Step>
+</Steps>
+
+## Good to know
+
+- Slack uses the same underlying agent as the web chat.
+- Access can still be limited with allowed users and normal Overseer permissions.
+- Files and deeper system management are usually easier in the web dashboard, but Slack is great for quick conversations.

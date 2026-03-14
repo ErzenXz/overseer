@@ -1,0 +1,45 @@
+---
+title: "WhatsApp"
+description: "WhatsApp interface guide"
+---
+
+# WhatsApp
+
+Use Overseer in WhatsApp if you want a mobile-first chat experience.
+
+This interface is powered by a WhatsApp pairing flow and is best for personal or small-team usage where quick phone access matters.
+
+## What WhatsApp supports
+
+- chat from your phone
+- one active WhatsApp session per configured interface
+- the same agent reasoning and tools as the rest of Overseer
+- user-level routing through the gateway
+
+## How it works
+
+Unlike Telegram and Discord, WhatsApp usually needs a first-time pairing step.
+
+During first setup, Overseer creates the WhatsApp session and stores the auth state on disk for that interface. After that, the connection can reconnect using the saved auth state.
+
+## Setup Flow
+
+<Steps>
+  <Step title="Add a WhatsApp interface">
+    In the dashboard, open **Settings → Interfaces** and choose **WhatsApp**.
+  </Step>
+  <Step title="Save the interface">
+    Save it even if you are still preparing the connection details.
+  </Step>
+  <Step title="Start the WhatsApp runner">
+    Start the WhatsApp process so Overseer can begin the pairing flow.
+  </Step>
+  <Step title="Complete pairing">
+    Follow the pairing information shown in your logs or terminal to connect the WhatsApp account.
+  </Step>
+</Steps>
+
+## Good to know
+
+- WhatsApp is convenient, but the web dashboard is still the easiest place for files, settings, and admin work.
+- If you want a more traditional bot setup, Telegram is usually the simplest option.

@@ -1,0 +1,48 @@
+---
+title: "Matrix"
+description: "Matrix interface guide"
+---
+
+# Matrix
+
+Use Overseer with Matrix if you prefer open chat infrastructure or self-hosted messaging.
+
+Matrix is a good fit for privacy-focused teams and communities that already run Matrix rooms.
+
+## What Matrix supports
+
+- room-based conversations
+- per-interface homeserver and access token configuration
+- optional room filtering
+- the same core agent, tools, skills, and MCP integrations as the main app
+
+## What you need
+
+To configure Matrix in Overseer, you usually need:
+
+- your **homeserver URL**
+- a **Matrix access token**
+- optional **room IDs** if you only want specific rooms enabled
+
+## Setup Flow
+
+<Steps>
+  <Step title="Create or choose a Matrix account">
+    Use an account that Overseer can connect with on your Matrix homeserver.
+  </Step>
+  <Step title="Collect the connection details">
+    You will need the homeserver URL and an access token for that account.
+  </Step>
+  <Step title="Add the Matrix interface in Overseer">
+    In **Settings → Interfaces**, choose **Matrix** and fill in the homeserver and token values.
+  </Step>
+  <Step title="Limit rooms if needed">
+    If you only want certain rooms, add those room IDs in the interface configuration.
+  </Step>
+</Steps>
+
+## Good to know
+
+- Matrix can auto-join invited rooms depending on your setup.
+- If no room IDs are provided, Overseer can work more broadly across connected rooms.
+- For first-time users, Telegram or the web dashboard may be easier to start with, but Matrix is excellent for self-hosted chat workflows.
