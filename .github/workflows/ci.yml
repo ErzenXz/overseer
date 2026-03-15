@@ -59,6 +59,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Docs Typecheck
+        run: pnpm --filter overseer-docs typecheck
+
       - name: Init DB (migrations)
         run: pnpm run db:init
 
@@ -70,6 +73,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Docs Build
+        run: pnpm --filter overseer-docs build
 
   shellcheck:
     name: ShellCheck

@@ -13,20 +13,21 @@ test("interfacesModel.create generates gateway_token and decrypts it", async () 
   initializeSchema();
 
   const { db } = await import("../src/database/db");
-  // Seed a user so interfaces foreign keys pass.
-  db.prepare("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)").run(
-    1,
-    "admin",
-    "x",
-    "admin",
-  );
+  const existing = db
+    .prepare("SELECT id FROM users WHERE username = ? LIMIT 1")
+    .get("admin");
+  const ownerUserId =
+    existing?.id ??
+    db
+      .prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)")
+      .run("test-admin", "x", "admin").lastInsertRowid;
 
   const { interfacesModel } = await import("../src/database/models/interfaces");
 
   const created = interfacesModel.create({
     type: "telegram",
     name: "Test Telegram",
-    owner_user_id: 1,
+    owner_user_id: Number(ownerUserId),
     config: { bot_token: "123:abc" },
     allowed_users: [],
     is_active: true,
