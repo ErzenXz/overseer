@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/overseer-sh/overseer/internal/fleet"
+	"github.com/ErzenXz/overseer/internal/fleet"
 )
 
 const protocolVersion = "2024-11-05"

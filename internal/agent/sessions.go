@@ -12,7 +12,7 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/overseer-sh/overseer/internal/protocol"
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // workingWindow: a session with tmux activity within this window is shown as

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/overseer-sh/overseer/internal/protocol"
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // --- setup & auth ---

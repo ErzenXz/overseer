@@ -13,13 +13,18 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/overseer-sh/overseer/internal/agent"
-	"github.com/overseer-sh/overseer/internal/fleet"
-	"github.com/overseer-sh/overseer/internal/hub"
-	"github.com/overseer-sh/overseer/internal/mcp"
+	"github.com/ErzenXz/overseer/internal/agent"
+	"github.com/ErzenXz/overseer/internal/fleet"
+	"github.com/ErzenXz/overseer/internal/hub"
+	"github.com/ErzenXz/overseer/internal/mcp"
 )
 
-var version = "0.1.0-dev" // overridden at release time via -ldflags
+var (
+	version = "0.1.0-dev" // overridden at release time via -ldflags
+	// githubRepo is where the hub fetches agent binaries for other platforms.
+	// Forks can override with -ldflags "-X main.githubRepo=you/overseer".
+	githubRepo = "ErzenXz/overseer"
+)
 
 const usage = `Overseer — control all your machines from one place.
 
@@ -88,10 +93,11 @@ func cmdServe(args []string) error {
 	fs.Parse(args)
 
 	srv, err := hub.NewServer(hub.Options{
-		Addr:    *addr,
-		DataDir: *dataDir,
-		Version: version,
-		UI:      uiFS(),
+		Addr:       *addr,
+		DataDir:    *dataDir,
+		Version:    version,
+		GithubRepo: githubRepo,
+		UI:         uiFS(),
 	})
 	if err != nil {
 		return err

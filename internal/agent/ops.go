@@ -17,7 +17,7 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 
-	"github.com/overseer-sh/overseer/internal/protocol"
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 const (

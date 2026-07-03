@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { api } from '../api'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -9,44 +10,115 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   }`
 
 export default function Layout({ version }: { version: string }) {
+  // drawerOpen only matters on mobile; the sidebar is always visible on md+.
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const location = useLocation()
+
+  // Close the drawer whenever the route changes (i.e. after a tap).
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [location.pathname])
+
   const logout = async () => {
     await api.post('/api/logout')
-    location.href = '/login'
+    window.location.assign('/login')
   }
 
+  const nav = (
+    <nav className="flex flex-col gap-1">
+      <NavLink to="/" end className={linkClass}>
+        <IconGrid /> Devices
+      </NavLink>
+      <NavLink to="/agents" className={linkClass}>
+        <IconBot /> Agents
+      </NavLink>
+      <NavLink to="/settings" className={linkClass}>
+        <IconGear /> Settings
+      </NavLink>
+    </nav>
+  )
+
+  const brand = (
+    <div className="flex items-center gap-2.5">
+      <Eye />
+      <span className="text-lg font-semibold tracking-tight text-slate-100">
+        Overseer
+      </span>
+    </div>
+  )
+
   return (
-    <div className="flex h-full">
-      <aside className="flex w-52 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40 p-4">
-        <div className="mb-8 flex items-center gap-2.5 px-1">
-          <Eye />
-          <span className="text-lg font-semibold tracking-tight text-slate-100">
-            Overseer
-          </span>
-        </div>
-        <nav className="flex flex-col gap-1">
-          <NavLink to="/" end className={linkClass}>
-            <IconGrid /> Devices
-          </NavLink>
-          <NavLink to="/agents" className={linkClass}>
-            <IconBot /> Agents
-          </NavLink>
-          <NavLink to="/settings" className={linkClass}>
-            <IconGear /> Settings
-          </NavLink>
-        </nav>
-        <div className="mt-auto flex flex-col gap-2 px-1">
-          <button
-            onClick={logout}
-            className="text-left text-sm text-slate-500 hover:text-slate-300"
-          >
-            Log out
-          </button>
-          {version && <span className="text-xs text-slate-600">v{version}</span>}
-        </div>
+    <div className="flex h-full flex-col md:flex-row">
+      {/* Mobile top bar */}
+      <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-4 py-3 md:hidden">
+        {brand}
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"
+          aria-label="Open menu"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M3 6h18M3 12h18M3 18h18" />
+          </svg>
+        </button>
+      </header>
+
+      {/* Desktop sidebar */}
+      <aside className="hidden w-52 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40 p-4 md:flex">
+        <div className="mb-8 px-1">{brand}</div>
+        {nav}
+        <Footer version={version} onLogout={logout} />
       </aside>
-      <main className="min-w-0 flex-1 overflow-y-auto">
+
+      {/* Mobile drawer */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col border-r border-slate-800 bg-slate-900 p-4 shadow-2xl">
+            <div className="mb-8 flex items-center justify-between px-1">
+              {brand}
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+                aria-label="Close menu"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {nav}
+            <Footer version={version} onLogout={logout} />
+          </aside>
+        </div>
+      )}
+
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <Outlet />
       </main>
+    </div>
+  )
+}
+
+function Footer({
+  version,
+  onLogout,
+}: {
+  version: string
+  onLogout: () => void
+}) {
+  return (
+    <div className="mt-auto flex flex-col gap-2 px-1 pt-6">
+      <button
+        onClick={onLogout}
+        className="text-left text-sm text-slate-500 hover:text-slate-300"
+      >
+        Log out
+      </button>
+      {version && <span className="text-xs text-slate-600">v{version}</span>}
     </div>
   )
 }

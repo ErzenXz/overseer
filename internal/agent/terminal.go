@@ -9,7 +9,7 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/overseer-sh/overseer/internal/protocol"
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // termStream is one live PTY bridged to a hub channel.

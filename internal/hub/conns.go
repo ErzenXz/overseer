@@ -11,7 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/overseer-sh/overseer/internal/protocol"
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // agentConn is one live device connection on the hub side.

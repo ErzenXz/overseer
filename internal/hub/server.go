@@ -15,15 +15,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/overseer-sh/overseer/internal/agent"
+	"github.com/ErzenXz/overseer/internal/agent"
 )
 
 // Options configures a hub server.
 type Options struct {
-	Addr    string // listen address, e.g. ":4200"
-	DataDir string // where overseer.db and binaries/ live
-	Version string
-	UI      fs.FS // embedded web UI (nil = API only)
+	Addr       string // listen address, e.g. ":4200"
+	DataDir    string // where overseer.db and binaries/ live
+	Version    string
+	GithubRepo string // "owner/name" used to fetch agent binaries for other platforms
+	UI         fs.FS  // embedded web UI (nil = API only)
 }
 
 // Server is the hub.
@@ -47,6 +48,9 @@ func NewServer(opts Options) (*Server, error) {
 	}
 	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
 		return nil, err
+	}
+	if opts.GithubRepo == "" {
+		opts.GithubRepo = "ErzenXz/overseer"
 	}
 	store, err := OpenStore(filepath.Join(opts.DataDir, "overseer.db"))
 	if err != nil {

@@ -45,8 +45,9 @@ make            # builds the UI + the ./overseer binary (needs Go 1.24 + Node 20
 Open `http://localhost:4200`, set an admin password, and you're in. The hub
 machine shows up as your first device automatically.
 
-> **Prebuilt binaries:** grab one from the releases page instead of building,
-> then just `./overseer serve`.
+> **Prebuilt binaries:** once a release is tagged, grab one from the
+> [releases page](https://github.com/ErzenXz/overseer/releases) instead of
+> building — download `overseer_<os>_<arch>`, `chmod +x`, and `./overseer serve`.
 
 ### 2. Add a device
 
@@ -57,9 +58,13 @@ Linux or macOS machine:
 curl -fsSL http://YOUR-HUB:4200/install/TOKEN.sh | sh
 ```
 
-It downloads the agent (from your hub — no external dependency), enrolls the
-device, installs a background service, and connects. The device pops up on your
-dashboard within seconds.
+It downloads the agent, enrolls the device, installs a background service, and
+connects. The device pops up on your dashboard within seconds. If the joining
+device runs the same OS/arch as your hub, the binary comes straight from the
+hub (works on air-gapped LANs); otherwise the hub redirects the installer to
+the matching GitHub release build. For fully offline cross-platform setups,
+drop a cross-compiled `overseer_<os>_<arch>` into
+`~/.overseer/binaries/` on the hub and it's served from there.
 
 ### 3. Launch an agent
 
@@ -141,8 +146,18 @@ Project layout: `cmd/overseer` (entrypoint + subcommands), `internal/protocol`
 ## Status & roadmap
 
 v1 is here: one-paste join, tmux terminals, smart agent sessions, fleet
-dashboard, file browser, CLI + MCP. Not yet: multi-user/teams, a native mobile
-app, Windows agents, built-in tunneling. Contributions welcome.
+dashboard, file browser, CLI + MCP, and a responsive UI that works from a phone
+browser. Not yet: multi-user/teams, a native mobile app, Windows agents,
+built-in tunneling. Contributions welcome.
+
+### Cutting a release
+
+Tag a commit and CI does the rest (cross-compiles, builds the UI, uploads
+binaries + checksums to a GitHub release):
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
 
 ## License
 

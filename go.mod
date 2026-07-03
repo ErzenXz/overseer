@@ -1,4 +1,4 @@
-module github.com/overseer-sh/overseer
+module github.com/ErzenXz/overseer
 
 go 1.25.0
 

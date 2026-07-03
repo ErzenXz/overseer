@@ -94,13 +94,28 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A binary manually dropped into the data dir wins (useful for air-gapped
+	// LANs or custom builds).
 	candidate := filepath.Join(s.opts.DataDir, "binaries", fmt.Sprintf("overseer_%s_%s", osName, arch))
-	if _, err := os.Stat(candidate); err != nil {
-		httpError(w, http.StatusNotFound, fmt.Sprintf(
-			"no binary for %s/%s — cross-compile with `GOOS=%s GOARCH=%s go build -o %s ./cmd/overseer` or download a release build, then retry",
-			osName, arch, osName, arch, candidate))
+	if _, err := os.Stat(candidate); err == nil {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeFile(w, r, candidate)
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, candidate)
+	// Otherwise redirect the installer to the matching GitHub release asset so
+	// cross-platform joins work without the hub carrying every binary. Prefer
+	// the release matching the hub's own version; fall back to latest.
+	if s.opts.GithubRepo != "" {
+		asset := fmt.Sprintf("overseer_%s_%s", osName, arch)
+		tag := "latest/download"
+		if v := s.opts.Version; v != "" && strings.HasPrefix(v, "v") && !strings.Contains(v, "-") {
+			tag = "download/" + v
+		}
+		url := fmt.Sprintf("https://github.com/%s/releases/%s/%s", s.opts.GithubRepo, tag, asset)
+		http.Redirect(w, r, url, http.StatusFound)
+		return
+	}
+	httpError(w, http.StatusNotFound, fmt.Sprintf(
+		"no binary for %s/%s — cross-compile with `GOOS=%s GOARCH=%s go build -o %s ./cmd/overseer`, then retry",
+		osName, arch, osName, arch, candidate))
 }

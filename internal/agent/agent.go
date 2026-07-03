@@ -19,7 +19,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/overseer-sh/overseer/internal/protocol"
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // Config is what an enrolled agent needs to reach its hub.
