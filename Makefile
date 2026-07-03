@@ -18,6 +18,7 @@ ui:
 	cd ui && npm install --no-audit --no-fund && npm run build
 	rm -rf cmd/overseer/uidist
 	cp -r ui/dist cmd/overseer/uidist
+	touch cmd/overseer/uidist/.gitkeep   # keep the go:embed target non-empty for `go test` without a UI build
 
 go:
 	go build -ldflags '$(LDFLAGS)' -o overseer ./cmd/overseer
