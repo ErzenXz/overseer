@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -34,10 +35,16 @@ type Agent struct {
 	cfg     Config
 	version string
 
-	mu    sync.Mutex
-	conn  *websocket.Conn
-	terms map[uint32]*termStream
-	files map[uint32]*fileStream
+	// writeMu serializes websocket writes (gorilla forbids concurrent writers)
+	// and is intentionally separate from mu: a blocking write must not freeze
+	// state access (terms/files/conn) for every other goroutine.
+	writeMu sync.Mutex
+
+	mu          sync.Mutex
+	conn        *websocket.Conn
+	terms       map[uint32]*termStream
+	files       map[uint32]*fileStream
+	triedUpdate bool
 }
 
 func New(cfg Config, version string) *Agent {
@@ -49,6 +56,10 @@ func New(cfg Config, version string) *Agent {
 	}
 }
 
+// errUpdated signals that the agent replaced its own binary and should exit so
+// the service manager restarts into the new build.
+var errUpdated = errors.New("self-updated; restarting")
+
 // Run connects and serves forever, reconnecting with backoff until ctx ends.
 func (a *Agent) Run(ctx context.Context) error {
 	backoff := time.Second
@@ -56,9 +67,17 @@ func (a *Agent) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		err := a.runOnce(ctx)
+		connected, err := a.runOnce(ctx)
+		if errors.Is(err, errUpdated) {
+			return nil // exit cleanly; the service restarts the new binary
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// A connection that actually came up resets the backoff, so a long-lived
+		// session that later drops reconnects quickly instead of waiting ~30s.
+		if connected {
+			backoff = time.Second
 		}
 		log.Printf("hub connection lost: %v — reconnecting in %s", err, backoff)
 		select {
@@ -70,13 +89,16 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
-func (a *Agent) runOnce(ctx context.Context) error {
+// runOnce dials the hub and serves until the connection drops. The bool
+// reports whether a connection was actually established (used to reset the
+// reconnect backoff).
+func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 	wsURL := strings.Replace(strings.Replace(a.cfg.HubURL, "https://", "wss://", 1), "http://", "ws://", 1) + "/api/ws/agent"
 	hdr := http.Header{"Authorization": {"Bearer " + a.cfg.Token}}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	conn, _, err := dialer.DialContext(ctx, wsURL, hdr)
 	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+		return false, fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close()
 
@@ -89,16 +111,23 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		Tmux:     tmuxAvailable(),
 	})
 	if err := conn.WriteJSON(hello); err != nil {
-		return err
+		return false, err
 	}
 	var welcome protocol.Msg
 	if err := conn.ReadJSON(&welcome); err != nil {
-		return fmt.Errorf("waiting for welcome: %w", err)
+		return false, fmt.Errorf("waiting for welcome: %w", err)
 	}
 	if welcome.Type != protocol.TypeWelcome {
-		return fmt.Errorf("hub rejected connection: %s %s", welcome.Type, welcome.Error)
+		return false, fmt.Errorf("hub rejected connection: %s %s", welcome.Type, welcome.Error)
 	}
 	log.Printf("connected to hub %s", a.cfg.HubURL)
+
+	// If the hub is running a newer released version, self-update and restart
+	// (managed service only). Do this before serving so we don't drop live work.
+	var w protocol.Welcome
+	if json.Unmarshal(welcome.Data, &w) == nil && a.maybeSelfUpdate(w.Version) {
+		return true, errUpdated
+	}
 
 	a.mu.Lock()
 	a.conn = conn
@@ -116,7 +145,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	for {
 		msgType, data, err := conn.ReadMessage()
 		if err != nil {
-			return err
+			return true, err
 		}
 		switch msgType {
 		case websocket.TextMessage:
@@ -125,7 +154,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 				log.Printf("bad control message: %v", err)
 				continue
 			}
-			go a.dispatch(m)
+			// Dispatch inline so channel-setup messages (term.open, fs.write)
+			// are ordered ahead of the binary frames that follow them on the
+			// same read loop. Handlers that block offload to their own
+			// goroutine internally.
+			a.dispatch(m)
 		case websocket.BinaryMessage:
 			ch, payload, err := protocol.DecodeFrame(data)
 			if err != nil {
@@ -152,26 +185,41 @@ func (a *Agent) teardown() {
 	}
 }
 
-// send writes one JSON control message to the hub (safe for concurrent use).
-func (a *Agent) send(m protocol.Msg) {
+// writeDeadline bounds a single websocket write so a stuck/slow hub can't wedge
+// the agent's write path forever.
+const writeDeadline = 30 * time.Second
+
+// conn snapshots the current connection under mu (held only briefly).
+func (a *Agent) currentConn() *websocket.Conn {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.conn == nil {
+	return a.conn
+}
+
+// send writes one JSON control message to the hub (safe for concurrent use).
+func (a *Agent) send(m protocol.Msg) {
+	conn := a.currentConn()
+	if conn == nil {
 		return
 	}
-	if err := a.conn.WriteJSON(m); err != nil {
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+	conn.SetWriteDeadline(time.Now().Add(writeDeadline))
+	if err := conn.WriteJSON(m); err != nil {
 		log.Printf("send %s: %v", m.Type, err)
 	}
 }
 
 // sendBinary writes one binary frame to the hub (safe for concurrent use).
 func (a *Agent) sendBinary(channel uint32, payload []byte) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.conn == nil {
+	conn := a.currentConn()
+	if conn == nil {
 		return fmt.Errorf("not connected")
 	}
-	return a.conn.WriteMessage(websocket.BinaryMessage, protocol.EncodeFrame(channel, payload))
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+	conn.SetWriteDeadline(time.Now().Add(writeDeadline))
+	return conn.WriteMessage(websocket.BinaryMessage, protocol.EncodeFrame(channel, payload))
 }
 
 func (a *Agent) reply(id uint64, v any, err error) {
@@ -189,41 +237,51 @@ func (a *Agent) reply(id uint64, v any, err error) {
 	a.send(m)
 }
 
+// dispatch handles one control message. It runs inline on the read loop so
+// that channel-setup messages are ordered with the binary frames that follow;
+// the request/reply handlers below can block (tmux, exec), so each runs in its
+// own goroutine to keep the read loop moving.
 func (a *Agent) dispatch(m protocol.Msg) {
 	switch m.Type {
 	case protocol.TypeSessionsList:
-		sessions, err := a.listSessions()
-		a.reply(m.Id, protocol.SessionsListResult{Sessions: sessions}, err)
+		go func() {
+			sessions, err := a.listSessions()
+			a.reply(m.Id, protocol.SessionsListResult{Sessions: sessions}, err)
+		}()
 	case protocol.TypeSessionCreate:
 		var req protocol.SessionCreate
 		if err := json.Unmarshal(m.Data, &req); err != nil {
 			a.reply(m.Id, nil, err)
 			return
 		}
-		a.reply(m.Id, nil, a.createSession(req))
+		go a.reply(m.Id, nil, a.createSession(req))
 	case protocol.TypeSessionKill:
 		var req protocol.SessionKill
 		if err := json.Unmarshal(m.Data, &req); err != nil {
 			a.reply(m.Id, nil, err)
 			return
 		}
-		a.reply(m.Id, nil, a.killSession(req.Name))
+		go a.reply(m.Id, nil, a.killSession(req.Name))
 	case protocol.TypeExec:
 		var req protocol.Exec
 		if err := json.Unmarshal(m.Data, &req); err != nil {
 			a.reply(m.Id, nil, err)
 			return
 		}
-		res := a.execCommand(req)
-		a.reply(m.Id, res, nil)
+		go func() {
+			res := a.execCommand(req)
+			a.reply(m.Id, res, nil)
+		}()
 	case protocol.TypeFsList:
 		var req protocol.FsList
 		if err := json.Unmarshal(m.Data, &req); err != nil {
 			a.reply(m.Id, nil, err)
 			return
 		}
-		res, err := a.fsList(req.Path)
-		a.reply(m.Id, res, err)
+		go func() {
+			res, err := a.fsList(req.Path)
+			a.reply(m.Id, res, err)
+		}()
 	case protocol.TypeTermOpen:
 		var req protocol.TermOpen
 		if err := json.Unmarshal(m.Data, &req); err == nil {

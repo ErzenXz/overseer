@@ -85,7 +85,12 @@ func (c *agentConn) request(ctx context.Context, typ string, v any) (protocol.Ms
 		return protocol.Msg{}, err
 	}
 	select {
-	case reply := <-ch:
+	case reply, ok := <-ch:
+		if !ok {
+			// Channel closed by serveAgent's teardown: the device dropped
+			// mid-request. Never report this as an empty success.
+			return protocol.Msg{}, fmt.Errorf("device disconnected")
+		}
 		if reply.Error != "" {
 			return reply, fmt.Errorf("%s", reply.Error)
 		}
@@ -147,11 +152,17 @@ func (r *registry) add(c *agentConn) {
 
 func (r *registry) remove(c *agentConn) {
 	r.mu.Lock()
-	if r.agents[c.deviceId] == c {
+	removed := r.agents[c.deviceId] == c
+	if removed {
 		delete(r.agents, c.deviceId)
 	}
 	r.mu.Unlock()
-	r.events.publish(event{Type: "device.offline", DeviceId: c.deviceId})
+	// Only announce offline if this was the live connection. On a reconnect the
+	// superseded old conn also calls remove(); publishing then would emit a
+	// spurious offline right after the new conn's online.
+	if removed {
+		r.events.publish(event{Type: "device.offline", DeviceId: c.deviceId})
+	}
 }
 
 func (r *registry) get(deviceId string) *agentConn {

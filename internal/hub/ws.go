@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,12 +15,28 @@ import (
 	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
-// The hub is same-origin for browsers and agents authenticate with tokens,
-// so cross-origin checks add nothing here (and break LAN-IP access).
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  32 * 1024,
 	WriteBufferSize: 32 * 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin:     checkOrigin,
+}
+
+// checkOrigin allows same-origin browser connections and header-less clients
+// (native agents send no Origin). Rejecting cross-origin requests is what
+// prevents cross-site WebSocket hijacking of the cookie-authenticated term/
+// events endpoints, and it blocks DNS-rebinding attacks (the rebound attacker
+// host won't match r.Host). LAN access by IP still works because the browser's
+// Origin host and the Host header match.
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // non-browser client (agent, curl, CLI)
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
 }
 
 // handleAgentWS accepts a device agent connection.
@@ -56,7 +73,7 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	s.store.UpdateDeviceOnConnect(device.Id, h.Hostname, h.OS, h.Arch)
 
 	conn := newAgentConn(device.Id, h, ws)
-	welcome, _ := protocol.NewMsg(protocol.TypeWelcome, 0, 0, protocol.Welcome{DeviceId: device.Id})
+	welcome, _ := protocol.NewMsg(protocol.TypeWelcome, 0, 0, protocol.Welcome{DeviceId: device.Id, Version: s.opts.Version})
 	if err := conn.sendJSON(welcome); err != nil {
 		ws.Close()
 		return

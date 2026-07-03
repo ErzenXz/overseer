@@ -120,9 +120,10 @@ type ephemeralSession struct {
 	kind      string
 	createdAt int64
 
-	mu       sync.Mutex
-	stream   *termStream
-	activity int64
+	mu        sync.Mutex
+	stream    *termStream
+	attaching bool // reserved between the attach check and pty start (guards TOCTOU)
+	activity  int64
 }
 
 var (
@@ -195,12 +196,15 @@ func (a *Agent) attachEphemeral(channel uint32, e *ephemeralSession, req protoco
 		m.Error = err.Error()
 		a.send(m)
 	}
+	// Reserve the session atomically so two concurrent attaches can't both
+	// start a PTY (which would orphan the loser's process and fd).
 	e.mu.Lock()
-	if e.stream != nil {
+	if e.stream != nil || e.attaching {
 		e.mu.Unlock()
 		fail(fmt.Errorf("ephemeral session %q is already attached elsewhere", e.name))
 		return
 	}
+	e.attaching = true
 	e.mu.Unlock()
 
 	shell := os.Getenv("SHELL")
@@ -218,8 +222,11 @@ func (a *Agent) attachEphemeral(channel uint32, e *ephemeralSession, req protoco
 	}
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(req.Cols), Rows: uint16(req.Rows)})
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: clampDim(req.Cols), Rows: clampDim(req.Rows)})
 	if err != nil {
+		e.mu.Lock()
+		e.attaching = false
+		e.mu.Unlock()
 		fail(fmt.Errorf("starting pty: %w", err))
 		return
 	}
@@ -227,6 +234,7 @@ func (a *Agent) attachEphemeral(channel uint32, e *ephemeralSession, req protoco
 
 	e.mu.Lock()
 	e.stream = t
+	e.attaching = false
 	e.activity = time.Now().Unix()
 	e.mu.Unlock()
 

@@ -76,9 +76,11 @@ type Hello struct {
 	Tmux     bool   `json:"tmux"`
 }
 
-// Welcome is the hub's acceptance of an agent connection.
+// Welcome is the hub's acceptance of an agent connection. Version lets the
+// agent decide whether to self-update to match the hub.
 type Welcome struct {
 	DeviceId string `json:"deviceId"`
+	Version  string `json:"version"`
 }
 
 // Stats is a periodic system snapshot from the agent.

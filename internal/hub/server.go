@@ -77,7 +77,15 @@ func (s *Server) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	srv := &http.Server{Handler: s.mux}
+	srv := &http.Server{
+		Handler: s.mux,
+		// Guard against Slowloris-style header stalls. We deliberately do not set
+		// ReadTimeout/WriteTimeout: those would break long-lived WebSockets and
+		// large file transfers. Hijacked (WebSocket) connections manage their own
+		// deadlines via gorilla.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -119,12 +127,18 @@ func (s *Server) runEmbeddedAgent(ctx context.Context, listenAddr string) {
 		}
 		token = tok
 	}
-	_, port, err := net.SplitHostPort(listenAddr)
+	host, port, err := net.SplitHostPort(listenAddr)
 	if err != nil {
 		log.Printf("embedded agent: %v", err)
 		return
 	}
-	cfg := agent.Config{HubURL: "http://127.0.0.1:" + port, Token: token}
+	// Dial the actual bound host; only fall back to loopback for wildcard binds,
+	// otherwise a hub started with --addr 192.168.1.10:4200 could never reach
+	// itself over 127.0.0.1.
+	if host == "" || host == "::" || host == "0.0.0.0" {
+		host = "127.0.0.1"
+	}
+	cfg := agent.Config{HubURL: "http://" + net.JoinHostPort(host, port), Token: token}
 	if err := agent.New(cfg, s.opts.Version).Run(ctx); err != nil && ctx.Err() == nil {
 		log.Printf("embedded agent stopped: %v", err)
 	}

@@ -54,11 +54,30 @@ echo "✓ Done. This device is now connected to Overseer."
 echo "  It should appear on your dashboard within a few seconds."
 `
 
+// isSimpleToken reports whether s is a short alphanumeric token (letters,
+// digits, and a couple of safe separators) — used to sanitize values that flow
+// into filesystem paths, shell scripts, or redirect URLs.
+func isSimpleToken(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // handleInstallScript serves GET /install/<token>.sh.
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/install/")
 	token, ok := strings.CutSuffix(name, ".sh")
-	if !ok || token == "" || strings.Contains(token, "/") {
+	// The token is interpolated into a shell script served for `| sh`, so it
+	// must not contain quotes or other shell metacharacters.
+	if !ok || !isSimpleToken(token) {
 		httpError(w, http.StatusNotFound, "not found")
 		return
 	}
@@ -81,6 +100,13 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 	arch := r.URL.Query().Get("arch")
 	if osName == "" || arch == "" {
 		httpError(w, http.StatusBadRequest, "os and arch required")
+		return
+	}
+	// os/arch become part of a filesystem path and a redirect URL, so keep them
+	// strictly alphanumeric — otherwise "arch=../../etc/passwd" would escape the
+	// binaries directory into an arbitrary pre-auth file read.
+	if !isSimpleToken(osName) || !isSimpleToken(arch) {
+		httpError(w, http.StatusBadRequest, "invalid os or arch")
 		return
 	}
 	if osName == runtime.GOOS && arch == runtime.GOARCH {

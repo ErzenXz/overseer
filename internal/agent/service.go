@@ -15,6 +15,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart=%s agent run
+Environment=OVERSEER_MANAGED=1
 Restart=always
 RestartSec=3
 User=%s
@@ -34,6 +35,8 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
 		<string>agent</string>
 		<string>run</string>
 	</array>
+	<key>EnvironmentVariables</key>
+	<dict><key>OVERSEER_MANAGED</key><string>1</string></dict>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
 	<key>StandardOutPath</key><string>%s</string>

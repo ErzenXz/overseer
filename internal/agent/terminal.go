@@ -26,13 +26,24 @@ func (t *termStream) write(p []byte) {
 	}
 }
 
+// close closes the PTY, which makes pumpTerm's Read return so the process
+// tears down. It deliberately does NOT Kill or Wait the process: those happen
+// only in pumpTerm, so Kill and Wait never race across goroutines.
 func (t *termStream) close() {
 	t.once.Do(func() {
 		t.pty.Close()
-		if t.cmd.Process != nil {
-			t.cmd.Process.Kill()
-		}
 	})
+}
+
+// clampDim keeps hub-supplied terminal dimensions within a sane uint16 range.
+func clampDim(v int) uint16 {
+	if v < 1 {
+		return 1
+	}
+	if v > 1000 {
+		return 1000
+	}
+	return uint16(v)
 }
 
 // termOpen attaches a PTY to the named session and streams it on channel.
@@ -56,12 +67,22 @@ func (a *Agent) termOpen(channel uint32, req protocol.TermOpen) {
 		fail(fmt.Errorf("session %q not found and tmux is not installed", req.Session))
 		return
 	}
+	// Reject a duplicate open on a channel already in use, so a buggy/hostile
+	// hub can't orphan the first PTY and its goroutine.
+	a.mu.Lock()
+	_, busy := a.terms[channel]
+	a.mu.Unlock()
+	if busy {
+		fail(fmt.Errorf("channel %d already open", channel))
+		return
+	}
+
 	// -A creates the session if it doesn't exist, so opening a terminal for a
 	// brand-new name "just works".
 	cmd = exec.Command("tmux", "new-session", "-A", "-s", req.Session)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(req.Cols), Rows: uint16(req.Rows)})
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: clampDim(req.Cols), Rows: clampDim(req.Rows)})
 	if err != nil {
 		fail(fmt.Errorf("starting pty: %w", err))
 		return
@@ -92,11 +113,15 @@ func (a *Agent) pumpTerm(t *termStream) {
 			break
 		}
 	}
+	// Kill and Wait here (and only here) so they never race with close().
+	if t.cmd.Process != nil {
+		t.cmd.Process.Kill()
+	}
 	t.cmd.Wait()
+	t.close() // idempotent; ensures the PTY is closed if we exited via read error
 	a.mu.Lock()
 	delete(a.terms, t.channel)
 	a.mu.Unlock()
-	t.close()
 	exit, _ := protocol.NewMsg(protocol.TypeTermExit, 0, t.channel, nil)
 	a.send(exit)
 }
@@ -108,7 +133,7 @@ func (a *Agent) termResize(channel uint32, req protocol.TermResize) {
 	if t == nil {
 		return
 	}
-	pty.Setsize(t.pty, &pty.Winsize{Cols: uint16(req.Cols), Rows: uint16(req.Rows)})
+	pty.Setsize(t.pty, &pty.Winsize{Cols: clampDim(req.Cols), Rows: clampDim(req.Rows)})
 }
 
 func (a *Agent) termClose(channel uint32) {

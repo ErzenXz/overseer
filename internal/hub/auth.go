@@ -113,8 +113,17 @@ func (r *rateLimiter) allow(remoteAddr string) bool {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	w := r.counts[ip]
 	now := time.Now()
+	// Opportunistically evict expired windows so the map can't grow without
+	// bound from many distinct client IPs hitting the pre-auth login endpoint.
+	if len(r.counts) > 1024 {
+		for k, v := range r.counts {
+			if now.Sub(v.start) > rateWindowLen {
+				delete(r.counts, k)
+			}
+		}
+	}
+	w := r.counts[ip]
 	if w == nil || now.Sub(w.start) > rateWindowLen {
 		r.counts[ip] = &rateWindow{start: now, n: 1}
 		return true

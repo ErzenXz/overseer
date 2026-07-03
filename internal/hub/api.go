@@ -36,7 +36,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.issueSession(w)
+	s.issueSession(w, r)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
@@ -57,15 +57,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusUnauthorized, "wrong password")
 		return
 	}
-	s.issueSession(w)
+	s.issueSession(w, r)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
-func (s *Server) issueSession(w http.ResponseWriter) {
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request) {
 	token := s.sessions.create()
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: token, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: r.TLS != nil, // set when served over HTTPS (e.g. behind a TLS proxy terminating here)
 		MaxAge: int(sessionTTL.Seconds()),
 	})
 }
@@ -567,6 +568,11 @@ func (s *Server) handleFsDownload(w http.ResponseWriter, r *http.Request) {
 
 	done := make(chan string, 1)
 	pr, pw := io.Pipe()
+	// Closing the reader when we return (e.g. the download client disconnected)
+	// makes the onBinary pw.Write calls fail fast instead of blocking forever
+	// inside the agent's single read loop, which would otherwise wedge the
+	// entire device connection.
+	defer pr.Close()
 	ch := c.openChannel(&hubChannel{
 		onBinary: func(p []byte) {
 			buf := make([]byte, len(p))
@@ -654,6 +660,9 @@ func (s *Server) handleFsUpload(w http.ResponseWriter, r *http.Request) {
 		n, rerr := file.Read(buf)
 		if n > 0 {
 			if err := c.sendBinary(ch, buf[:n]); err != nil {
+				// Tell the agent to discard the partial temp file rather than
+				// leaving it until the whole connection drops.
+				c.sendJSON(protocol.Msg{Type: protocol.TypeFsErr, Channel: ch, Error: err.Error()})
 				httpError(w, http.StatusBadGateway, err.Error())
 				return
 			}

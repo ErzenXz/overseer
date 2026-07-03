@@ -49,6 +49,34 @@ func TestAgentBinaryDevVersionUsesLatest(t *testing.T) {
 	}
 }
 
+func TestAgentBinaryRejectsPathTraversal(t *testing.T) {
+	srv := newTestServer(t, "v0.1.0")
+	for _, bad := range []string{"../../../../etc/passwd", "linux/..", "a b", "arch;rm"} {
+		req := httptest.NewRequest("GET", "/api/agent-binary", nil)
+		q := req.URL.Query()
+		q.Set("os", "linux")
+		q.Set("arch", bad)
+		req.URL.RawQuery = q.Encode()
+		w := httptest.NewRecorder()
+		srv.handleAgentBinary(w, req)
+		if w.Code == http.StatusFound || w.Code == http.StatusOK {
+			t.Errorf("arch=%q should be rejected, got %d", bad, w.Code)
+		}
+	}
+}
+
+func TestInstallScriptRejectsBadToken(t *testing.T) {
+	srv := newTestServer(t, "v0.1.0")
+	// A token with a quote would break out of the shell assignment.
+	req := httptest.NewRequest("GET", "/install/placeholder.sh", nil)
+	req.URL.Path = `/install/x".sh`
+	w := httptest.NewRecorder()
+	srv.handleInstallScript(w, req)
+	if w.Code == http.StatusOK {
+		t.Error("token with a quote should be rejected")
+	}
+}
+
 func TestInstallScriptEmbedsHubAndToken(t *testing.T) {
 	srv := newTestServer(t, "v0.1.0")
 	req := httptest.NewRequest("GET", "/install/abc123.sh", nil)

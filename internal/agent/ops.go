@@ -174,6 +174,15 @@ func (a *Agent) fsRead(channel uint32, path string) {
 		return
 	}
 	defer f.Close()
+	// Only stream regular files. Character devices (/dev/zero), FIFOs, and the
+	// like would block or stream forever, pinning a goroutine.
+	if info, err := f.Stat(); err != nil {
+		fail(err)
+		return
+	} else if !info.Mode().IsRegular() {
+		fail(fmt.Errorf("not a regular file"))
+		return
+	}
 	buf := make([]byte, fileChunkSize)
 	for {
 		n, err := f.Read(buf)

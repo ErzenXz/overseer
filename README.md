@@ -96,6 +96,16 @@ overseer fleet read homelab build
 overseer fleet run homelab -- git status
 ```
 
+## Keeping devices up to date
+
+Agents self-update. When a device agent connects and finds the hub running a
+newer tagged release, it downloads the matching build, atomically replaces its
+own binary, and restarts via its service manager — no per-device babysitting.
+Self-update only runs for the installed background service (it keys off
+`OVERSEER_MANAGED=1`, set in the systemd unit / launchd plist), so a foreground
+`overseer agent run` you're debugging is never swapped out from under you.
+Upgrade your whole fleet by upgrading the hub and tagging a release.
+
 ## Accessing it from anywhere
 
 Overseer binds to `0.0.0.0:4200` over plain HTTP — perfect on a trusted LAN.
