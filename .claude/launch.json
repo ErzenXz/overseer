@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "overseer-hub",
+      "runtimeExecutable": "./overseer",
+      "runtimeArgs": ["serve", "--addr", ":4200", "--data-dir", "/tmp/overseer-dev-data"],
+      "port": 4200
+    }
+  ]
+}
