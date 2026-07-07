@@ -54,6 +54,39 @@ echo "✓ Done. This device is now connected to Overseer."
 echo "  It should appear on your dashboard within a few seconds."
 `
 
+// windowsInstallScript is the PowerShell one-paste device joiner for Windows.
+const windowsInstallScript = `$ErrorActionPreference = "Stop"
+
+$Hub = "%s"
+$Token = "%s"
+
+$ArchName = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+switch ($ArchName) {
+  "x64" { $Arch = "amd64" }
+  "arm64" { $Arch = "arm64" }
+  default { throw "overseer: unsupported architecture: $ArchName" }
+}
+
+$BinDir = Join-Path $env:LOCALAPPDATA "Overseer\bin"
+New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+$Bin = Join-Path $BinDir "overseer.exe"
+$Tmp = "$Bin.tmp"
+
+Write-Host "-> downloading overseer agent for windows/$Arch from the hub..."
+Invoke-WebRequest -UseBasicParsing -Uri "$Hub/api/agent-binary?os=windows&arch=$Arch" -OutFile $Tmp
+Move-Item -Force $Tmp $Bin
+
+Write-Host "-> enrolling this device with the hub..."
+& $Bin agent enroll --hub $Hub --token $Token
+
+Write-Host "-> installing background task..."
+& $Bin agent install-service
+
+Write-Host ""
+Write-Host "Done. This device is now connected to Overseer."
+Write-Host "It should appear on your dashboard within a few seconds."
+`
+
 // isSimpleToken reports whether s is a short alphanumeric token (letters,
 // digits, and a couple of safe separators) — used to sanitize values that flow
 // into filesystem paths, shell scripts, or redirect URLs.
@@ -71,10 +104,16 @@ func isSimpleToken(s string) bool {
 	return true
 }
 
-// handleInstallScript serves GET /install/<token>.sh.
+// handleInstallScript serves GET /install/<token>.sh and
+// GET /install/<token>.ps1.
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/install/")
 	token, ok := strings.CutSuffix(name, ".sh")
+	format := "sh"
+	if !ok {
+		token, ok = strings.CutSuffix(name, ".ps1")
+		format = "ps1"
+	}
 	// The token is interpolated into a shell script served for `| sh`, so it
 	// must not contain quotes or other shell metacharacters.
 	if !ok || !isSimpleToken(token) {
@@ -88,6 +127,11 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	base := fmt.Sprintf("%s://%s", scheme, r.Host)
+	if format == "ps1" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintf(w, windowsInstallScript, base, token)
+		return
+	}
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 	fmt.Fprintf(w, installScript, base, token)
 }

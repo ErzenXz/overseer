@@ -5,14 +5,19 @@ import Modal from './Modal'
 
 export default function AddDeviceModal({ onClose }: { onClose: () => void }) {
   const [command, setCommand] = useState('')
+  const [windowsCommand, setWindowsCommand] = useState('')
+  const [platform, setPlatform] = useState<'unix' | 'windows'>('unix')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [joined, setJoined] = useState(false)
 
   useEffect(() => {
     api
-      .post<{ command: string }>('/api/enroll-tokens')
-      .then((r) => setCommand(r.command))
+      .post<{ command: string; windowsCommand: string }>('/api/enroll-tokens')
+      .then((r) => {
+        setCommand(r.command)
+        setWindowsCommand(r.windowsCommand)
+      })
       .catch((e) => setError(e.message))
   }, [])
 
@@ -22,33 +27,60 @@ export default function AddDeviceModal({ onClose }: { onClose: () => void }) {
   })
 
   const copy = async () => {
-    await navigator.clipboard.writeText(command)
+    await navigator.clipboard.writeText(activeCommand)
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
 
+  const activeCommand = platform === 'windows' ? windowsCommand : command
+
   return (
     <Modal title="Add a device" onClose={onClose}>
       <p className="mb-4 text-sm text-slate-400">
-        Paste this on any <span className="text-slate-200">Linux or macOS</span>{' '}
-        machine. It installs the agent, connects it to this hub, and keeps it
-        running in the background.
+        Paste this on the device you want to add. It installs the agent,
+        connects it to this hub, and keeps it running in the background.
       </p>
       {error ? (
         <p className="text-sm text-rose-400">{error}</p>
       ) : (
-        <div className="mb-4 flex items-stretch gap-2">
-          <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-[13px] text-emerald-300">
-            {command || 'Generating…'}
-          </code>
-          <button
-            onClick={copy}
-            disabled={!command}
-            className="shrink-0 rounded-lg border border-slate-700 px-3 text-sm text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            {copied ? 'Copied!' : 'Copy'}
-          </button>
-        </div>
+        <>
+          <div className="mb-3 inline-flex rounded-lg border border-slate-700 bg-slate-950 p-1">
+            <button
+              type="button"
+              onClick={() => setPlatform('unix')}
+              className={`rounded-md px-3 py-1.5 text-sm transition ${
+                platform === 'unix'
+                  ? 'bg-slate-800 text-slate-100'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Linux / macOS
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlatform('windows')}
+              className={`rounded-md px-3 py-1.5 text-sm transition ${
+                platform === 'windows'
+                  ? 'bg-slate-800 text-slate-100'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Windows
+            </button>
+          </div>
+          <div className="mb-4 flex items-stretch gap-2">
+            <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-[13px] text-emerald-300">
+              {activeCommand || 'Generating…'}
+            </code>
+            <button
+              onClick={copy}
+              disabled={!activeCommand}
+              className="shrink-0 rounded-lg border border-slate-700 px-3 text-sm text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </>
       )}
       <p className="mb-4 text-xs text-slate-500">
         The link is single-use and expires in 15 minutes. Generate a new one

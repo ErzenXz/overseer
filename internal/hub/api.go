@@ -139,8 +139,9 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 	}
 	base := fmt.Sprintf("%s://%s", scheme, r.Host)
 	writeJSON(w, map[string]string{
-		"token":   token,
-		"command": fmt.Sprintf("curl -fsSL %s/install/%s.sh | sh", base, token),
+		"token":          token,
+		"command":        fmt.Sprintf("curl -fsSL %s/install/%s.sh | sh", base, token),
+		"windowsCommand": fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm %s/install/%s.ps1 | iex\"", base, token),
 	})
 }
 

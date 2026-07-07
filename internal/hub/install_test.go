@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,5 +97,55 @@ func TestInstallScriptEmbedsHubAndToken(t *testing.T) {
 	}
 	if !strings.Contains(body, "curl -fSL") {
 		t.Error("script should follow redirects when downloading the binary")
+	}
+}
+
+func TestWindowsInstallScriptEmbedsHubAndToken(t *testing.T) {
+	srv := newTestServer(t, "v0.1.0")
+	req := httptest.NewRequest("GET", "/install/abc123.ps1", nil)
+	req.Host = "hub.example:4200"
+	w := httptest.NewRecorder()
+	srv.handleInstallScript(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `$Hub = "http://hub.example:4200"`) {
+		t.Error("script should embed the hub URL")
+	}
+	if !strings.Contains(body, `$Token = "abc123"`) {
+		t.Error("script should embed the enrollment token")
+	}
+	if !strings.Contains(body, "Invoke-WebRequest") {
+		t.Error("script should download the Windows binary")
+	}
+	if !strings.Contains(body, "os=windows&arch=$Arch") {
+		t.Error("script should request a Windows binary")
+	}
+}
+
+func TestCreateEnrollTokenReturnsUnixAndWindowsCommands(t *testing.T) {
+	srv := newTestServer(t, "v0.1.0")
+	req := httptest.NewRequest("POST", "/api/enroll-tokens", nil)
+	req.Host = "hub.example:4200"
+	w := httptest.NewRecorder()
+	srv.handleCreateEnrollToken(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["token"] == "" {
+		t.Fatal("token should be returned")
+	}
+	if !strings.Contains(got["command"], "/install/"+got["token"]+".sh") {
+		t.Errorf("unix command should include .sh installer, got %q", got["command"])
+	}
+	if !strings.Contains(got["windowsCommand"], "/install/"+got["token"]+".ps1") {
+		t.Errorf("windows command should include .ps1 installer, got %q", got["windowsCommand"])
 	}
 }

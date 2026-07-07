@@ -78,11 +78,15 @@ machine shows up as your first device automatically.
 
 ### 2. Add a device
 
-Click **Add device** in the UI and paste the command it gives you on any other
-Linux or macOS machine:
+Click **Add device** in the UI, choose the target platform, and paste the
+command it gives you on any other Linux, macOS, or Windows machine:
 
 ```sh
 curl -fsSL http://YOUR-HUB:4200/install/TOKEN.sh | sh
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm http://YOUR-HUB:4200/install/TOKEN.ps1 | iex"
 ```
 
 It downloads the agent, enrolls the device, installs a background service, and
@@ -92,6 +96,13 @@ hub (works on air-gapped LANs); otherwise the hub redirects the installer to
 the matching GitHub release build. For fully offline cross-platform setups,
 drop a cross-compiled `overseer_<os>_<arch>` into
 `~/.overseer/binaries/` on the hub and it's served from there.
+
+Linux agents install with systemd, macOS agents install as a launchd user
+agent, and Windows agents install as a user logon Scheduled Task. Persistent
+terminal sessions use `tmux`, so Linux/macOS devices with `tmux` installed get
+reattachable sessions; Windows devices can still enroll, report status, run
+commands, and browse files, but terminal sessions are ephemeral until Windows
+persistent terminal support lands.
 
 ### 3. Launch an agent
 
@@ -202,7 +213,7 @@ go run ./cmd/overseer serve
 cd ui && npm install && npm run dev
 
 make test        # go vet + unit + integration tests (some need tmux)
-make cross       # cross-compile darwin/linux × amd64/arm64 into dist/
+make cross       # cross-compile darwin/linux/windows × amd64/arm64 into dist/
 ```
 
 Project layout: `cmd/overseer` (entrypoint + subcommands), `internal/protocol`
@@ -213,8 +224,8 @@ Project layout: `cmd/overseer` (entrypoint + subcommands), `internal/protocol`
 
 v1 is here: one-paste join, tmux terminals, smart agent sessions, fleet
 dashboard, file browser, CLI + MCP, and a responsive UI that works from a phone
-browser. Not yet: multi-user/teams, a native mobile app, Windows agents,
-built-in tunneling. Contributions welcome.
+browser. Not yet: multi-user/teams, a native mobile app, fully persistent
+Windows terminals, built-in tunneling. Contributions welcome.
 
 ### Cutting a release
 

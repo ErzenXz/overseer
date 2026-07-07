@@ -45,9 +45,10 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
-// InstallService registers the agent to run at boot and starts it now.
+// InstallService registers the agent to run in the background and starts it now.
 // Linux: user systemd unit (falls back to system unit when running as root).
 // macOS: launchd user agent.
+// Windows: scheduled task on user logon.
 func InstallService() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -60,6 +61,8 @@ func InstallService() error {
 		return installSystemd(exe)
 	case "darwin":
 		return installLaunchd(exe)
+	case "windows":
+		return installWindowsTask(exe)
 	default:
 		return fmt.Errorf("service install not supported on %s; run `overseer agent run` under your own supervisor", runtime.GOOS)
 	}
@@ -128,6 +131,19 @@ func installLaunchd(exe string) error {
 	exec.Command("launchctl", "unload", plistPath).Run() // reload if present
 	if out, err := exec.Command("launchctl", "load", plistPath).CombinedOutput(); err != nil {
 		return fmt.Errorf("launchctl load: %s", out)
+	}
+	return nil
+}
+
+func installWindowsTask(exe string) error {
+	action := fmt.Sprintf(`"%s" agent run`, exe)
+	for _, args := range [][]string{
+		{"/Create", "/TN", "OverseerAgent", "/SC", "ONLOGON", "/TR", action, "/F"},
+		{"/Run", "/TN", "OverseerAgent"},
+	} {
+		if out, err := exec.Command("schtasks.exe", args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("schtasks %v: %s", args, out)
+		}
 	}
 	return nil
 }
