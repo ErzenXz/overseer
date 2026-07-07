@@ -15,16 +15,25 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/acme/autocert"
+
 	"github.com/ErzenXz/overseer/internal/agent"
 )
 
 // Options configures a hub server.
 type Options struct {
-	Addr       string // listen address, e.g. ":4200"
+	Addr       string // listen address, e.g. ":4200" (ignored when TLSDomain is set)
 	DataDir    string // where overseer.db and binaries/ live
 	Version    string
 	GithubRepo string // "owner/name" used to fetch agent binaries for other platforms
 	UI         fs.FS  // embedded web UI (nil = API only)
+
+	// TLSDomain enables automatic HTTPS via Let's Encrypt for this exact
+	// domain. When set, the hub serves HTTPS on :443 and runs an HTTP server on
+	// :80 for the ACME challenge + a redirect to HTTPS. TLSEmail is sent to the
+	// CA for expiry notices.
+	TLSDomain string
+	TLSEmail  string
 }
 
 // Server is the hub.
@@ -36,6 +45,11 @@ type Server struct {
 	events   *eventBus
 	registry *registry
 	mux      *http.ServeMux
+
+	// internalURL is a loopback-only plain-HTTP address serving the same mux.
+	// The embedded agent and the MCP endpoint use it so they work identically
+	// whether the public listener is HTTP or HTTPS.
+	internalURL string
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -70,31 +84,58 @@ func NewServer(opts Options) (*Server, error) {
 	return s, nil
 }
 
+// newHTTPServer builds an http.Server for the shared mux with sane timeouts.
+// ReadTimeout/WriteTimeout are intentionally unset: they would break
+// long-lived WebSockets and large transfers (hijacked conns manage their own
+// deadlines via gorilla).
+func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+}
+
 // Run serves until ctx is cancelled. It also starts the embedded local agent
 // so the hub machine itself shows up as a device.
 func (s *Server) Run(ctx context.Context) error {
+	// Internal loopback listener: always plain HTTP, used by the embedded agent
+	// and the MCP endpoint's in-process client regardless of public TLS.
+	internalLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	s.internalURL = "http://" + internalLn.Addr().String()
+	internalSrv := s.newHTTPServer(s.mux)
+	go internalSrv.Serve(internalLn)
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		internalSrv.Shutdown(shutdownCtx)
+	}()
+	go s.runEmbeddedAgent(ctx)
+
+	if s.opts.TLSDomain != "" {
+		return s.runTLS(ctx)
+	}
+	return s.runPlain(ctx)
+}
+
+// runPlain serves HTTP on the configured address.
+func (s *Server) runPlain(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.opts.Addr)
 	if err != nil {
 		return err
 	}
-	srv := &http.Server{
-		Handler: s.mux,
-		// Guard against Slowloris-style header stalls. We deliberately do not set
-		// ReadTimeout/WriteTimeout: those would break long-lived WebSockets and
-		// large file transfers. Hijacked (WebSocket) connections manage their own
-		// deadlines via gorilla.
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	srv := s.newHTTPServer(s.mux)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		srv.Shutdown(shutdownCtx)
 	}()
-
-	go s.runEmbeddedAgent(ctx, ln.Addr().String())
-
 	log.Printf("Overseer hub listening on http://%s", displayAddr(ln.Addr().String()))
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		return err
@@ -102,9 +143,51 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
+// runTLS serves HTTPS with automatic Let's Encrypt certificates for the
+// configured domain, plus a plain-HTTP server on :80 that answers the ACME
+// challenge and redirects everything else to HTTPS.
+func (s *Server) runTLS(ctx context.Context) error {
+	m := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(s.opts.TLSDomain),
+		Cache:      autocert.DirCache(filepath.Join(s.opts.DataDir, "certs")),
+		Email:      s.opts.TLSEmail,
+	}
+
+	// :80 — serves the HTTP-01 challenge and redirects real traffic to HTTPS.
+	httpSrv := s.newHTTPServer(m.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://"+s.opts.TLSDomain+r.URL.RequestURI(), http.StatusMovedPermanently)
+	})))
+	httpSrv.Addr = ":80"
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("http (:80) challenge server: %v", err)
+		}
+	}()
+
+	httpsSrv := s.newHTTPServer(s.mux)
+	httpsSrv.Addr = ":443"
+	httpsSrv.TLSConfig = m.TLSConfig() // negotiates certs + acme-tls/1
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		httpsSrv.Shutdown(shutdownCtx)
+		httpSrv.Shutdown(shutdownCtx)
+	}()
+
+	log.Printf("Overseer hub listening on https://%s (auto-TLS via Let's Encrypt)", s.opts.TLSDomain)
+	// Certs are supplied by TLSConfig, so no cert/key files here.
+	if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
 // runEmbeddedAgent registers (once) and runs an in-process agent for the hub
-// machine, connecting over loopback like any other device.
-func (s *Server) runEmbeddedAgent(ctx context.Context, listenAddr string) {
+// machine, connecting over the internal loopback listener like any other device.
+func (s *Server) runEmbeddedAgent(ctx context.Context) {
 	token, err := s.store.Setting("hub_device_token")
 	if err != nil {
 		log.Printf("embedded agent: %v", err)
@@ -127,18 +210,7 @@ func (s *Server) runEmbeddedAgent(ctx context.Context, listenAddr string) {
 		}
 		token = tok
 	}
-	host, port, err := net.SplitHostPort(listenAddr)
-	if err != nil {
-		log.Printf("embedded agent: %v", err)
-		return
-	}
-	// Dial the actual bound host; only fall back to loopback for wildcard binds,
-	// otherwise a hub started with --addr 192.168.1.10:4200 could never reach
-	// itself over 127.0.0.1.
-	if host == "" || host == "::" || host == "0.0.0.0" {
-		host = "127.0.0.1"
-	}
-	cfg := agent.Config{HubURL: "http://" + net.JoinHostPort(host, port), Token: token}
+	cfg := agent.Config{HubURL: s.internalURL, Token: token}
 	if err := agent.New(cfg, s.opts.Version).Run(ctx); err != nil && ctx.Err() == nil {
 		log.Printf("embedded agent stopped: %v", err)
 	}
@@ -156,6 +228,9 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /install/", s.handleInstallScript)
 	m.HandleFunc("GET /api/agent-binary", s.handleAgentBinary)
 	m.HandleFunc("GET /api/ws/agent", s.handleAgentWS)
+
+	// Remote MCP endpoint (does its own Bearer-token auth).
+	m.HandleFunc("/mcp", s.handleMCPHTTP)
 
 	// Authenticated API.
 	m.HandleFunc("GET /api/devices", s.requireAuth(s.handleListDevices))

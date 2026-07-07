@@ -83,9 +83,10 @@ claude mcp add overseer -- overseer mcp     # for Claude Code
 ```
 
 Now your agent has these tools: `list_devices`, `list_sessions`,
-`create_session`, `send_input`, `read_output`, `run_command`, `kill_session`.
-Ask it things like *"launch claude in ~/projects/api on the homelab box and
-have it fix the failing tests, then report back."*
+`create_session`, `send_input`, `read_output`, `run_command`, `kill_session`,
+`list_files`, `read_file`, `write_file`. Ask it things like *"launch claude in
+~/projects/api on the homelab box and have it fix the failing tests, then report
+back."*
 
 The same operations are available as a CLI:
 
@@ -95,6 +96,24 @@ overseer fleet new homelab build --cwd ~/app --cmd "claude"
 overseer fleet read homelab build
 overseer fleet run homelab -- git status
 ```
+
+### Use it from ChatGPT, Claude, or any MCP client (remote MCP)
+
+The hub also serves the MCP tools over HTTP at `/mcp`, so any client that
+supports **remote MCP connectors** — ChatGPT, Claude, Cursor — can drive your
+fleet directly. With `list_files` / `read_file` / `write_file` / `run_command`,
+that client becomes a full coding agent on your machines.
+
+1. Expose the hub over HTTPS (see below — `--tls-domain`, or a TLS proxy).
+2. Create an API token in **Settings**.
+3. In your client, add a connector pointing at `https://your-domain/mcp` and
+   supply the API token as a Bearer credential.
+
+> ⚠️ **This is a remote shell.** `run_command` and `write_file` execute
+> arbitrary commands and write files on your devices. The endpoint refuses
+> requests without a valid API token and must only be exposed over HTTPS —
+> anyone who gets the token owns the box, so treat it like an SSH key. Rotate it
+> in Settings if it leaks. There is no separate "read-only" mode yet.
 
 ## Keeping devices up to date
 
@@ -109,14 +128,24 @@ Upgrade your whole fleet by upgrading the hub and tagging a release.
 ## Accessing it from anywhere
 
 Overseer binds to `0.0.0.0:4200` over plain HTTP — perfect on a trusted LAN.
-To reach it from the internet, **do not expose that port directly.** Two easy,
-secure options:
+To reach it from the internet, **do not expose plain HTTP directly.** Three
+options:
 
-- **[Tailscale](https://tailscale.com) (recommended):** put the hub and your
-  phone/laptop on the same tailnet and browse to the hub's Tailscale IP.
-  Encrypted, zero config, no open ports.
+- **Built-in Let's Encrypt (easiest for a public domain):** point a domain's
+  DNS at the machine, open ports 80 and 443, and run:
+
+  ```sh
+  overseer serve --tls-domain overseer.example.com --tls-email you@example.com
+  ```
+
+  The hub obtains and auto-renews a real TLS certificate (ACME) — you just give
+  it the domain and an email, and it handles verification and renewal. This is
+  required if you want to connect a remote MCP client like ChatGPT.
+- **[Tailscale](https://tailscale.com):** put the hub and your phone/laptop on
+  the same tailnet and browse to the hub's Tailscale IP. Encrypted, zero config,
+  no open ports — great when you don't have a domain.
 - **A TLS reverse proxy** (Caddy, nginx, Traefik) in front of the single hub
-  port if you want a public hostname.
+  port, if you already run one.
 
 ## How it works
 

@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,7 +40,6 @@ type rpcResponse struct {
 func Serve(client *fleet.Client, version string) error {
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	out := bufio.NewWriter(os.Stdout)
-	enc := json.NewEncoder(out)
 
 	for {
 		line, err := in.ReadBytes('\n')
@@ -52,25 +52,39 @@ func Serve(client *fleet.Client, version string) error {
 		if len(strings.TrimSpace(string(line))) == 0 {
 			continue
 		}
-		var req rpcRequest
-		if err := json.Unmarshal(line, &req); err != nil {
-			continue
+		respBytes, isNotification := HandleMessage(client, version, line)
+		if isNotification {
+			continue // no response required
 		}
-		if req.Id == nil {
-			continue // notification; nothing requires action
-		}
-		resp := rpcResponse{Jsonrpc: "2.0", Id: req.Id}
-		result, rerr := handle(client, version, req)
-		if rerr != nil {
-			resp.Error = &rpcError{Code: -32603, Message: rerr.Error()}
-		} else {
-			resp.Result = result
-		}
-		if err := enc.Encode(resp); err != nil {
+		if _, err := out.Write(respBytes); err != nil {
 			return err
 		}
+		out.WriteByte('\n')
 		out.Flush()
 	}
+}
+
+// HandleMessage processes a single JSON-RPC request and returns the response
+// bytes. isNotification is true when the message has no id (no response due).
+// Used by both the stdio server and the hub's HTTP (Streamable HTTP) transport.
+func HandleMessage(client *fleet.Client, version string, raw []byte) (response []byte, isNotification bool) {
+	var req rpcRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		b, _ := json.Marshal(rpcResponse{Jsonrpc: "2.0", Error: &rpcError{Code: -32700, Message: "parse error"}})
+		return b, false
+	}
+	if req.Id == nil {
+		return nil, true
+	}
+	resp := rpcResponse{Jsonrpc: "2.0", Id: req.Id}
+	result, rerr := handle(client, version, req)
+	if rerr != nil {
+		resp.Error = &rpcError{Code: -32603, Message: rerr.Error()}
+	} else {
+		resp.Result = result
+	}
+	b, _ := json.Marshal(resp)
+	return b, false
 }
 
 func handle(client *fleet.Client, version string, req rpcRequest) (any, error) {
@@ -178,6 +192,25 @@ func toolDefs() []map[string]any {
 			"description": "Terminate a session on a device.",
 			"inputSchema": obj(map[string]any{"device": device, "session": session}, "device", "session"),
 		},
+		{
+			"name":        "list_files",
+			"description": "List a directory on a device (like `ls -la`). Use to explore a project before reading or editing files.",
+			"inputSchema": obj(map[string]any{"device": device, "path": str("Absolute path to a directory")}, "device", "path"),
+		},
+		{
+			"name":        "read_file",
+			"description": "Read a text file's contents from a device. Use before editing so you know what's there.",
+			"inputSchema": obj(map[string]any{"device": device, "path": str("Absolute path to the file")}, "device", "path"),
+		},
+		{
+			"name":        "write_file",
+			"description": "Create or overwrite a text file on a device with the given contents. Parent directory must exist. Content is capped at ~512 KB; for larger writes use run_command.",
+			"inputSchema": obj(map[string]any{
+				"device":  device,
+				"path":    str("Absolute path to the file"),
+				"content": str("Full new contents of the file"),
+			}, "device", "path", "content"),
+		},
 	}
 }
 
@@ -193,6 +226,8 @@ func callTool(client *fleet.Client, name string, rawArgs json.RawMessage) (strin
 		Enter      *bool   `json:"enter"`
 		Lines      float64 `json:"lines"`
 		TimeoutSec float64 `json:"timeoutSec"`
+		Path       string  `json:"path"`
+		Content    string  `json:"content"`
 	}
 	if len(rawArgs) > 0 {
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
@@ -344,7 +379,71 @@ func callTool(client *fleet.Client, name string, rawArgs json.RawMessage) (strin
 		}
 		return fmt.Sprintf("Session %q on %s killed.", args.Session, d.Name), nil
 
+	case "list_files":
+		d, err := resolve()
+		if err != nil {
+			return "", err
+		}
+		if args.Path == "" {
+			return "", fmt.Errorf("path is required")
+		}
+		res, err := client.Run(d.Id, "ls -la -- "+shellQuote(args.Path), "", 20)
+		if err != nil {
+			return "", err
+		}
+		if res.ExitCode != 0 {
+			return "", fmt.Errorf("%s", strings.TrimSpace(res.Stderr+res.Stdout))
+		}
+		return res.Stdout, nil
+
+	case "read_file":
+		d, err := resolve()
+		if err != nil {
+			return "", err
+		}
+		if args.Path == "" {
+			return "", fmt.Errorf("path is required")
+		}
+		res, err := client.Run(d.Id, "cat -- "+shellQuote(args.Path), "", 30)
+		if err != nil {
+			return "", err
+		}
+		if res.ExitCode != 0 {
+			return "", fmt.Errorf("%s", strings.TrimSpace(res.Stderr+res.Stdout))
+		}
+		return res.Stdout, nil
+
+	case "write_file":
+		d, err := resolve()
+		if err != nil {
+			return "", err
+		}
+		if args.Path == "" {
+			return "", fmt.Errorf("path is required")
+		}
+		if len(args.Content) > 512*1024 {
+			return "", fmt.Errorf("content too large (%d bytes); use run_command for writes over 512 KB", len(args.Content))
+		}
+		// Pipe base64 through the device's shell so arbitrary bytes/quotes in the
+		// content can't break out into the command. The base64 payload is passed
+		// on stdin (via a heredoc) to avoid ARG_MAX limits on large files.
+		b64 := base64.StdEncoding.EncodeToString([]byte(args.Content))
+		cmd := fmt.Sprintf("base64 -d > %s <<'OVSR_EOF'\n%s\nOVSR_EOF", shellQuote(args.Path), b64)
+		res, err := client.Run(d.Id, cmd, "", 30)
+		if err != nil {
+			return "", err
+		}
+		if res.ExitCode != 0 {
+			return "", fmt.Errorf("%s", strings.TrimSpace(res.Stderr+res.Stdout))
+		}
+		return fmt.Sprintf("Wrote %d bytes to %s on %s.", len(args.Content), args.Path, d.Name), nil
+
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)
 	}
+}
+
+// shellQuote wraps s in single quotes so it is a single, literal shell word.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

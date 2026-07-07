@@ -30,6 +30,7 @@ const usage = `Overseer — control all your machines from one place.
 
 Usage:
   overseer serve [--addr :4200] [--data-dir ~/.overseer]   Run the hub (web UI + API)
+  overseer serve --tls-domain d.com --tls-email you@d.com   Run the hub with automatic HTTPS (Let's Encrypt)
   overseer agent enroll --hub URL --token TOKEN            Enroll this device with a hub
   overseer agent run                                       Run the device agent (foreground)
   overseer agent install-service                           Install + start the agent as a service
@@ -88,15 +89,23 @@ func signalContext() context.Context {
 
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	addr := fs.String("addr", ":4200", "listen address")
+	addr := fs.String("addr", ":4200", "listen address (ignored when --tls-domain is set)")
 	dataDir := fs.String("data-dir", "", "data directory (default ~/.overseer)")
+	tlsDomain := fs.String("tls-domain", "", "enable automatic HTTPS (Let's Encrypt) for this domain; serves :443 + :80")
+	tlsEmail := fs.String("tls-email", "", "contact email for Let's Encrypt (expiry notices)")
 	fs.Parse(args)
+
+	if *tlsDomain != "" && *tlsEmail == "" {
+		return fmt.Errorf("--tls-email is required with --tls-domain (Let's Encrypt needs a contact address)")
+	}
 
 	srv, err := hub.NewServer(hub.Options{
 		Addr:       *addr,
 		DataDir:    *dataDir,
 		Version:    version,
 		GithubRepo: githubRepo,
+		TLSDomain:  *tlsDomain,
+		TLSEmail:   *tlsEmail,
 		UI:         uiFS(),
 	})
 	if err != nil {

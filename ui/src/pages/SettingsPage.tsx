@@ -197,6 +197,26 @@ claude mcp add overseer -- overseer mcp`}
         Then ask it things like “launch claude in ~/projects/api on the
         homelab box and have it fix the failing tests.”
       </p>
+
+      <div className="mt-6 border-t border-slate-800 pt-5">
+        <h3 className="mb-1 text-sm font-medium text-slate-100">
+          Remote MCP (ChatGPT, Claude, Cursor)
+        </h3>
+        <p className="mb-3 text-sm text-slate-400">
+          Any client that supports remote MCP connectors can drive your fleet
+          over HTTPS. Add this endpoint and paste an API token as the Bearer
+          credential:
+        </p>
+        <pre className="overflow-x-auto rounded-lg border border-slate-700 bg-slate-950 p-4 font-mono text-[13px] leading-relaxed text-slate-300">
+          {`${origin.replace(/^http:/, 'https:')}/mcp`}
+        </pre>
+        <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/8 p-3 text-xs text-amber-200/90">
+          ⚠️ This is a remote shell — the tools run commands and write files on
+          your devices. Only expose it over HTTPS ({''}
+          <code className="font-mono">--tls-domain</code> or a TLS proxy), and
+          treat the API token like an SSH key. Revoke it above if it leaks.
+        </div>
+      </div>
     </section>
   )
 }
