@@ -35,10 +35,37 @@ supervises worker agents on every machine.
 
 ### 1. Run the hub
 
+On a fresh Linux VM with systemd:
+
 ```sh
-git clone https://github.com/overseer-sh/overseer
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | sh
+```
+
+That installs `tmux` when missing, installs the `overseer` binary, creates an
+`overseer` service user, starts the hub as `overseer-hub.service`, and listens
+on `:4200`.
+
+To uninstall the service and binary while keeping hub data:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | sh -s -- uninstall
+```
+
+Add `OVERSEER_PURGE=1` to also remove `/var/lib/overseer` and the service user.
+
+For HTTPS with Let's Encrypt, point DNS at the VM, open ports 80/443, then run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh \
+  | env OVERSEER_TLS_DOMAIN=overseer.example.com OVERSEER_TLS_EMAIL=you@example.com sh
+```
+
+For local development from source:
+
+```sh
+git clone https://github.com/ErzenXz/overseer
 cd overseer
-make            # builds the UI + the ./overseer binary (needs Go 1.24 + Node 20)
+make            # builds the UI + the ./overseer binary (needs Go 1.25 + Node 20)
 ./overseer serve
 ```
 
