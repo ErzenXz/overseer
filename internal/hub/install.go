@@ -60,11 +60,11 @@ const windowsInstallScript = `$ErrorActionPreference = "Stop"
 $Hub = "%s"
 $Token = "%s"
 
-$ArchName = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-switch ($ArchName) {
-  "x64" { $Arch = "amd64" }
-  "arm64" { $Arch = "arm64" }
-  default { throw "overseer: unsupported architecture: $ArchName" }
+$RawArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+switch -Regex ($RawArch.ToLowerInvariant()) {
+  "amd64|x64" { $Arch = "amd64"; break }
+  "arm64" { $Arch = "arm64"; break }
+  default { throw "overseer: unsupported architecture: $RawArch" }
 }
 
 $BinDir = Join-Path $env:LOCALAPPDATA "Overseer\bin"

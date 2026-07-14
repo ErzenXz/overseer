@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import DevicePage from './pages/DevicePage'
 import AgentsPage from './pages/AgentsPage'
 import SettingsPage from './pages/SettingsPage'
+import SetupPage from './pages/SetupPage'
 
 interface Me {
   setupDone: boolean
@@ -40,7 +41,7 @@ export default function App() {
 
   if (me === null) {
     return (
-      <div className="flex h-full items-center justify-center text-slate-500">
+      <div className="flex h-full items-center justify-center text-zinc-500">
         Loading…
       </div>
     )
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/devices/:id" element={<DevicePage />} />
         <Route path="/agents" element={<AgentsPage />} />
+        <Route path="/setup" element={<SetupPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

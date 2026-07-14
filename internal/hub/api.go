@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ErzenXz/overseer/internal/protocol"
+	"github.com/ErzenXz/overseer/internal/updater"
 )
 
 // --- setup & auth ---
@@ -149,9 +151,13 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 
 type deviceView struct {
 	Device
-	Online bool            `json:"online"`
-	Stats  *protocol.Stats `json:"stats,omitempty"`
-	Tmux   bool            `json:"tmux"`
+	Online          bool            `json:"online"`
+	Stats           *protocol.Stats `json:"stats,omitempty"`
+	Tmux            bool            `json:"tmux"`
+	AgentVersion    string          `json:"agentVersion,omitempty"`
+	Platform        string          `json:"platform,omitempty"`
+	PlatformVersion string          `json:"platformVersion,omitempty"`
+	KernelVersion   string          `json:"kernelVersion,omitempty"`
 }
 
 func (s *Server) deviceViews() ([]deviceView, error) {
@@ -165,6 +171,10 @@ func (s *Server) deviceViews() ([]deviceView, error) {
 		if c := s.registry.get(d.Id); c != nil {
 			v.Online = true
 			v.Tmux = c.hello.Tmux
+			v.AgentVersion = c.hello.Version
+			v.Platform = c.hello.Platform
+			v.PlatformVersion = c.hello.PlatformVersion
+			v.KernelVersion = c.hello.KernelVersion
 			c.mu.Lock()
 			v.Stats = c.stats
 			c.mu.Unlock()
@@ -220,6 +230,80 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 	if c := s.registry.get(id); c != nil {
 		c.ws.Close() // token is gone; reconnect will be refused
 	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// --- software updates ---
+
+func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	status := s.updates.snapshot()
+	views, err := s.deviceViews()
+	if err == nil {
+		for _, device := range views {
+			if device.IsHub {
+				continue
+			}
+			status.FleetTotal++
+			if device.AgentVersion == "" || updater.IsNewer(s.opts.Version, device.AgentVersion) {
+				status.FleetOutdated++
+			}
+		}
+	}
+	writeJSON(w, status)
+}
+
+func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := s.updates.check(ctx, false); err != nil {
+		httpError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, s.updates.snapshot())
+}
+
+func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AutoUpdate *bool `json:"autoUpdate"`
+	}
+	if err := readJSON(r, &req); err != nil || req.AutoUpdate == nil {
+		httpError(w, http.StatusBadRequest, "autoUpdate is required")
+		return
+	}
+	if err := s.updates.setAuto(*req.AutoUpdate); err != nil {
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
+	status := s.updates.snapshot()
+	if !status.Managed {
+		httpError(w, http.StatusConflict, "this hub is not running as a managed service; run `overseer update` on the host")
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		_ = s.updates.install(ctx)
+	}()
+	w.WriteHeader(http.StatusAccepted)
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleUpdateRollback(w http.ResponseWriter, r *http.Request) {
+	status := s.updates.snapshot()
+	if !status.Managed {
+		httpError(w, http.StatusConflict, "this hub is not running as a managed service; run `overseer rollback` on the host")
+		return
+	}
+	if status.RollbackVersion == "" {
+		httpError(w, http.StatusConflict, "no previous version is available")
+		return
+	}
+	go func() { _ = s.updates.rollback() }()
+	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

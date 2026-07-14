@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -15,15 +16,18 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
+	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
+	psnet "github.com/shirou/gopsutil/v4/net"
+	"github.com/shirou/gopsutil/v4/process"
 
 	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 const (
-	execOutputCap  = 256 * 1024 // per stream (stdout/stderr)
-	statsInterval  = 5 * time.Second
-	fileChunkSize  = 64 * 1024
+	execOutputCap = 256 * 1024 // per stream (stdout/stderr)
+	statsInterval = 5 * time.Second
+	fileChunkSize = 64 * 1024
 )
 
 // --- stats ---
@@ -43,17 +47,38 @@ func (a *Agent) statsLoop(ctx context.Context) {
 
 func (a *Agent) sendStats(ctx context.Context) {
 	var s protocol.Stats
+	s.CPUCores, _ = cpu.CountsWithContext(ctx, true)
 	if pcts, err := cpu.PercentWithContext(ctx, 0, false); err == nil && len(pcts) > 0 {
 		s.CPUPercent = pcts[0]
+	}
+	if avg, err := load.AvgWithContext(ctx); err == nil {
+		s.Load1, s.Load5, s.Load15 = avg.Load1, avg.Load5, avg.Load15
 	}
 	if vm, err := mem.VirtualMemory(); err == nil {
 		s.MemUsed, s.MemTotal = vm.Used, vm.Total
 	}
-	if du, err := disk.Usage("/"); err == nil {
+	if swap, err := mem.SwapMemoryWithContext(ctx); err == nil {
+		s.SwapUsed, s.SwapTotal = swap.Used, swap.Total
+	}
+	diskRoot := "/"
+	if runtime.GOOS == "windows" {
+		diskRoot = os.Getenv("SystemDrive")
+		if diskRoot == "" {
+			diskRoot = "C:"
+		}
+		diskRoot += `\`
+	}
+	if du, err := disk.Usage(diskRoot); err == nil {
 		s.DiskUsed, s.DiskTotal = du.Used, du.Total
 	}
 	if up, err := host.Uptime(); err == nil {
 		s.UptimeSec = up
+	}
+	if counters, err := psnet.IOCountersWithContext(ctx, false); err == nil && len(counters) > 0 {
+		s.NetRxBytes, s.NetTxBytes = counters[0].BytesRecv, counters[0].BytesSent
+	}
+	if pids, err := process.PidsWithContext(ctx); err == nil {
+		s.ProcessCount = uint64(len(pids))
 	}
 	m, err := protocol.NewMsg(protocol.TypeStats, 0, 0, s)
 	if err == nil {
@@ -95,11 +120,7 @@ func (a *Agent) execCommand(req protocol.Exec) protocol.ExecResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	cmd := exec.CommandContext(ctx, shell, "-c", req.Command)
+	cmd := shellCommandContext(ctx, req.Command, false)
 	if req.Cwd != "" {
 		cmd.Dir = req.Cwd
 	}
@@ -125,6 +146,26 @@ func (a *Agent) execCommand(req protocol.Exec) protocol.ExecResult {
 		res.Stderr += "\n[overseer] " + err.Error()
 	}
 	return res
+}
+
+func shellCommandContext(ctx context.Context, command string, login bool) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		if command == "" {
+			return exec.CommandContext(ctx, "powershell.exe", "-NoLogo")
+		}
+		return exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-Command", command)
+	}
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	if command != "" {
+		return exec.CommandContext(ctx, shell, "-c", command)
+	}
+	if login {
+		return exec.CommandContext(ctx, shell, "-l")
+	}
+	return exec.CommandContext(ctx, shell)
 }
 
 // --- file operations ---

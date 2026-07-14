@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme/autocert"
@@ -38,13 +39,15 @@ type Options struct {
 
 // Server is the hub.
 type Server struct {
-	opts     Options
-	store    *Store
-	sessions *sessionManager
-	loginRL  *rateLimiter
-	events   *eventBus
-	registry *registry
-	mux      *http.ServeMux
+	opts          Options
+	store         *Store
+	sessions      *sessionManager
+	loginRL       *rateLimiter
+	events        *eventBus
+	registry      *registry
+	mux           *http.ServeMux
+	updates       *updateManager
+	updateApplied atomic.Bool
 
 	// internalURL is a loopback-only plain-HTTP address serving the same mux.
 	// The embedded agent and the MCP endpoint use it so they work identically
@@ -81,6 +84,7 @@ func NewServer(opts Options) (*Server, error) {
 		mux:      http.NewServeMux(),
 	}
 	s.routes()
+	s.updates = newUpdateManager(store, opts.Version, opts.GithubRepo)
 	return s, nil
 }
 
@@ -99,6 +103,13 @@ func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
 // Run serves until ctx is cancelled. It also starts the embedded local agent
 // so the hub machine itself shows up as a device.
 func (s *Server) Run(ctx context.Context) error {
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	s.updates.start(runCtx, func() {
+		s.updateApplied.Store(true)
+		cancelRun()
+	})
+
 	// Internal loopback listener: always plain HTTP, used by the embedded agent
 	// and the MCP endpoint's in-process client regardless of public TLS.
 	internalLn, err := net.Listen("tcp", "127.0.0.1:0")
@@ -110,17 +121,25 @@ func (s *Server) Run(ctx context.Context) error {
 	go internalSrv.Serve(internalLn)
 
 	go func() {
-		<-ctx.Done()
+		<-runCtx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		internalSrv.Shutdown(shutdownCtx)
 	}()
-	go s.runEmbeddedAgent(ctx)
+	go s.runEmbeddedAgent(runCtx)
 
 	if s.opts.TLSDomain != "" {
-		return s.runTLS(ctx)
+		err := s.runTLS(runCtx)
+		if s.updateApplied.Load() {
+			return nil
+		}
+		return err
 	}
-	return s.runPlain(ctx)
+	err = s.runPlain(runCtx)
+	if s.updateApplied.Load() {
+		return nil
+	}
+	return err
 }
 
 // runPlain serves HTTP on the configured address.
@@ -243,6 +262,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/devices/{id}/sessions/{name}/input", s.requireAuth(s.handleSessionInput))
 	m.HandleFunc("GET /api/devices/{id}/sessions/{name}/output", s.requireAuth(s.handleSessionOutput))
 	m.HandleFunc("POST /api/devices/{id}/exec", s.requireAuth(s.handleExec))
+	m.HandleFunc("GET /api/devices/{id}/setup", s.requireAuth(s.handleSetupStatus))
 	m.HandleFunc("GET /api/devices/{id}/fs", s.requireAuth(s.handleFsList))
 	m.HandleFunc("GET /api/devices/{id}/fs/download", s.requireAuth(s.handleFsDownload))
 	m.HandleFunc("POST /api/devices/{id}/fs/upload", s.requireAuth(s.handleFsUpload))
@@ -253,6 +273,11 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/tokens", s.requireAuth(s.handleListApiTokens))
 	m.HandleFunc("POST /api/tokens", s.requireAuth(s.handleCreateApiToken))
 	m.HandleFunc("DELETE /api/tokens/{id}", s.requireAuth(s.handleDeleteApiToken))
+	m.HandleFunc("GET /api/updates", s.requireAuth(s.handleUpdateStatus))
+	m.HandleFunc("POST /api/updates/check", s.requireAuth(s.handleUpdateCheck))
+	m.HandleFunc("PATCH /api/updates", s.requireAuth(s.handleUpdateSettings))
+	m.HandleFunc("POST /api/updates/install", s.requireAuth(s.handleUpdateInstall))
+	m.HandleFunc("POST /api/updates/rollback", s.requireAuth(s.handleUpdateRollback))
 	m.HandleFunc("GET /api/ws/term", s.requireAuth(s.handleTermWS))
 	m.HandleFunc("GET /api/ws/events", s.requireAuth(s.handleEventsWS))
 

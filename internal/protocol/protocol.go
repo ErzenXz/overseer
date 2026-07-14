@@ -69,11 +69,14 @@ func NewMsg(typ string, id uint64, channel uint32, v any) (Msg, error) {
 
 // Hello is sent by the agent immediately after connecting.
 type Hello struct {
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
-	Version  string `json:"version"`
-	Tmux     bool   `json:"tmux"`
+	Hostname        string `json:"hostname"`
+	OS              string `json:"os"`
+	Arch            string `json:"arch"`
+	Version         string `json:"version"`
+	Tmux            bool   `json:"tmux"`
+	Platform        string `json:"platform,omitempty"`
+	PlatformVersion string `json:"platformVersion,omitempty"`
+	KernelVersion   string `json:"kernelVersion,omitempty"`
 }
 
 // Welcome is the hub's acceptance of an agent connection. Version lets the
@@ -81,22 +84,32 @@ type Hello struct {
 type Welcome struct {
 	DeviceId string `json:"deviceId"`
 	Version  string `json:"version"`
+	Repo     string `json:"repo,omitempty"`
 }
 
 // Stats is a periodic system snapshot from the agent.
 type Stats struct {
-	CPUPercent float64 `json:"cpuPercent"`
-	MemUsed    uint64  `json:"memUsed"`
-	MemTotal   uint64  `json:"memTotal"`
-	DiskUsed   uint64  `json:"diskUsed"`
-	DiskTotal  uint64  `json:"diskTotal"`
-	UptimeSec  uint64  `json:"uptimeSec"`
+	CPUPercent   float64 `json:"cpuPercent"`
+	CPUCores     int     `json:"cpuCores"`
+	Load1        float64 `json:"load1"`
+	Load5        float64 `json:"load5"`
+	Load15       float64 `json:"load15"`
+	MemUsed      uint64  `json:"memUsed"`
+	MemTotal     uint64  `json:"memTotal"`
+	SwapUsed     uint64  `json:"swapUsed"`
+	SwapTotal    uint64  `json:"swapTotal"`
+	DiskUsed     uint64  `json:"diskUsed"`
+	DiskTotal    uint64  `json:"diskTotal"`
+	NetRxBytes   uint64  `json:"netRxBytes"`
+	NetTxBytes   uint64  `json:"netTxBytes"`
+	ProcessCount uint64  `json:"processCount"`
+	UptimeSec    uint64  `json:"uptimeSec"`
 }
 
 // Session describes one terminal session on a device.
 type Session struct {
 	Name         string `json:"name"`
-	Kind         string `json:"kind"` // "shell", "claude", "codex", ... ("" for plain tmux sessions)
+	Kind         string `json:"kind"`   // "shell", "claude", "codex", ... ("" for plain tmux sessions)
 	Status       string `json:"status"` // "working" | "idle" | "exited"
 	CreatedAt    int64  `json:"createdAt"`
 	LastActivity int64  `json:"lastActivity"`
@@ -131,10 +144,10 @@ type Exec struct {
 
 // ExecResult is the reply to exec. Output is capped by the agent.
 type ExecResult struct {
-	ExitCode int    `json:"exitCode"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	Truncated bool  `json:"truncated,omitempty"`
+	ExitCode  int    `json:"exitCode"`
+	Stdout    string `json:"stdout"`
+	Stderr    string `json:"stderr"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 // TermOpen asks the agent to attach a PTY to a session and stream it on Channel.

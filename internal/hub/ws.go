@@ -73,7 +73,11 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	s.store.UpdateDeviceOnConnect(device.Id, h.Hostname, h.OS, h.Arch)
 
 	conn := newAgentConn(device.Id, h, ws)
-	welcome, _ := protocol.NewMsg(protocol.TypeWelcome, 0, 0, protocol.Welcome{DeviceId: device.Id, Version: s.opts.Version})
+	welcome, _ := protocol.NewMsg(protocol.TypeWelcome, 0, 0, protocol.Welcome{
+		DeviceId: device.Id,
+		Version:  s.opts.Version,
+		Repo:     s.opts.GithubRepo,
+	})
 	if err := conn.sendJSON(welcome); err != nil {
 		ws.Close()
 		return

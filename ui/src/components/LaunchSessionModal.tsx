@@ -66,14 +66,14 @@ export default function LaunchSessionModal({
   }
 
   const inputClass =
-    'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500'
+    'w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-lime-500'
 
   return (
     <Modal title="Launch session" onClose={onClose}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         {devices.length > 1 && (
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-300">
+            <label className="mb-1 block text-sm font-medium text-zinc-300">
               Device
             </label>
             <select
@@ -91,7 +91,7 @@ export default function LaunchSessionModal({
         )}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-300">
+          <label className="mb-1 block text-sm font-medium text-zinc-300">
             What to run
           </label>
           <div className="flex flex-wrap gap-2">
@@ -102,8 +102,8 @@ export default function LaunchSessionModal({
                 onClick={() => selectPreset(p)}
                 className={`rounded-lg border px-3 py-1.5 text-sm transition ${
                   presetId === p.id
-                    ? 'border-sky-500 bg-sky-500/10 text-sky-300'
-                    : 'border-slate-700 text-slate-300 hover:border-slate-600'
+                    ? 'border-lime-500 bg-lime-500/10 text-lime-300'
+                    : 'border-zinc-700 text-zinc-300 hover:border-zinc-600'
                 }`}
               >
                 {p.name}
@@ -113,7 +113,7 @@ export default function LaunchSessionModal({
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-300">
+          <label className="mb-1 block text-sm font-medium text-zinc-300">
             Command
           </label>
           <input
@@ -129,7 +129,7 @@ export default function LaunchSessionModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-300">
+            <label className="mb-1 block text-sm font-medium text-zinc-300">
               Session name
             </label>
             <input
@@ -142,7 +142,7 @@ export default function LaunchSessionModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-300">
+            <label className="mb-1 block text-sm font-medium text-zinc-300">
               Working directory
             </label>
             <input
@@ -158,7 +158,7 @@ export default function LaunchSessionModal({
         <button
           type="submit"
           disabled={busy || !deviceId}
-          className="rounded-lg bg-sky-500 py-2 font-medium text-white transition hover:bg-sky-400 disabled:opacity-50"
+          className="btn-primary"
         >
           {busy ? 'Launching…' : 'Launch'}
         </button>

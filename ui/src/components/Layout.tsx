@@ -1,177 +1,84 @@
-import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet } from 'react-router-dom'
 import { api } from '../api'
 
-const linkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-    isActive
-      ? 'bg-sky-500/10 text-sky-400'
-      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-  }`
+const links = [
+  { to: '/', label: 'Fleet', end: true, icon: 'grid' },
+  { to: '/agents', label: 'Agents', icon: 'pulse' },
+  { to: '/setup', label: 'Setup', icon: 'spark' },
+  { to: '/settings', label: 'Settings', icon: 'sliders' },
+]
 
 export default function Layout({ version }: { version: string }) {
-  // drawerOpen only matters on mobile; the sidebar is always visible on md+.
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const location = useLocation()
-
-  // Close the drawer whenever the route changes (i.e. after a tap).
-  useEffect(() => {
-    setDrawerOpen(false)
-  }, [location.pathname])
-
   const logout = async () => {
     await api.post('/api/logout')
     window.location.assign('/login')
   }
 
-  const nav = (
-    <nav className="flex flex-col gap-1">
-      <NavLink to="/" end className={linkClass}>
-        <IconGrid /> Devices
-      </NavLink>
-      <NavLink to="/agents" className={linkClass}>
-        <IconBot /> Agents
-      </NavLink>
-      <NavLink to="/settings" className={linkClass}>
-        <IconGear /> Settings
-      </NavLink>
-    </nav>
-  )
-
-  const brand = (
-    <div className="flex items-center gap-2.5">
-      <Eye />
-      <span className="text-lg font-semibold tracking-tight text-slate-100">
-        Overseer
-      </span>
-    </div>
-  )
-
   return (
-    <div className="flex h-full flex-col md:flex-row">
-      {/* Mobile top bar */}
-      <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-4 py-3 md:hidden">
-        {brand}
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"
-          aria-label="Open menu"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M3 6h18M3 12h18M3 18h18" />
-          </svg>
-        </button>
-      </header>
+    <div className="flex min-h-full flex-col">
+      <a
+        href="#main-content"
+        className="fixed left-4 top-3 z-[60] -translate-y-20 rounded-md bg-lime-300 px-3 py-2 text-sm font-semibold text-zinc-950 focus:translate-y-0"
+      >
+        Skip to content
+      </a>
+      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#0b0d0f]/88 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-4 py-3 sm:px-7">
+          <NavLink to="/" className="mr-auto flex items-center gap-2.5 text-zinc-100">
+            <Eye />
+            <span className="text-base font-semibold tracking-[-0.025em]">Overseer</span>
+          </NavLink>
 
-      {/* Desktop sidebar */}
-      <aside className="hidden w-52 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40 p-4 md:flex">
-        <div className="mb-8 px-1">{brand}</div>
-        {nav}
-        <Footer version={version} onLogout={logout} />
-      </aside>
-
-      {/* Mobile drawer */}
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setDrawerOpen(false)}
-          />
-          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col border-r border-slate-800 bg-slate-900 p-4 shadow-2xl">
-            <div className="mb-8 flex items-center justify-between px-1">
-              {brand}
-              <button
-                onClick={() => setDrawerOpen(false)}
-                className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
-                aria-label="Close menu"
+          <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto sm:order-none sm:w-auto" aria-label="Main navigation">
+            {links.map((link) => (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                end={link.end}
+                className={({ isActive }) =>
+                  `flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium ${
+                    isActive
+                      ? 'bg-white/[0.08] text-white'
+                      : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
+                  }`
+                }
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            {nav}
-            <Footer version={version} onLogout={logout} />
-          </aside>
-        </div>
-      )}
+                <NavIcon name={link.icon} />
+                {link.label}
+              </NavLink>
+            ))}
+          </nav>
 
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <div className="ml-1 flex items-center gap-3 border-l border-white/10 pl-4">
+            {version && <span className="hidden font-mono text-[10px] text-zinc-600 lg:block">{version}</span>}
+            <button onClick={logout} className="text-xs font-medium text-zinc-500 hover:text-zinc-200">
+              Log out
+            </button>
+          </div>
+        </div>
+      </header>
+      <main id="main-content" className="min-h-0 min-w-0 flex-1">
         <Outlet />
       </main>
     </div>
   )
 }
 
-function Footer({
-  version,
-  onLogout,
-}: {
-  version: string
-  onLogout: () => void
-}) {
-  return (
-    <div className="mt-auto flex flex-col gap-2 px-1 pt-6">
-      <button
-        onClick={onLogout}
-        className="text-left text-sm text-slate-500 hover:text-slate-300"
-      >
-        Log out
-      </button>
-      {version && <span className="text-xs text-slate-600">v{version}</span>}
-    </div>
-  )
-}
-
 function Eye() {
   return (
-    <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden>
-      <circle cx="50" cy="50" r="42" className="fill-sky-500" />
-      <circle cx="50" cy="50" r="18" className="fill-slate-950" />
-      <circle cx="50" cy="50" r="8" className="fill-sky-100" />
-    </svg>
+    <span className="grid h-7 w-7 place-items-center rounded-lg bg-lime-300 text-zinc-950 shadow-[0_0_28px_rgba(190,242,100,0.12)]">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+        <path d="M2.7 12s3.3-6 9.3-6 9.3 6 9.3 6-3.3 6-9.3 6-9.3-6-9.3-6Z" />
+        <circle cx="12" cy="12" r="2.6" fill="currentColor" />
+      </svg>
+    </span>
   )
 }
 
-const iconProps = {
-  width: 16,
-  height: 16,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 2,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round',
-} as const
-
-function IconGrid() {
-  return (
-    <svg {...iconProps} aria-hidden>
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
-    </svg>
-  )
-}
-
-function IconBot() {
-  return (
-    <svg {...iconProps} aria-hidden>
-      <rect x="4" y="8" width="16" height="12" rx="2" />
-      <path d="M12 8V4M8 4h8" />
-      <circle cx="9" cy="13" r="1" fill="currentColor" />
-      <circle cx="15" cy="13" r="1" fill="currentColor" />
-      <path d="M9 17h6" />
-    </svg>
-  )
-}
-
-function IconGear() {
-  return (
-    <svg {...iconProps} aria-hidden>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-    </svg>
-  )
+function NavIcon({ name }: { name: string }) {
+  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8 } as const
+  if (name === 'pulse') return <svg {...common} aria-hidden><path d="M3 12h4l2.2-6 4.2 12 2.3-6H21" /></svg>
+  if (name === 'spark') return <svg {...common} aria-hidden><path d="m12 3 1.2 4.1L17 9l-3.8 1.9L12 15l-1.2-4.1L7 9l3.8-1.9L12 3ZM5 16l.7 2.3L8 19.5l-2.3 1.2L5 23l-.7-2.3L2 19.5l2.3-1.2L5 16Z" /></svg>
+  if (name === 'sliders') return <svg {...common} aria-hidden><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="18" r="2" /></svg>
+  return <svg {...common} aria-hidden><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
 }

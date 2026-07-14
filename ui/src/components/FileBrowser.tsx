@@ -71,17 +71,17 @@ export default function FileBrowser({ deviceId }: { deviceId: string }) {
         <button
           onClick={up}
           disabled={!listing || listing.path === '/'}
-          className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
         >
           ↑ Up
         </button>
-        <code className="flex-1 truncate rounded-lg bg-slate-900 px-3 py-1.5 font-mono text-sm text-slate-300">
+        <code className="flex-1 truncate rounded-lg bg-zinc-900 px-3 py-1.5 font-mono text-sm text-zinc-300">
           {listing?.path ?? '…'}
         </code>
         <button
           onClick={() => fileInput.current?.click()}
           disabled={uploading || !listing}
-          className="rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-400 disabled:opacity-50"
+          className="btn-primary"
         >
           {uploading ? 'Uploading…' : 'Upload here'}
         </button>
@@ -99,9 +99,9 @@ export default function FileBrowser({ deviceId }: { deviceId: string }) {
 
       {error && <p className="mb-3 text-sm text-rose-400">{error}</p>}
 
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-800">
+      <div className="surface min-h-0 flex-1 overflow-y-auto rounded-xl">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-slate-900 text-left text-xs text-slate-500">
+          <thead className="sticky top-0 bg-zinc-900 text-left text-xs text-zinc-500">
             <tr>
               <th className="px-4 py-2 font-medium">Name</th>
               <th className="w-28 px-4 py-2 font-medium">Size</th>
@@ -113,28 +113,28 @@ export default function FileBrowser({ deviceId }: { deviceId: string }) {
             {listing?.entries.map((e) => (
               <tr
                 key={e.name}
-                className="border-t border-slate-800/60 hover:bg-slate-900/60"
+                className="border-t border-zinc-800/60 hover:bg-zinc-900/60"
               >
                 <td
                   className={`px-4 py-2 font-mono text-[13px] ${
-                    e.dir ? 'cursor-pointer text-sky-300' : 'text-slate-300'
+                    e.dir ? 'cursor-pointer text-lime-300' : 'text-zinc-300'
                   }`}
                   onClick={() => e.dir && load(`${listing.path}/${e.name}`)}
                 >
                   {e.dir ? '📁 ' : ''}
                   {e.name}
                 </td>
-                <td className="px-4 py-2 text-slate-500">
+                <td className="px-4 py-2 text-zinc-500">
                   {e.dir ? '—' : formatBytes(e.size)}
                 </td>
-                <td className="px-4 py-2 text-slate-500">
+                <td className="px-4 py-2 text-zinc-500">
                   {new Date(e.modTime * 1000).toLocaleString()}
                 </td>
                 <td className="px-4 py-2 text-right">
                   {!e.dir && (
                     <button
                       onClick={() => download(e.name)}
-                      className="text-xs text-slate-400 hover:text-sky-300"
+                      className="text-xs text-zinc-400 hover:text-lime-300"
                     >
                       Download
                     </button>
@@ -144,7 +144,7 @@ export default function FileBrowser({ deviceId }: { deviceId: string }) {
             ))}
             {listing && listing.entries.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-zinc-500">
                   Empty directory
                 </td>
               </tr>

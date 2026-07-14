@@ -2,8 +2,8 @@
 @import '@xterm/xterm/css/xterm.css';
 
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
+  --font-sans: 'Avenir Next', Avenir, 'Segoe UI Variable', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'SFMono-Regular', 'Cascadia Code', 'Roboto Mono', ui-monospace, monospace;
 }
 
 html,
@@ -13,7 +13,58 @@ body,
 }
 
 body {
-  @apply bg-slate-950 text-slate-200 antialiased;
+  @apply bg-[#0b0d0f] text-zinc-200 antialiased;
+  background-image:
+    radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.06), transparent 28rem),
+    radial-gradient(circle at 95% 15%, rgba(255, 255, 255, 0.035), transparent 24rem);
+  background-attachment: fixed;
+  font-feature-settings: 'ss01' 1, 'cv02' 1;
+}
+
+button,
+a,
+input,
+select {
+  @apply outline-none transition duration-200;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  @apply ring-2 ring-lime-300/70 ring-offset-2 ring-offset-[#0b0d0f];
+}
+
+.page-shell {
+  @apply mx-auto w-full max-w-[1500px] px-4 py-6 sm:px-7 sm:py-9;
+}
+
+.surface {
+  @apply border border-white/[0.07] bg-white/[0.035] shadow-[0_18px_60px_rgba(0,0,0,0.18)];
+}
+
+.surface-quiet {
+  @apply bg-white/[0.025];
+}
+
+.eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-lime-300/80;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-lg bg-lime-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-lime-200 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] px-3.5 py-2 text-sm font-medium text-zinc-300 hover:border-white/20 hover:bg-white/[0.07] hover:text-white active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45;
+}
+
+.data-number {
+  @apply font-mono tabular-nums tracking-tight;
+}
+
+.skeleton {
+  @apply animate-pulse rounded-lg bg-white/[0.055];
 }
 
 /* xterm fills its container */

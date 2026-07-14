@@ -12,6 +12,7 @@ ADDR="${OVERSEER_ADDR:-:4200}"
 DATA_DIR="${OVERSEER_DATA_DIR:-/var/lib/overseer}"
 USER_NAME="${OVERSEER_USER:-overseer}"
 BIN_DIR="${OVERSEER_BIN_DIR:-/usr/local/bin}"
+MANAGED_BIN_DIR="$DATA_DIR/bin"
 SERVICE_NAME="${OVERSEER_SERVICE_NAME:-overseer-hub}"
 TLS_DOMAIN="${OVERSEER_TLS_DOMAIN:-}"
 TLS_EMAIL="${OVERSEER_TLS_EMAIL:-}"
@@ -63,6 +64,8 @@ uninstall_service() {
     log "removing binary: $BIN_DIR/overseer"
     $SUDO rm -f "$BIN_DIR/overseer"
   fi
+
+  $SUDO rm -f "$MANAGED_BIN_DIR/overseer" "$MANAGED_BIN_DIR/overseer.previous"
 
   if [ "$PURGE" = "1" ]; then
     log "purging data directory: $DATA_DIR"
@@ -214,6 +217,16 @@ download_release_binary() {
 
   log "trying release binary: $URL"
   if curl -fL "$URL" -o "$TMP_DIR/overseer"; then
+    CHECKSUM_URL="$(dirname "$URL")/checksums.txt"
+    curl -fL "$CHECKSUM_URL" -o "$TMP_DIR/checksums.txt" || return 1
+    EXPECTED="$(awk -v asset="$ASSET" '$2 == asset || $2 == "*" asset { print $1; exit }' "$TMP_DIR/checksums.txt")"
+    [ -n "$EXPECTED" ] || die "checksums.txt does not contain $ASSET"
+    if command -v sha256sum >/dev/null 2>&1; then
+      ACTUAL="$(sha256sum "$TMP_DIR/overseer" | awk '{print $1}')"
+    else
+      ACTUAL="$(shasum -a 256 "$TMP_DIR/overseer" | awk '{print $1}')"
+    fi
+    [ "$ACTUAL" = "$EXPECTED" ] || die "release checksum verification failed"
     chmod +x "$TMP_DIR/overseer"
     return 0
   fi
@@ -263,9 +276,6 @@ install_binary() {
 install_service() {
   install_packages tmux
 
-  $SUDO install -d -m 755 "$BIN_DIR"
-  $SUDO install -m 755 "$TMP_DIR/overseer" "$BIN_DIR/overseer"
-
   if ! id "$USER_NAME" >/dev/null 2>&1; then
     log "creating service user: $USER_NAME"
     [ -x "$SERVICE_SHELL" ] || die "service shell not found: $SERVICE_SHELL"
@@ -282,6 +292,11 @@ install_service() {
   fi
 
   $SUDO install -d -m 700 -o "$USER_NAME" -g "$USER_NAME" "$DATA_DIR"
+  $SUDO install -d -m 755 -o "$USER_NAME" -g "$USER_NAME" "$MANAGED_BIN_DIR"
+  $SUDO systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+  $SUDO install -m 755 -o "$USER_NAME" -g "$USER_NAME" "$TMP_DIR/overseer" "$MANAGED_BIN_DIR/overseer"
+  $SUDO install -d -m 755 "$BIN_DIR"
+  $SUDO ln -sfn "$MANAGED_BIN_DIR/overseer" "$BIN_DIR/overseer"
 
   SERVE_ARGS="serve --addr ${ADDR} --data-dir ${DATA_DIR}"
   CAPABILITY_LINES=""
@@ -309,7 +324,8 @@ EOF
       printf '%s\n' "$CAPABILITY_LINES"
     fi
     cat <<EOF
-ExecStart=${BIN_DIR}/overseer ${SERVE_ARGS}
+Environment=OVERSEER_MANAGED=hub
+ExecStart=${MANAGED_BIN_DIR}/overseer ${SERVE_ARGS}
 Restart=always
 RestartSec=3
 
@@ -327,7 +343,7 @@ EOF
 install_binary
 install_service
 
-INSTALLED_VERSION="$("$BIN_DIR"/overseer version 2>/dev/null | sed 's/^overseer //' || true)"
+INSTALLED_VERSION="$("$MANAGED_BIN_DIR"/overseer version 2>/dev/null | sed 's/^overseer //' || true)"
 if [ -n "$INSTALLED_VERSION" ]; then
   log "installed $INSTALLED_VERSION"
 else

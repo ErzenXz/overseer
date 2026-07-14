@@ -13,19 +13,21 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/shirou/gopsutil/v4/host"
 
 	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // Config is what an enrolled agent needs to reach its hub.
 type Config struct {
-	HubURL   string `json:"hubUrl"`   // e.g. http://192.168.1.10:4200
+	HubURL   string `json:"hubUrl"` // e.g. http://192.168.1.10:4200
 	DeviceId string `json:"deviceId"`
 	Token    string `json:"token"`
 }
@@ -40,20 +42,62 @@ type Agent struct {
 	// state access (terms/files/conn) for every other goroutine.
 	writeMu sync.Mutex
 
-	mu          sync.Mutex
-	conn        *websocket.Conn
-	terms       map[uint32]*termStream
-	files       map[uint32]*fileStream
-	triedUpdate bool
+	mu                sync.Mutex
+	conn              *websocket.Conn
+	terms             map[uint32]*termStream
+	files             map[uint32]*fileStream
+	nextUpdateAttempt time.Time
+	updateApplied     bool
 }
 
 func New(cfg Config, version string) *Agent {
+	augmentManagedPath()
 	return &Agent{
 		cfg:     cfg,
 		version: version,
 		terms:   map[uint32]*termStream{},
 		files:   map[uint32]*fileStream{},
 	}
+}
+
+// augmentManagedPath makes tools installed through Overseer's setup center
+// available to background agents too. Service managers often start with a
+// much smaller PATH than an interactive shell, especially on macOS/Windows.
+func augmentManagedPath() {
+	home, _ := os.UserHomeDir()
+	paths := filepath.SplitList(os.Getenv("PATH"))
+	paths = append(managedPathEntries(runtime.GOOS, home, os.Getenv("LOCALAPPDATA")), paths...)
+	os.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator)))
+}
+
+func managedPathEntries(goos, home, localAppData string) []string {
+	additional := make([]string, 0, 5)
+	homeIsAbsolute := filepath.IsAbs(home)
+	if goos == "windows" {
+		base := localAppData
+		if base == "" && homeIsAbsolute {
+			base = filepath.Join(home, "AppData", "Local")
+		}
+		if filepath.IsAbs(base) {
+			additional = append(additional,
+				filepath.Join(base, "Overseer", "bin"),
+				filepath.Join(base, "Overseer", "tools", "node_modules", ".bin"),
+			)
+		}
+		if homeIsAbsolute {
+			additional = append(additional, filepath.Join(home, ".local", "bin"))
+		}
+	} else {
+		if homeIsAbsolute {
+			additional = append(additional,
+				filepath.Join(home, ".overseer", "bin"),
+				filepath.Join(home, ".overseer", "tools", "node_modules", ".bin"),
+				filepath.Join(home, ".local", "bin"),
+			)
+		}
+		additional = append(additional, "/opt/homebrew/bin", "/usr/local/bin")
+	}
+	return additional
 }
 
 // errUpdated signals that the agent replaced its own binary and should exit so
@@ -103,12 +147,19 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 	defer conn.Close()
 
 	hostname, _ := os.Hostname()
+	info, _ := host.Info()
+	if info == nil {
+		info = &host.InfoStat{}
+	}
 	hello, _ := protocol.NewMsg(protocol.TypeHello, 0, 0, protocol.Hello{
-		Hostname: hostname,
-		OS:       runtime.GOOS,
-		Arch:     runtime.GOARCH,
-		Version:  a.version,
-		Tmux:     tmuxAvailable(),
+		Hostname:        hostname,
+		OS:              runtime.GOOS,
+		Arch:            runtime.GOARCH,
+		Version:         a.version,
+		Tmux:            tmuxAvailable(),
+		Platform:        info.Platform,
+		PlatformVersion: info.PlatformVersion,
+		KernelVersion:   info.KernelVersion,
 	})
 	if err := conn.WriteJSON(hello); err != nil {
 		return false, err
@@ -125,7 +176,7 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 	// If the hub is running a newer released version, self-update and restart
 	// (managed service only). Do this before serving so we don't drop live work.
 	var w protocol.Welcome
-	if json.Unmarshal(welcome.Data, &w) == nil && a.maybeSelfUpdate(w.Version) {
+	if json.Unmarshal(welcome.Data, &w) == nil && a.maybeSelfUpdate(ctx, w.Version, w.Repo) {
 		return true, errUpdated
 	}
 
@@ -137,6 +188,7 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go a.statsLoop(cctx)
+	go a.autoUpdateLoop(cctx, w.Version, w.Repo)
 	go func() { // hub going away should unblock the read loop promptly
 		<-cctx.Done()
 		conn.Close()
@@ -145,6 +197,13 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 	for {
 		msgType, data, err := conn.ReadMessage()
 		if err != nil {
+			a.mu.Lock()
+			updated := a.updateApplied
+			a.updateApplied = false
+			a.mu.Unlock()
+			if updated {
+				return true, errUpdated
+			}
 			return true, err
 		}
 		switch msgType {
