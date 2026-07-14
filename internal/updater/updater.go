@@ -272,8 +272,11 @@ func downloadStaged(ctx context.Context, url, exe, want string) (string, error) 
 	}
 	name := tmp.Name()
 	ok := false
+	closed := false
 	defer func() {
-		tmp.Close()
+		if !closed {
+			tmp.Close()
+		}
 		if !ok {
 			os.Remove(name)
 		}
@@ -285,7 +288,9 @@ func downloadStaged(ctx context.Context, url, exe, want string) (string, error) 
 	if err := tmp.Sync(); err != nil {
 		return "", err
 	}
-	if err := tmp.Close(); err != nil {
+	err = tmp.Close()
+	closed = true
+	if err != nil {
 		return "", err
 	}
 	got := hex.EncodeToString(hash.Sum(nil))
@@ -375,8 +380,11 @@ func backupExecutable(source, destination string) error {
 		return err
 	}
 	ok := false
+	closed := false
 	defer func() {
-		out.Close()
+		if !closed {
+			out.Close()
+		}
 		if !ok {
 			os.Remove(destination)
 		}
@@ -387,7 +395,9 @@ func backupExecutable(source, destination string) error {
 	if err := out.Sync(); err != nil {
 		return err
 	}
-	if err := out.Close(); err != nil {
+	err = out.Close()
+	closed = true
+	if err != nil {
 		return err
 	}
 	ok = true

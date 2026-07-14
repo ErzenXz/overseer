@@ -22,8 +22,12 @@ if ($Action -in @("uninstall", "remove")) {
   exit 0
 }
 
-$ArchName = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-$Arch = switch ($ArchName) { "x64" { "amd64" } "arm64" { "arm64" } default { throw "Unsupported architecture: $ArchName" } }
+$RawArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+$Arch = switch -Regex ($RawArch.ToLowerInvariant()) {
+  "amd64|x64" { "amd64"; break }
+  "arm64" { "arm64"; break }
+  default { throw "Unsupported architecture: $RawArch" }
+}
 New-Item -ItemType Directory -Force -Path $BinDir, $DataDir | Out-Null
 schtasks.exe /End /TN $Task 2>$null | Out-Null
 if ($env:OVERSEER_LOCAL_BINARY) {

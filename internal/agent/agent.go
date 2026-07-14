@@ -66,26 +66,38 @@ func New(cfg Config, version string) *Agent {
 func augmentManagedPath() {
 	home, _ := os.UserHomeDir()
 	paths := filepath.SplitList(os.Getenv("PATH"))
-	if runtime.GOOS == "windows" {
-		base := os.Getenv("LOCALAPPDATA")
-		if base == "" {
+	paths = append(managedPathEntries(runtime.GOOS, home, os.Getenv("LOCALAPPDATA")), paths...)
+	os.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator)))
+}
+
+func managedPathEntries(goos, home, localAppData string) []string {
+	additional := make([]string, 0, 5)
+	homeIsAbsolute := filepath.IsAbs(home)
+	if goos == "windows" {
+		base := localAppData
+		if base == "" && homeIsAbsolute {
 			base = filepath.Join(home, "AppData", "Local")
 		}
-		paths = append([]string{
-			filepath.Join(base, "Overseer", "bin"),
-			filepath.Join(base, "Overseer", "tools", "node_modules", ".bin"),
-			filepath.Join(home, ".local", "bin"),
-		}, paths...)
+		if filepath.IsAbs(base) {
+			additional = append(additional,
+				filepath.Join(base, "Overseer", "bin"),
+				filepath.Join(base, "Overseer", "tools", "node_modules", ".bin"),
+			)
+		}
+		if homeIsAbsolute {
+			additional = append(additional, filepath.Join(home, ".local", "bin"))
+		}
 	} else {
-		paths = append([]string{
-			filepath.Join(home, ".overseer", "bin"),
-			filepath.Join(home, ".overseer", "tools", "node_modules", ".bin"),
-			filepath.Join(home, ".local", "bin"),
-			"/opt/homebrew/bin",
-			"/usr/local/bin",
-		}, paths...)
+		if homeIsAbsolute {
+			additional = append(additional,
+				filepath.Join(home, ".overseer", "bin"),
+				filepath.Join(home, ".overseer", "tools", "node_modules", ".bin"),
+				filepath.Join(home, ".local", "bin"),
+			)
+		}
+		additional = append(additional, "/opt/homebrew/bin", "/usr/local/bin")
 	}
-	os.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator)))
+	return additional
 }
 
 // errUpdated signals that the agent replaced its own binary and should exit so

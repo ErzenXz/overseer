@@ -236,9 +236,7 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 // --- software updates ---
 
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-	defer cancel()
-	status := s.updates.snapshot(ctx)
+	status := s.updates.snapshot()
 	views, err := s.deviceViews()
 	if err == nil {
 		for _, device := range views {
@@ -261,7 +259,7 @@ func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, s.updates.snapshot(ctx))
+	writeJSON(w, s.updates.snapshot())
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -280,7 +278,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
-	status := s.updates.snapshot(r.Context())
+	status := s.updates.snapshot()
 	if !status.Managed {
 		httpError(w, http.StatusConflict, "this hub is not running as a managed service; run `overseer update` on the host")
 		return
@@ -295,7 +293,7 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateRollback(w http.ResponseWriter, r *http.Request) {
-	status := s.updates.snapshot(r.Context())
+	status := s.updates.snapshot()
 	if !status.Managed {
 		httpError(w, http.StatusConflict, "this hub is not running as a managed service; run `overseer rollback` on the host")
 		return

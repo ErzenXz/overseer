@@ -43,12 +43,16 @@ func newUpdateManager(store *Store, version, repo string) *updateManager {
 	if value, _ := store.Setting(autoUpdateSetting); value == "false" {
 		auto = false
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	rollbackVersion := updater.PreviousVersion(ctx)
+	cancel()
 	return &updateManager{
 		store: store, version: version, repo: repo,
 		status: updateStatus{
-			CurrentVersion: version,
-			AutoUpdate:     auto,
-			Managed:        os.Getenv("OVERSEER_MANAGED") != "",
+			CurrentVersion:  version,
+			RollbackVersion: rollbackVersion,
+			AutoUpdate:      auto,
+			Managed:         os.Getenv("OVERSEER_MANAGED") != "",
 		},
 	}
 }
@@ -84,12 +88,10 @@ func (m *updateManager) start(ctx context.Context, applied func()) {
 	}()
 }
 
-func (m *updateManager) snapshot(ctx context.Context) updateStatus {
+func (m *updateManager) snapshot() updateStatus {
 	m.mu.Lock()
-	status := m.status
-	m.mu.Unlock()
-	status.RollbackVersion = updater.PreviousVersion(ctx)
-	return status
+	defer m.mu.Unlock()
+	return m.status
 }
 
 func (m *updateManager) setAuto(enabled bool) error {
@@ -172,6 +174,7 @@ func (m *updateManager) install(ctx context.Context) error {
 		return err
 	}
 	m.mu.Lock()
+	m.status.RollbackVersion = m.version
 	callback := m.applied
 	m.mu.Unlock()
 	if callback != nil {
@@ -213,6 +216,7 @@ func (m *updateManager) rollback() error {
 		return err
 	}
 	m.mu.Lock()
+	m.status.RollbackVersion = m.version
 	callback := m.applied
 	m.mu.Unlock()
 	if callback != nil {

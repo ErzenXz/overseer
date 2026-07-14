@@ -11,14 +11,14 @@ func TestUpdatePreferencePersists(t *testing.T) {
 	defer store.Close()
 
 	manager := newUpdateManager(store, "v1.0.0", "acme/overseer")
-	if !manager.snapshot(t.Context()).AutoUpdate {
+	if !manager.snapshot().AutoUpdate {
 		t.Fatal("auto-update should default to enabled")
 	}
 	if err := manager.setAuto(false); err != nil {
 		t.Fatal(err)
 	}
 	reloaded := newUpdateManager(store, "v1.0.0", "acme/overseer")
-	status := reloaded.snapshot(t.Context())
+	status := reloaded.snapshot()
 	if status.AutoUpdate {
 		t.Fatal("disabled auto-update preference was not persisted")
 	}
