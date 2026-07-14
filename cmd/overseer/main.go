@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/ErzenXz/overseer/internal/fleet"
 	"github.com/ErzenXz/overseer/internal/hub"
 	"github.com/ErzenXz/overseer/internal/mcp"
+	"github.com/ErzenXz/overseer/internal/updater"
 )
 
 var (
@@ -43,6 +45,8 @@ Usage:
   overseer fleet read DEVICE SESSION [--lines N]           Read a session's recent output
   overseer fleet kill DEVICE SESSION                       Kill a session
   overseer mcp                                             Run the MCP server (stdio) for coding agents
+  overseer update [--check]                                Install or check the latest verified stable release
+  overseer rollback                                        Restore the previous verified binary
   overseer version                                         Print version
 `
 
@@ -62,6 +66,10 @@ func main() {
 		err = cmdFleet(os.Args[2:])
 	case "mcp":
 		err = cmdMCP()
+	case "update":
+		err = cmdUpdate(os.Args[2:])
+	case "rollback":
+		err = cmdRollback()
 	case "version", "--version", "-v":
 		fmt.Println("overseer", version)
 	case "help", "--help", "-h":
@@ -74,6 +82,39 @@ func main() {
 		fmt.Fprintln(os.Stderr, "overseer:", err)
 		os.Exit(1)
 	}
+}
+
+func cmdUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	check := fs.Bool("check", false, "only report whether an update is available")
+	fs.Parse(args)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	release, err := updater.Latest(ctx, githubRepo, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	if !updater.IsNewer(release.Version, version) {
+		fmt.Printf("overseer %s is already current\n", version)
+		return nil
+	}
+	if *check {
+		fmt.Printf("update available: %s -> %s\n", version, release.Version)
+		return nil
+	}
+	if err := updater.Install(ctx, release, os.Getenv("OVERSEER_WINDOWS_TASK")); err != nil {
+		return err
+	}
+	fmt.Printf("updated %s -> %s; restart Overseer to use it\n", version, release.Version)
+	return nil
+}
+
+func cmdRollback() error {
+	if err := updater.Rollback(os.Getenv("OVERSEER_WINDOWS_TASK")); err != nil {
+		return err
+	}
+	fmt.Println("previous Overseer version restored; restart to use it")
+	return nil
 }
 
 func signalContext() context.Context {

@@ -38,27 +38,28 @@ export default function AgentsPage() {
   )
 
   return (
-    <div className="p-8">
+    <div className="page-shell">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-100">Agents</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="eyebrow mb-3">Active work</p>
+          <h1 className="text-3xl font-semibold tracking-[-0.04em] text-zinc-100">Agents</h1>
+          <p className="mt-1 text-sm text-zinc-400">
             Every coding agent running across your fleet.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-400">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-400">
             <input
               type="checkbox"
               checked={showAll}
               onChange={(e) => setShowAll(e.target.checked)}
-              className="accent-sky-500"
+              className="accent-lime-300"
             />
             show plain terminals
           </label>
           <button
             onClick={() => setShowLaunch(true)}
-            className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-400"
+            className="btn-primary"
           >
             ▸ Launch agent
           </button>
@@ -66,19 +67,19 @@ export default function AgentsPage() {
       </div>
 
       {sessions === null ? (
-        <p className="text-slate-500">Loading…</p>
+        <p className="text-zinc-500">Loading…</p>
       ) : agents.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-700 p-12 text-center">
-          <p className="mb-2 text-slate-300">Nothing running yet.</p>
-          <p className="text-sm text-slate-500">
+        <div className="surface rounded-2xl p-12 text-center">
+          <p className="mb-2 text-zinc-300">Nothing running yet.</p>
+          <p className="text-sm text-zinc-500">
             Launch Claude Code, Codex, or any CLI agent on any of your machines
             — then watch and steer them all from here.
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-800">
+        <div className="surface overflow-hidden rounded-2xl">
           <table className="w-full text-sm">
-            <thead className="bg-slate-900 text-left text-xs text-slate-500">
+            <thead className="bg-zinc-900 text-left text-xs text-zinc-500">
               <tr>
                 <th className="px-4 py-2.5 font-medium">Session</th>
                 <th className="px-4 py-2.5 font-medium">Device</th>
@@ -92,14 +93,14 @@ export default function AgentsPage() {
               {agents.map((s) => (
                 <tr
                   key={`${s.deviceId}:${s.name}`}
-                  className="cursor-pointer border-t border-slate-800/60 transition hover:bg-slate-900/60"
+                  className="cursor-pointer border-t border-zinc-800/60 transition hover:bg-zinc-900/60"
                   onClick={() => navigate(`/devices/${s.deviceId}`)}
                 >
-                  <td className="px-4 py-3 font-mono text-[13px] text-slate-200">
+                  <td className="px-4 py-3 font-mono text-[13px] text-zinc-200">
                     {s.name}
                   </td>
-                  <td className="px-4 py-3 text-slate-300">{s.deviceName}</td>
-                  <td className="px-4 py-3 text-slate-400">
+                  <td className="px-4 py-3 text-zinc-300">{s.deviceName}</td>
+                  <td className="px-4 py-3 text-zinc-400">
                     {s.kind || 'terminal'}
                   </td>
                   <td className="px-4 py-3">
@@ -109,17 +110,17 @@ export default function AgentsPage() {
                         className={
                           s.status === 'working'
                             ? 'text-emerald-300'
-                            : 'text-slate-400'
+                            : 'text-zinc-400'
                         }
                       >
                         {s.status}
                       </span>
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-500">
+                  <td className="px-4 py-3 text-zinc-500">
                     {timeAgo(s.lastActivity)}
                   </td>
-                  <td className="px-4 py-3 text-right text-xs text-sky-400">
+                  <td className="px-4 py-3 text-right text-xs text-lime-400">
                     open →
                   </td>
                 </tr>

@@ -2,12 +2,11 @@ package agent
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"sync"
-
-	"github.com/creack/pty"
 
 	"github.com/ErzenXz/overseer/internal/protocol"
 )
@@ -15,13 +14,18 @@ import (
 // termStream is one live PTY bridged to a hub channel.
 type termStream struct {
 	channel uint32
-	cmd     *exec.Cmd
-	pty     *os.File
+	backend terminalBackend
 	once    sync.Once
 }
 
+type terminalBackend interface {
+	io.ReadWriteCloser
+	Resize(cols, rows uint16) error
+	KillWait()
+}
+
 func (t *termStream) write(p []byte) {
-	if _, err := t.pty.Write(p); err != nil {
+	if _, err := t.backend.Write(p); err != nil {
 		log.Printf("term %d: pty write: %v", t.channel, err)
 	}
 }
@@ -31,7 +35,7 @@ func (t *termStream) write(p []byte) {
 // only in pumpTerm, so Kill and Wait never race across goroutines.
 func (t *termStream) close() {
 	t.once.Do(func() {
-		t.pty.Close()
+		t.backend.Close()
 	})
 }
 
@@ -82,12 +86,12 @@ func (a *Agent) termOpen(channel uint32, req protocol.TermOpen) {
 	cmd = exec.Command("tmux", "new-session", "-A", "-s", req.Session)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: clampDim(req.Cols), Rows: clampDim(req.Rows)})
+	backend, err := startTerminal(cmd, clampDim(req.Cols), clampDim(req.Rows))
 	if err != nil {
 		fail(fmt.Errorf("starting pty: %w", err))
 		return
 	}
-	t := &termStream{channel: channel, cmd: cmd, pty: f}
+	t := &termStream{channel: channel, backend: backend}
 
 	a.mu.Lock()
 	a.terms[channel] = t
@@ -103,7 +107,7 @@ func (a *Agent) termOpen(channel uint32, req protocol.TermOpen) {
 func (a *Agent) pumpTerm(t *termStream) {
 	buf := make([]byte, 32*1024)
 	for {
-		n, err := t.pty.Read(buf)
+		n, err := t.backend.Read(buf)
 		if n > 0 {
 			if werr := a.sendBinary(t.channel, buf[:n]); werr != nil {
 				break
@@ -113,11 +117,9 @@ func (a *Agent) pumpTerm(t *termStream) {
 			break
 		}
 	}
-	// Kill and Wait here (and only here) so they never race with close().
-	if t.cmd.Process != nil {
-		t.cmd.Process.Kill()
-	}
-	t.cmd.Wait()
+	// Process cleanup happens in the platform backend. On Windows the process
+	// was spawned through ConPTY rather than os/exec, so cmd.Wait is invalid.
+	t.backend.KillWait()
 	t.close() // idempotent; ensures the PTY is closed if we exited via read error
 	a.mu.Lock()
 	delete(a.terms, t.channel)
@@ -133,7 +135,7 @@ func (a *Agent) termResize(channel uint32, req protocol.TermResize) {
 	if t == nil {
 		return
 	}
-	pty.Setsize(t.pty, &pty.Winsize{Cols: clampDim(req.Cols), Rows: clampDim(req.Rows)})
+	_ = t.backend.Resize(clampDim(req.Cols), clampDim(req.Rows))
 }
 
 func (a *Agent) termClose(channel uint32) {

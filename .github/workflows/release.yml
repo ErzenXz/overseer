@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: write # needed to create the release and upload assets
+  id-token: write # signed GitHub build provenance
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   release:
@@ -27,11 +30,20 @@ jobs:
       - name: Package archives
         run: |
           cd dist
-          for f in overseer_*; do
+          rm -f -- *.tar.gz checksums.txt
+          for f in overseer_darwin_* overseer_linux_* overseer_windows_*; do
             tar -czf "$f.tar.gz" "$f"
           done
-          sha256sum overseer_* > checksums.txt
+          sha256sum overseer_darwin_* overseer_linux_* overseer_windows_* > checksums.txt
           ls -la
+
+      - name: Attest release binaries
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/overseer_darwin_*
+            dist/overseer_linux_*
+            dist/overseer_windows_*
 
       # Raw binaries (overseer_<os>_<arch>) are uploaded alongside archives so
       # the hub's installer can fetch them directly from

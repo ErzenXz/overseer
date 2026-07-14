@@ -1,101 +1,70 @@
 package agent
 
 import (
-	"fmt"
-	"io"
+	"context"
 	"log"
-	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
+
+	"github.com/ErzenXz/overseer/internal/updater"
 )
 
-// managedEnv is set in the installed service definition. Self-update only runs
-// when it is present, so a foreground `overseer agent run` is never replaced
-// out from under the user.
+// managedEnv is set by the installed service definition. Foreground debug
+// agents never replace themselves.
 const managedEnv = "OVERSEER_MANAGED"
 
-// maybeSelfUpdate replaces the running binary with the hub's build when they
-// differ, and reports whether the caller should exit so the service manager
-// restarts into the new binary.
-//
-// It is deliberately conservative: it acts only when running under the managed
-// service, the hub advertises a real release version (vX.Y.Z), that version
-// differs from ours, and it hasn't already tried this process lifetime.
-func (a *Agent) maybeSelfUpdate(hubVersion string) bool {
-	if os.Getenv(managedEnv) != "1" {
-		return false
-	}
-	a.mu.Lock()
-	tried := a.triedUpdate
-	a.triedUpdate = true
-	a.mu.Unlock()
-	if tried {
-		return false
-	}
-	if hubVersion == "" || hubVersion == a.version {
-		return false
-	}
-	// Only chase tagged releases; dev/commit builds (no leading "v") are skipped
-	// to avoid update loops between unversioned binaries.
-	if !strings.HasPrefix(hubVersion, "v") {
+// maybeSelfUpdate installs the exact stable release advertised by the hub.
+// It never downgrades and every download is checksum + version verified by the
+// shared updater package before the current executable is touched.
+func (a *Agent) maybeSelfUpdate(ctx context.Context, hubVersion, repo string) bool {
+	if os.Getenv(managedEnv) == "" || repo == "" || !updater.IsNewer(hubVersion, a.version) {
 		return false
 	}
 
-	if err := a.downloadAndReplace(); err != nil {
+	a.mu.Lock()
+	if time.Now().Before(a.nextUpdateAttempt) {
+		a.mu.Unlock()
+		return false
+	}
+	// A failure can be retried without reconnecting, but avoid hammering GitHub
+	// or flapping a device when a release asset is temporarily unavailable.
+	a.nextUpdateAttempt = time.Now().Add(time.Hour)
+	a.mu.Unlock()
+
+	release, err := updater.ForVersion(ctx, repo, hubVersion, runtime.GOOS, runtime.GOARCH)
+	if err == nil {
+		err = updater.Install(ctx, release, os.Getenv("OVERSEER_WINDOWS_TASK"))
+	}
+	if err != nil {
 		log.Printf("self-update to %s failed (continuing on %s): %v", hubVersion, a.version, err)
 		return false
 	}
-	log.Printf("self-updated %s -> %s; restarting", a.version, hubVersion)
+	log.Printf("self-update staged %s -> %s; restarting", a.version, hubVersion)
 	return true
 }
 
-// downloadAndReplace fetches the agent binary for this platform from the hub
-// and atomically swaps it in for the current executable.
-func (a *Agent) downloadAndReplace() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+// autoUpdateLoop retries a failed fleet update while a connection remains
+// healthy. A successful swap closes the socket; runOnce observes the flag and
+// exits so the service manager can restart the verified binary.
+func (a *Agent) autoUpdateLoop(ctx context.Context, hubVersion, repo string) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if a.maybeSelfUpdate(ctx, hubVersion, repo) {
+				a.mu.Lock()
+				a.updateApplied = true
+				conn := a.conn
+				a.mu.Unlock()
+				if conn != nil {
+					conn.Close()
+				}
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
 	}
-	if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
-		exe = resolved
-	}
-
-	url := fmt.Sprintf("%s/api/agent-binary?os=%s&arch=%s", strings.TrimRight(a.cfg.HubURL, "/"), runtime.GOOS, runtime.GOARCH)
-	client := &http.Client{Timeout: 5 * time.Minute} // follows the hub's redirect to GitHub releases
-	resp, err := client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("hub returned %s", resp.Status)
-	}
-
-	// Stage into the same directory so the rename is atomic (same filesystem).
-	tmp, err := os.CreateTemp(filepath.Dir(exe), ".overseer-update-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after a successful rename
-
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpName, 0o755); err != nil {
-		return err
-	}
-	// Renaming over a running executable is allowed on Linux/macOS; the running
-	// process keeps the old inode until it exits.
-	if err := os.Rename(tmpName, exe); err != nil {
-		return err
-	}
-	return nil
 }

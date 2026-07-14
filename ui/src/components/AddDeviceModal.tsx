@@ -36,7 +36,7 @@ export default function AddDeviceModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Add a device" onClose={onClose}>
-      <p className="mb-4 text-sm text-slate-400">
+      <p className="mb-4 text-sm text-zinc-400">
         Paste this on the device you want to add. It installs the agent,
         connects it to this hub, and keeps it running in the background.
       </p>
@@ -44,14 +44,14 @@ export default function AddDeviceModal({ onClose }: { onClose: () => void }) {
         <p className="text-sm text-rose-400">{error}</p>
       ) : (
         <>
-          <div className="mb-3 inline-flex rounded-lg border border-slate-700 bg-slate-950 p-1">
+          <div className="mb-3 inline-flex rounded-lg border border-zinc-700 bg-zinc-950 p-1">
             <button
               type="button"
               onClick={() => setPlatform('unix')}
               className={`rounded-md px-3 py-1.5 text-sm transition ${
                 platform === 'unix'
-                  ? 'bg-slate-800 text-slate-100'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-zinc-800 text-zinc-100'
+                  : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               Linux / macOS
@@ -61,35 +61,35 @@ export default function AddDeviceModal({ onClose }: { onClose: () => void }) {
               onClick={() => setPlatform('windows')}
               className={`rounded-md px-3 py-1.5 text-sm transition ${
                 platform === 'windows'
-                  ? 'bg-slate-800 text-slate-100'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-zinc-800 text-zinc-100'
+                  : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               Windows
             </button>
           </div>
           <div className="mb-4 flex items-stretch gap-2">
-            <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-[13px] text-emerald-300">
+            <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg border border-zinc-700 bg-zinc-950 p-3 font-mono text-[13px] text-emerald-300">
               {activeCommand || 'Generating…'}
             </code>
             <button
               onClick={copy}
               disabled={!activeCommand}
-              className="shrink-0 rounded-lg border border-slate-700 px-3 text-sm text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+              className="shrink-0 rounded-lg border border-zinc-700 px-3 text-sm text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50"
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
         </>
       )}
-      <p className="mb-4 text-xs text-slate-500">
+      <p className="mb-4 text-xs text-zinc-500">
         The link is single-use and expires in 15 minutes. Generate a new one
         per device.
       </p>
       {joined ? (
         <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
           <span className="text-sm font-medium text-emerald-300">
-            ✓ Device connected!
+            Device connected
           </span>
           <button
             onClick={onClose}
@@ -99,8 +99,8 @@ export default function AddDeviceModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+        <div className="flex items-center gap-2 text-sm text-zinc-500">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-lime-400" />
           Waiting for the device to join…
         </div>
       )}

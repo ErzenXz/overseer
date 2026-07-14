@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const systemdUnit = `[Unit]
@@ -15,7 +16,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart=%s agent run
-Environment=OVERSEER_MANAGED=1
+Environment=OVERSEER_MANAGED=agent
 Restart=always
 RestartSec=3
 User=%s
@@ -36,7 +37,7 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
 		<string>run</string>
 	</array>
 	<key>EnvironmentVariables</key>
-	<dict><key>OVERSEER_MANAGED</key><string>1</string></dict>
+	<dict><key>OVERSEER_MANAGED</key><string>agent</string></dict>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
 	<key>StandardOutPath</key><string>%s</string>
@@ -136,7 +137,16 @@ func installLaunchd(exe string) error {
 }
 
 func installWindowsTask(exe string) error {
-	action := fmt.Sprintf(`"%s" agent run`, exe)
+	// A tiny runner supplies the metadata used by the safe updater. Keeping the
+	// Scheduled Task action simple avoids Windows quoting bugs in paths with
+	// spaces, and the updater can restart the same named task after swapping.
+	runner := filepath.Join(filepath.Dir(exe), "overseer-agent.cmd")
+	batchExe := strings.ReplaceAll(exe, "%", "%%")
+	contents := fmt.Sprintf("@echo off\r\nset \"OVERSEER_MANAGED=agent\"\r\nset \"OVERSEER_WINDOWS_TASK=OverseerAgent\"\r\n\"%s\" agent run\r\n", batchExe)
+	if err := os.WriteFile(runner, []byte(contents), 0o600); err != nil {
+		return err
+	}
+	action := fmt.Sprintf(`"%s"`, runner)
 	for _, args := range [][]string{
 		{"/Create", "/TN", "OverseerAgent", "/SC", "ONLOGON", "/TR", action, "/F"},
 		{"/Run", "/TN", "OverseerAgent"},

@@ -3,10 +3,12 @@ module github.com/ErzenXz/overseer
 go 1.25.0
 
 require (
+	github.com/charmbracelet/x/conpty v0.2.0
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
 	github.com/shirou/gopsutil/v4 v4.26.6
 	golang.org/x/crypto v0.53.0
+	golang.org/x/sys v0.46.0
 	modernc.org/sqlite v1.53.0
 )
 
@@ -24,7 +26,6 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	modernc.org/libc v1.73.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/creack/pty"
 
 	"github.com/ErzenXz/overseer/internal/protocol"
 )
@@ -127,7 +126,7 @@ type ephemeralSession struct {
 }
 
 var (
-	ephMu   sync.Mutex
+	ephMu     sync.Mutex
 	ephByName = map[string]*ephemeralSession{}
 )
 
@@ -207,22 +206,18 @@ func (a *Agent) attachEphemeral(channel uint32, e *ephemeralSession, req protoco
 	e.attaching = true
 	e.mu.Unlock()
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
 	var cmd *exec.Cmd
 	if e.command != "" {
-		cmd = exec.Command(shell, "-c", e.command)
+		cmd = shellCommandContext(context.Background(), e.command, false)
 	} else {
-		cmd = exec.Command(shell, "-l")
+		cmd = shellCommandContext(context.Background(), "", true)
 	}
 	if e.cwd != "" {
 		cmd.Dir = e.cwd
 	}
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: clampDim(req.Cols), Rows: clampDim(req.Rows)})
+	backend, err := startTerminal(cmd, clampDim(req.Cols), clampDim(req.Rows))
 	if err != nil {
 		e.mu.Lock()
 		e.attaching = false
@@ -230,7 +225,7 @@ func (a *Agent) attachEphemeral(channel uint32, e *ephemeralSession, req protoco
 		fail(fmt.Errorf("starting pty: %w", err))
 		return
 	}
-	t := &termStream{channel: channel, cmd: cmd, pty: f}
+	t := &termStream{channel: channel, backend: backend}
 
 	e.mu.Lock()
 	e.stream = t

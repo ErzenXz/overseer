@@ -41,6 +41,23 @@ On a fresh Linux VM with systemd:
 curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | sh
 ```
 
+On macOS (Intel or Apple Silicon):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install-macos.sh | sh
+```
+
+On Windows 10/11 or Windows Server 2016+ (x64 or ARM64), from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.ps1 | iex
+```
+
+The macOS and Windows installers run the hub in the signed-in user's background
+session and start it again at login. The Linux installer uses systemd and is the
+recommended option for an always-on server. All three installers select the
+matching `amd64` or `arm64` release automatically.
+
 That installs `tmux` when missing, installs the `overseer` binary, creates an
 `overseer` service user, starts the hub as `overseer-hub.service`, and listens
 on `:4200`.
@@ -52,6 +69,9 @@ curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/insta
 ```
 
 Add `OVERSEER_PURGE=1` to also remove `/var/lib/overseer` and the service user.
+On macOS, pipe `sh -s -- uninstall`; on Windows, download the script and run it
+with `-Action uninstall`. Both preserve hub data unless `OVERSEER_PURGE=1` is
+set, matching the Linux safety model.
 
 For HTTPS with Let's Encrypt, point DNS at the VM, open ports 80/443, then run:
 
@@ -100,15 +120,28 @@ drop a cross-compiled `overseer_<os>_<arch>` into
 Linux agents install with systemd, macOS agents install as a launchd user
 agent, and Windows agents install as a user logon Scheduled Task. Persistent
 terminal sessions use `tmux`, so Linux/macOS devices with `tmux` installed get
-reattachable sessions; Windows devices can still enroll, report status, run
-commands, and browse files, but terminal sessions are ephemeral until Windows
-persistent terminal support lands.
+reattachable sessions. Windows uses the native ConPTY API for fully interactive
+PowerShell and coding-agent terminals; those sessions are live but not yet
+reattachable after a disconnect.
 
 ### 3. Launch an agent
 
 Open a device, hit **Launch agent**, pick Claude Code / Codex / a shell, choose
 a working directory, go. Watch it — and every other agent across your fleet —
 on the **Agents** page.
+
+### 4. Prepare coding tools and private access
+
+Open **Setup** in the web UI, choose any online machine, and Overseer will show
+which tools are installed and signed in. You can install or repair Codex,
+Claude Code, and Gemini CLI together, then open each provider's official login
+flow in a managed terminal. Credentials remain in each provider's protected
+local storage; Overseer never saves copied login tokens in its database.
+
+The same page can install and connect Tailscale on Linux, macOS, and Windows,
+then configure Tailscale Serve to give the hub a private HTTPS address. This is
+the recommended way to reach a hub remotely: the web port stays private to your
+tailnet, so there is no router port-forwarding or public HTTP exposure.
 
 ## Let an agent run your fleet
 
@@ -155,13 +188,34 @@ that client becomes a full coding agent on your machines.
 
 ## Keeping devices up to date
 
-Agents self-update. When a device agent connects and finds the hub running a
-newer tagged release, it downloads the matching build, atomically replaces its
-own binary, and restarts via its service manager — no per-device babysitting.
-Self-update only runs for the installed background service (it keys off
-`OVERSEER_MANAGED=1`, set in the systemd unit / launchd plist), so a foreground
-`overseer agent run` you're debugging is never swapped out from under you.
-Upgrade your whole fleet by upgrading the hub and tagging a release.
+Open **Settings → Software updates** to see the installed release, the newest
+stable release, fleet rollout progress, and the version available for rollback.
+Installed hubs check every six hours and apply stable updates automatically by
+default. The setting can be disabled, or you can check and install immediately.
+
+Every release download is matched against `checksums.txt` and the staged binary
+must report the expected version before Overseer touches the running binary.
+Replacement is atomic on Linux/macOS; Windows uses a detached swap helper after
+the running `.exe` exits. The previous verified binary is retained beside the
+new one, so **Restore previous version** can roll the hub back with one click.
+Release CI also publishes signed GitHub build provenance for the raw binaries.
+
+Managed device agents follow the hub's stable version automatically. Failed
+downloads leave the current agent running and retry later, while successful
+updates restart through systemd, launchd, or the named Windows Scheduled Task.
+A foreground `overseer agent run` used for debugging is never replaced.
+
+For a standalone binary, the equivalent commands are:
+
+```sh
+overseer update --check
+overseer update
+overseer rollback
+```
+
+Automatic replacement requires an installation made by the Linux, macOS, or
+Windows background-service installer. Source/debug runs still show whether a
+new release exists without silently changing themselves.
 
 ## Accessing it from anywhere
 
