@@ -110,3 +110,47 @@ func TestPresetsSeeded(t *testing.T) {
 		t.Errorf("expected seeded presets, got %d", len(presets))
 	}
 }
+
+func TestProjectLifecycle(t *testing.T) {
+	s := testStore(t)
+	deviceId, _, err := s.CreateDevice("studio", "studio.local", "darwin", "arm64", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.CreateProject("Storefront", deviceId, "/Users/dev/storefront")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name != "Storefront" || p.DeviceId != deviceId {
+		t.Fatalf("unexpected project: %+v", p)
+	}
+	projects, err := s.ListProjects()
+	if err != nil || len(projects) != 1 {
+		t.Fatalf("ListProjects: %+v, %v", projects, err)
+	}
+	updated, err := s.UpdateProject(p.Id, "Web store", deviceId, "/Users/dev/web-store")
+	if err != nil || updated == nil || updated.Path != "/Users/dev/web-store" {
+		t.Fatalf("UpdateProject: %+v, %v", updated, err)
+	}
+	if err := s.DeleteProject(p.Id); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ProjectById(p.Id); got != nil {
+		t.Fatal("deleted project still exists")
+	}
+}
+
+func TestDeletingDeviceDeletesItsProjects(t *testing.T) {
+	s := testStore(t)
+	deviceId, _, _ := s.CreateDevice("runner", "runner", "linux", "amd64", false)
+	if _, err := s.CreateProject("API", deviceId, "/srv/api"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteDevice(deviceId); err != nil {
+		t.Fatal(err)
+	}
+	projects, err := s.ListProjects()
+	if err != nil || len(projects) != 0 {
+		t.Fatalf("projects left after deleting device: %+v, %v", projects, err)
+	}
+}

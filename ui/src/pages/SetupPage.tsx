@@ -104,6 +104,18 @@ export default function SetupPage() {
 
       {error && <div className="mb-5 rounded-lg border border-rose-400/20 bg-rose-400/[0.07] px-4 py-3 text-sm text-rose-200">{error}</div>}
 
+      <section className="mb-5 grid gap-4 rounded-2xl border border-[#82aaff]/15 bg-[#82aaff]/[0.045] p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:p-6">
+        <span className="grid h-11 w-11 place-items-center rounded-xl border border-[#82aaff]/20 bg-[#82aaff]/10 font-mono text-sm font-semibold text-[#bdd0ff]">fx</span>
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-zinc-200">fx control plane is built in</h2>
+            <span className="rounded bg-[#77d9ab]/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#77d9ab]">ready</span>
+          </div>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-500">Sign in once from Code. The embedded fx runtime stays in your browser and routes work to any project node, so fx itself does not need to be installed or authenticated on every PC.</p>
+        </div>
+        <button onClick={() => navigate('/code')} className="btn-secondary">Open Code</button>
+      </section>
+
       {!deviceId ? (
         <EmptyState />
       ) : setup === null ? (
@@ -138,9 +150,9 @@ export default function SetupPage() {
           </section>
 
           <section className="mt-7 border-l border-lime-300/30 pl-5">
-            <h2 className="text-sm font-semibold text-zinc-200">Why sign-in still opens once per machine</h2>
+            <h2 className="text-sm font-semibold text-zinc-200">Why legacy agent sign-in still opens once per machine</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-500">
-              Codex, Claude, and Gemini store device credentials in their own protected local storage. Overseer starts each official login flow and keeps it visible in a remote terminal, but never copies those private tokens into the hub database.
+              Codex, Claude, and Gemini store device credentials in their own protected local storage. LiveAgent starts each official login flow and keeps it visible in a remote terminal, but never copies those private tokens into the hub database. The built-in fx workspace above is the one-login path across nodes.
             </p>
           </section>
         </>

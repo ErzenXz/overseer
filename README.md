@@ -4,6 +4,8 @@
 
 **Control all your machines from one browser tab.**
 
+Public site: **[liveagent-lime.vercel.app](https://liveagent-lime.vercel.app)**
+
 Install one hub, paste one command on every other device, and run terminals and
 coding agents across your whole fleet — from your desk or your phone.
 
@@ -20,6 +22,13 @@ Code, Codex, or any CLI), a fleet dashboard, and a file browser.
 It's also built so your **agents can drive the fleet**: point Claude Code or
 Codex at Overseer's MCP server and it becomes a "senior" that launches and
 supervises worker agents on every machine.
+
+The **Code** workspace embeds [fx](https://github.com/vercel-labs/fx) through
+its official `libfx` WebAssembly SDK. Add a project, bind it to a directory on
+one connected machine, and work in a Codex-style browser view. fx runs in the
+authenticated browser control plane while its typed terminal actions are
+routed to that project's machine, so one fx login can work across the fleet
+without copying provider credentials onto every node.
 
 ## Why it's easy
 
@@ -38,25 +47,34 @@ supervises worker agents on every machine.
 On a fresh Linux VM with systemd:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | sh
+curl -fsSL https://liveagent-lime.vercel.app/install.sh | sh
 ```
 
 On macOS (Intel or Apple Silicon):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install-macos.sh | sh
+curl -fsSL https://liveagent-lime.vercel.app/install-macos.sh | sh
 ```
 
 On Windows 10/11 or Windows Server 2016+ (x64 or ARM64), from PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.ps1 | iex
+irm https://liveagent-lime.vercel.app/install.ps1 | iex
 ```
 
 The macOS and Windows installers run the hub in the signed-in user's background
 session and start it again at login. The Linux installer uses systemd and is the
 recommended option for an always-on server. All three installers select the
-matching `amd64` or `arm64` release automatically.
+matching `amd64` or `arm64` release automatically, verify its checksum, and
+fall back to a source build when a release has not been published yet. Source
+fallbacks use temporary Go 1.25 and Node 20 toolchains when the host does not
+already have compatible versions; they do not replace system toolchains.
+
+Set `OVERSEER_INSTALL_SOURCE=binary` to require a published release or
+`OVERSEER_INSTALL_SOURCE=source` to force a source build. `OVERSEER_REF` selects
+the branch or commit for source installs, while a non-`latest`
+`OVERSEER_VERSION` selects the same release tag for both binary and source
+paths.
 
 That installs `tmux` when missing, installs the `overseer` binary, creates an
 `overseer` service user, starts the hub as `overseer-hub.service`, and listens
@@ -65,7 +83,7 @@ on `:4200`.
 To uninstall the service and binary while keeping hub data:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh | sh -s -- uninstall
+curl -fsSL https://liveagent-lime.vercel.app/install.sh | sh -s -- uninstall
 ```
 
 Add `OVERSEER_PURGE=1` to also remove `/var/lib/overseer` and the service user.
@@ -76,7 +94,7 @@ set, matching the Linux safety model.
 For HTTPS with Let's Encrypt, point DNS at the VM, open ports 80/443, then run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ErzenXz/overseer/main/scripts/install.sh \
+curl -fsSL https://liveagent-lime.vercel.app/install.sh \
   | env OVERSEER_TLS_DOMAIN=overseer.example.com OVERSEER_TLS_EMAIL=you@example.com sh
 ```
 
@@ -91,6 +109,10 @@ make            # builds the UI + the ./overseer binary (needs Go 1.25 + Node 20
 
 Open `http://localhost:4200`, set an admin password, and you're in. The hub
 machine shows up as your first device automatically.
+
+The Vercel deployment is the public static product site. The authenticated hub
+remains a durable install on Linux, macOS, or Windows because it owns the local
+SQLite database and the persistent device/terminal connections.
 
 > **Prebuilt binaries:** once a release is tagged, grab one from the
 > [releases page](https://github.com/ErzenXz/overseer/releases) instead of
@@ -129,6 +151,12 @@ reattachable after a disconnect.
 Open a device, hit **Launch agent**, pick Claude Code / Codex / a shell, choose
 a working directory, go. Watch it — and every other agent across your fleet —
 on the **Agents** page.
+
+Or open **Code**, add a project, choose the machine and absolute working
+directory, then sign in from the embedded fx terminal. The fx login, prompt
+history, and saved sessions stay in that browser profile; commands execute on
+the selected project machine through the authenticated hub. Embedded fx needs
+Chrome or Edge 137+ with WebAssembly JSPI support.
 
 ### 4. Prepare coding tools and private access
 

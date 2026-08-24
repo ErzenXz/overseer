@@ -34,6 +34,22 @@ export interface Device {
   stats?: Stats
 }
 
+export interface Project {
+  id: string
+  name: string
+  deviceId: string
+  path: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ExecResult {
+  exitCode: number
+  stdout: string
+  stderr: string
+  truncated?: boolean
+}
+
 export interface SetupTool {
   id: 'node' | 'codex' | 'claude' | 'gemini' | 'tailscale'
   name: string

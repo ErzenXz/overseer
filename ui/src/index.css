@@ -13,10 +13,10 @@ body,
 }
 
 body {
-  @apply bg-[#0b0d0f] text-zinc-200 antialiased;
+  @apply bg-[#111315] text-zinc-200 antialiased;
   background-image:
-    radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.06), transparent 28rem),
-    radial-gradient(circle at 95% 15%, rgba(255, 255, 255, 0.035), transparent 24rem);
+    radial-gradient(circle at 88% 0%, rgba(130, 170, 255, 0.035), transparent 26rem),
+    linear-gradient(180deg, #111315 0%, #0f1113 100%);
   background-attachment: fixed;
   font-feature-settings: 'ss01' 1, 'cv02' 1;
 }
@@ -52,7 +52,7 @@ select:focus-visible {
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center rounded-lg bg-lime-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-lime-200 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45;
+  @apply inline-flex items-center justify-center rounded-lg bg-[#ffb86a] px-4 py-2 text-sm font-semibold text-[#20170f] hover:bg-[#ffc887] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45;
 }
 
 .btn-secondary {
@@ -71,6 +71,186 @@ select:focus-visible {
 .term-host .xterm {
   height: 100%;
   padding: 12px;
+}
+
+/* Application frame: a compact operator console inspired by machine racks,
+   not a generic dashboard header. */
+.app-frame {
+  @apply flex h-full min-h-0 bg-[#111315];
+}
+
+.app-sidebar {
+  @apply fixed inset-y-0 left-0 z-50 flex w-[264px] -translate-x-full flex-col border-r border-white/[0.065] bg-[#181a1c] transition-transform duration-200 lg:static lg:translate-x-0;
+}
+
+.app-sidebar-open {
+  @apply translate-x-0;
+}
+
+.app-content {
+  @apply min-h-0 min-w-0 flex-1 overflow-auto pt-12 lg:pt-0;
+}
+
+.sidebar-scrim {
+  @apply fixed inset-0 z-40 bg-black/65 backdrop-blur-sm lg:hidden;
+}
+
+.mobile-bar {
+  @apply fixed inset-x-0 top-0 z-30 flex h-12 items-center gap-3 border-b border-white/[0.065] bg-[#181a1c]/95 px-3 backdrop-blur lg:hidden;
+}
+
+.sidebar-head {
+  @apply flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.055] px-4;
+}
+
+.brand-mark {
+  @apply grid h-7 w-7 place-items-center rounded-[9px] border border-[#82aaff]/25 bg-[#82aaff]/10 font-mono text-sm text-[#a8c3ff];
+}
+
+.brand-mark span {
+  transform: rotate(-18deg);
+}
+
+.sidebar-nav {
+  @apply space-y-0.5 border-b border-white/[0.055] px-2 py-3;
+}
+
+.sidebar-link {
+  @apply flex items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] font-medium text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200;
+}
+
+.sidebar-link-active {
+  @apply bg-white/[0.065] text-zinc-100;
+}
+
+.sidebar-projects {
+  @apply min-h-0 flex-1 overflow-y-auto px-2 py-4;
+}
+
+.sidebar-section-title {
+  @apply mb-2 flex items-center justify-between px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-700;
+}
+
+.sidebar-add {
+  @apply grid h-5 w-5 place-items-center rounded text-base font-normal text-zinc-600 hover:bg-white/[0.06] hover:text-white;
+}
+
+.project-link {
+  @apply flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200;
+}
+
+.project-link-active {
+  @apply bg-[#82aaff]/[0.09] text-[#bdd0ff];
+}
+
+.sidebar-footer {
+  @apply flex shrink-0 items-center gap-2.5 border-t border-white/[0.055] p-3;
+}
+
+.operator-avatar {
+  @apply grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#77d9ab] text-[9px] font-bold text-[#102119];
+}
+
+.skip-link {
+  @apply fixed left-4 top-3 z-[70] -translate-y-20 rounded-md bg-[#ffb86a] px-3 py-2 text-sm font-semibold text-zinc-950 focus:translate-y-0;
+}
+
+.coding-shell {
+  @apply flex h-full min-h-[calc(100vh-3rem)] flex-col overflow-hidden bg-[#151719] lg:min-h-screen;
+}
+
+.coding-toolbar {
+  @apply flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.065] bg-[#151719] px-4 sm:px-5;
+}
+
+.machine-pill {
+  @apply hidden items-center gap-2 rounded-lg border border-white/[0.075] bg-white/[0.03] px-2.5 py-1.5 text-[11px] text-zinc-400 sm:flex;
+}
+
+.toolbar-button {
+  @apply grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-transparent text-zinc-600 hover:border-white/[0.08] hover:bg-white/[0.045] hover:text-zinc-200;
+}
+
+.toolbar-button-danger:hover {
+  @apply border-rose-400/15 bg-rose-400/[0.06] text-rose-300;
+}
+
+.node-dot {
+  @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-700;
+}
+
+.node-dot-online {
+  @apply bg-[#77d9ab] shadow-[0_0_9px_rgba(119,217,171,0.55)];
+}
+
+.fx-login-hint {
+  @apply flex shrink-0 items-center gap-3 border-b border-[#ffb86a]/10 bg-[#ffb86a]/[0.045] px-4 py-2.5 text-xs text-zinc-500 sm:px-5;
+}
+
+.fx-login-hint strong {
+  @apply font-semibold text-zinc-300;
+}
+
+.fx-login-hint span:not(.fx-wordmark) {
+  @apply text-zinc-300;
+}
+
+.fx-login-hint code {
+  @apply rounded bg-white/[0.07] px-1.5 py-0.5 font-mono text-[#f2c879];
+}
+
+.fx-login-hint button {
+  @apply ml-auto text-base text-zinc-700 hover:text-zinc-300;
+}
+
+.fx-wordmark {
+  @apply grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-[#ffb86a]/20 bg-[#ffb86a]/10 font-mono text-[11px] font-semibold text-[#ffc887];
+}
+
+.coding-statusbar {
+  @apply flex h-7 shrink-0 items-center gap-4 border-t border-white/[0.055] bg-[#121416] px-4 font-mono text-[9px] text-zinc-700;
+}
+
+.code-empty {
+  @apply flex h-full min-h-[calc(100vh-3rem)] flex-col items-center justify-center p-6 lg:min-h-screen;
+}
+
+.code-empty-mark {
+  @apply relative grid h-14 w-14 place-items-center rounded-[18px] border border-[#82aaff]/20 bg-[#82aaff]/[0.07] font-mono text-base text-[#a8c3ff] shadow-[0_20px_70px_rgba(48,75,130,0.16)];
+}
+
+.code-empty-mark::after {
+  content: '';
+  @apply absolute -inset-3 -z-10 rounded-[24px] border border-white/[0.035];
+}
+
+.field-label {
+  @apply text-xs font-medium text-zinc-400;
+}
+
+.field-input {
+  @apply w-full rounded-lg border border-white/[0.09] bg-black/20 px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-700 focus:border-[#82aaff]/45 focus:ring-1 focus:ring-[#82aaff]/30;
+}
+
+.fx-terminal-host .xterm {
+  height: 100%;
+}
+
+.fx-terminal-host .xterm-viewport {
+  scrollbar-color: #363a3f transparent;
+}
+
+.spinner {
+  @apply h-3 w-3 animate-spin rounded-full border border-zinc-700 border-t-[#ffb86a];
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 ::-webkit-scrollbar {

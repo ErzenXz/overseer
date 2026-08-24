@@ -44,6 +44,35 @@ export const api = {
   del: <T>(path: string) => request<T>('DELETE', path),
 }
 
+// Remote execution entry point used by libfx's typed browser-workspace
+// adapter. AbortSignal cancellation stops the browser request immediately;
+// the device-side timeout remains the hard upper bound for a command.
+export async function execProject(
+  projectId: string,
+  command: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+) {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/exec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, timeoutMs }),
+    signal,
+  })
+  if (res.status === 401) onUnauthorized?.()
+  if (!res.ok) {
+    let message = res.statusText
+    try {
+      const data = await res.json()
+      if (data.error) message = data.error
+    } catch {
+      /* response was not JSON */
+    }
+    throw new ApiError(res.status, message)
+  }
+  return res.json()
+}
+
 export function wsURL(path: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${location.host}${path}`

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08090b" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <title>Overseer - control every machine you own from one browser tab</title>
+    <meta
+      name="description"
+      content="Self-hosted fleet control. Install the hub once, paste one command per device, then run live terminals and coding agents across every machine from one web UI."
+    />
+
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:title"
+      content="Overseer - control every machine you own from one browser tab"
+    />
+    <meta
+      property="og:description"
+      content="Self-hosted fleet control. One binary for the hub, the device agent, the CLI, and the MCP server."
+    />
+    <meta property="og:image" content="/shots/dashboard.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <script>
+      // Opt the page into scroll/entrance animation only when JS is running and
+      // the reader has not asked for reduced motion. Runs before first paint so
+      // there is no flash of content that then hides itself.
+      if (
+        window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: no-preference)").matches
+      ) {
+        document.documentElement.classList.add("js-reveal");
+      }
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

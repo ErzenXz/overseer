@@ -34,3 +34,24 @@ jobs:
         with:
           name: overseer-binaries
           path: dist/
+
+  installer-unix:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise Linux and macOS release fallback installers
+        run: scripts/test-installers.sh
+
+  installer-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Exercise Windows release fallback installer
+        shell: pwsh
+        run: ./scripts/test-installers.ps1

@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+/*
+  Overseer marketing site.
+  Theme is locked dark on purpose: this is a control-room tool for machines,
+  and every screenshot on the page is a dark product surface. There is no
+  light variant, so nothing here reads as a half-built dark mode.
+
+  Radius rule for the whole page:
+    surfaces (cards, screenshots, code blocks) -> 10px  (rounded-panel)
+    controls (buttons, inputs, tabs)           ->  8px  (rounded-control)
+  Nothing is a pill. Nothing is square.
+*/
+
+@theme {
+  --color-ink-950: #08090b;
+  --color-ink-900: #0c0e11;
+  --color-ink-850: #111419;
+  --color-ink-800: #171a20;
+  --color-line: #23272e;
+  --color-line-soft: #191c22;
+
+  --color-fg: #e9ecef;
+  --color-fg-muted: #949aa4;
+  --color-fg-dim: #7c828b;
+
+  /* Single accent for the entire page. Amber reads as a watch light,
+     which is what a fleet console actually is. */
+  --color-beacon: #ffb224;
+  --color-beacon-deep: #c8850f;
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-panel: 10px;
+  --radius-control: 8px;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  /* Anchored sections must clear the fixed 64px header. */
+  section[id] {
+    scroll-margin-top: 5rem;
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-beacon);
+    color: var(--color-ink-950);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-beacon);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+@utility rounded-panel {
+  border-radius: var(--radius-panel);
+}
+
+@utility rounded-control {
+  border-radius: var(--radius-control);
+}
+
+/* Hairline grid used behind the hero and the architecture section.
+   It maps to the page's own 80px rhythm, so it is structure, not confetti. */
+@utility grid-field {
+  background-image:
+    linear-gradient(to right, var(--color-line-soft) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-line-soft) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+/*
+  Motion layer.
+
+  Everything below is opt-in: it only applies once the inline script in
+  index.html adds `js-reveal` to <html>, which it does only when JS runs and the
+  reader has not asked for reduced motion. Without that class every element sits
+  at its final, visible state, so the page can never get stuck mid-animation.
+*/
+
+.js-reveal .reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.7s var(--ease-out-expo),
+    transform 0.7s var(--ease-out-expo);
+}
+
+.js-reveal .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Hero entrance runs on load rather than on intersection: it is already in
+   view, and staggering it establishes the reading order. */
+.js-reveal .hero-rise {
+  animation: hero-rise 0.8s var(--ease-out-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

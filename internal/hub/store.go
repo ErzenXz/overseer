@@ -50,6 +50,16 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 	token_hash TEXT NOT NULL UNIQUE,
 	created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	device_id  TEXT NOT NULL,
+	path       TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	FOREIGN KEY(device_id) REFERENCES devices(id)
+);
+CREATE INDEX IF NOT EXISTS projects_device_id ON projects(device_id);
 `
 
 func OpenStore(path string) (*Store, error) {
@@ -205,7 +215,87 @@ func (s *Store) RenameDevice(id, name string) error {
 }
 
 func (s *Store) DeleteDevice(id string) error {
+	if _, err := s.db.Exec(`DELETE FROM projects WHERE device_id = ?`, id); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`DELETE FROM devices WHERE id = ?`, id)
+	return err
+}
+
+// --- projects ---
+
+// Project binds a named coding workspace to one directory on one device.
+// The browser-hosted fx runtime uses this pair as its remote workspace.
+type Project struct {
+	Id        string `json:"id"`
+	Name      string `json:"name"`
+	DeviceId  string `json:"deviceId"`
+	Path      string `json:"path"`
+	CreatedAt int64  `json:"createdAt"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
+func (s *Store) CreateProject(name, deviceId, path string) (*Project, error) {
+	now := time.Now().Unix()
+	p := &Project{
+		Id: randomToken()[:16], Name: name, DeviceId: deviceId, Path: path,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, device_id, path, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, p.Id, p.Name, p.DeviceId, p.Path, p.CreatedAt, p.UpdatedAt)
+	return p, err
+}
+
+func (s *Store) ProjectById(id string) (*Project, error) {
+	var p Project
+	err := s.db.QueryRow(`SELECT id, name, device_id, path, created_at, updated_at FROM projects WHERE id = ?`, id).
+		Scan(&p.Id, &p.Name, &p.DeviceId, &p.Path, &p.CreatedAt, &p.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *Store) ListProjects() ([]Project, error) {
+	rows, err := s.db.Query(`SELECT id, name, device_id, path, created_at, updated_at
+		FROM projects ORDER BY updated_at DESC, name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	projects := []Project{}
+	for rows.Next() {
+		var p Project
+		if err := rows.Scan(&p.Id, &p.Name, &p.DeviceId, &p.Path, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
+}
+
+func (s *Store) UpdateProject(id, name, deviceId, path string) (*Project, error) {
+	res, err := s.db.Exec(`UPDATE projects SET name = ?, device_id = ?, path = ?, updated_at = ? WHERE id = ?`,
+		name, deviceId, path, time.Now().Unix(), id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, nil
+	}
+	return s.ProjectById(id)
+}
+
+func (s *Store) TouchProject(id string) error {
+	_, err := s.db.Exec(`UPDATE projects SET updated_at = ? WHERE id = ?`, time.Now().Unix(), id)
+	return err
+}
+
+func (s *Store) DeleteProject(id string) error {
+	_, err := s.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
 	return err
 }
 
