@@ -124,6 +124,14 @@ run_linux() {
   [ -x "$data/bin/overseer" ]
   [ -L "$bindir/overseer" ]
   grep -q 'ExecStart=' "$units/overseer-hub.service"
+  grep -q '^WorkingDirectory=/' "$units/overseer-hub.service"
+  if grep -q '^WorkingDirectory="' "$units/overseer-hub.service"; then
+    printf '%s\n' 'quoted WorkingDirectory is invalid in systemd units' >&2
+    exit 1
+  fi
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    systemd-analyze verify "$units/overseer-hub.service" >/dev/null
+  fi
   OVERSEER_USER="$(/usr/bin/id -un)" OVERSEER_DATA_DIR="$data" OVERSEER_BIN_DIR="$bindir" OVERSEER_SYSTEMD_DIR="$units" sh "$ROOT/scripts/install.sh" uninstall >/dev/null
   [ ! -e "$bindir/overseer" ]
   printf '%s\n' 'installer-linux: ok (release 404 -> source fallback -> systemd -> uninstall)'

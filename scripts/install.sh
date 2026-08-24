@@ -232,7 +232,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=$USER_NAME
-WorkingDirectory="$E_DATA"
+WorkingDirectory=$E_DATA
 EOF
     if [ -n "$TLS_DOMAIN" ]; then
       [ -n "$TLS_EMAIL" ] || die "OVERSEER_TLS_EMAIL is required when OVERSEER_TLS_DOMAIN is set"
