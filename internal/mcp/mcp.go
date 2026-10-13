@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,11 +13,64 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ErzenXz/overseer/internal/fleet"
 )
 
 const protocolVersion = "2024-11-05"
+const deviceSessionQueryTimeout = 5 * time.Second
+
+type sessionSummary struct {
+	working, idle, other int
+	available            bool
+}
+
+func collectSessionSummaries(ctx context.Context, client *fleet.Client, devices []fleet.Device) []sessionSummary {
+	summaries := make([]sessionSummary, len(devices))
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, 8)
+
+schedule:
+	for i, d := range devices {
+		if !d.Online {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			break schedule
+		case limit <- struct{}{}:
+		}
+		if ctx.Err() != nil {
+			<-limit
+			break schedule
+		}
+		wg.Add(1)
+		go func(i int, d fleet.Device) {
+			defer wg.Done()
+			defer func() { <-limit }()
+			sessions, err := client.SessionsContext(ctx, d.Id)
+			if err != nil {
+				return
+			}
+			summary := sessionSummary{available: true}
+			for _, session := range sessions {
+				switch session.Status {
+				case "working":
+					summary.working++
+				case "idle":
+					summary.idle++
+				case "exited":
+				default:
+					summary.other++
+				}
+			}
+			summaries[i] = summary
+		}(i, d)
+	}
+	wg.Wait()
+	return summaries
+}
 
 type rpcRequest struct {
 	Jsonrpc string          `json:"jsonrpc"`
@@ -248,44 +302,9 @@ func callTool(client *fleet.Client, name string, rawArgs json.RawMessage) (strin
 		if err != nil {
 			return "", err
 		}
-		// Query devices individually: /api/agents omits unreachable devices,
-		// which would make failed queries indistinguishable from zero sessions.
-		type sessionSummary struct {
-			working, idle, other int
-			available            bool
-		}
-		summaries := make([]sessionSummary, len(devices))
-		var wg sync.WaitGroup
-		limit := make(chan struct{}, 8)
-		for i, d := range devices {
-			if !d.Online {
-				continue
-			}
-			limit <- struct{}{}
-			wg.Add(1)
-			go func(i int, d fleet.Device) {
-				defer wg.Done()
-				defer func() { <-limit }()
-				sessions, err := client.Sessions(d.Id)
-				if err != nil {
-					return
-				}
-				summary := sessionSummary{available: true}
-				for _, session := range sessions {
-					switch session.Status {
-					case "working":
-						summary.working++
-					case "idle":
-						summary.idle++
-					case "exited":
-					default:
-						summary.other++
-					}
-				}
-				summaries[i] = summary
-			}(i, d)
-		}
-		wg.Wait()
+		ctx, cancel := context.WithTimeout(context.Background(), deviceSessionQueryTimeout)
+		defer cancel()
+		summaries := collectSessionSummaries(ctx, client, devices)
 		var b strings.Builder
 		for i, d := range devices {
 			status := "offline"

@@ -190,10 +190,14 @@ back."*
 `list_devices` includes CPU utilization and core count, RAM utilization and byte
 totals, 1/5/15-minute load averages, and live session counts split into working,
 idle, and other statuses. Counts include terminals and agents, excluding exited
-sessions. Offline devices, missing metrics, and failed session queries are marked
-unavailable (not zero); load averages are unavailable on Windows. Session queries
-run with up to eight concurrent requests. This is a best-effort snapshot for
-choosing a device before `create_session`, not a worker limit or reservation.
+sessions. Metrics are reported at the snapshot level: a missing stats snapshot is
+unavailable, but present legacy snapshots do not include per-metric collection
+errors, so zero values cannot be distinguished from collector failures. Load
+averages are unavailable on Windows. Session queries share a five-second budget
+after the device list is fetched, with up to eight concurrent requests; failed or
+unfinished queries are marked unavailable (not zero). This is a best-effort
+snapshot for choosing a device before `create_session`, not a worker limit or
+reservation.
 
 The same operations are available as a CLI:
 

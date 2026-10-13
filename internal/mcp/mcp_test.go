@@ -1,11 +1,13 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ErzenXz/overseer/internal/fleet"
 )
@@ -94,5 +96,66 @@ func TestListDevicesEmptyAndError(t *testing.T) {
 				t.Errorf("unexpected output: %s", got)
 			}
 		})
+	}
+}
+
+func TestCollectSessionSummariesDeadline(t *testing.T) {
+	blockedStarted := make(chan struct{})
+	blockedCanceled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/devices/healthy/sessions":
+			w.Write([]byte(`[{"status":"working"},{"status":"idle"},{"status":"exited"}]`))
+		case "/api/devices/blocked/sessions":
+			close(blockedStarted)
+			<-r.Context().Done()
+			close(blockedCanceled)
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer func() {
+		server.CloseClientConnections()
+		server.Close()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	devices := []fleet.Device{
+		{Id: "healthy", Online: true},
+		{Id: "blocked", Online: true},
+	}
+	done := make(chan []sessionSummary, 1)
+	go func() {
+		done <- collectSessionSummaries(ctx, fleet.New(server.URL, "test"), devices)
+	}()
+
+	var summaries []sessionSummary
+	select {
+	case summaries = <-done:
+	case <-time.After(3 * time.Second):
+		server.CloseClientConnections()
+		t.Fatal("session collection did not return after its context expired")
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("got %d summaries, want 2", len(summaries))
+	}
+	if got := summaries[0]; !got.available || got.working != 1 || got.idle != 1 || got.other != 0 {
+		t.Errorf("healthy summary = %+v, want available with one working and one idle session", got)
+	}
+	if summaries[1].available {
+		t.Errorf("blocked summary = %+v, want unavailable", summaries[1])
+	}
+	select {
+	case <-blockedStarted:
+	default:
+		t.Fatal("blocked request never reached the server")
+	}
+	select {
+	case <-blockedCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("blocked handler did not observe request context cancellation")
 	}
 }
