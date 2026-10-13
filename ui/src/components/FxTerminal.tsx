@@ -158,7 +158,7 @@ export default function FxTerminal({ project, device }: { project: Project; devi
     return (
       <TerminalNotice
         title="This browser cannot run embedded fx"
-        body="Open LiveAgent in Chrome or Edge 137+ with WebAssembly JSPI enabled. Fleet terminals remain available on the device pages."
+        body="Open Overseer in Chrome or Edge 137+ with WebAssembly JSPI enabled. Fleet terminals remain available on the device pages."
       />
     )
   }

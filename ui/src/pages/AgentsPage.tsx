@@ -1,145 +1,37 @@
 import { useCallback, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api, timeAgo } from '../api'
 import { useHubEvents, usePoll } from '../hooks'
 import type { Device, FleetSession } from '../types'
 import LaunchSessionModal from '../components/LaunchSessionModal'
 import StatusBadge from '../components/StatusBadge'
+import Icon from '../components/Icon'
 
-// AgentsPage is the fleet-wide view: every session on every machine, with
-// coding agents front and center.
 export default function AgentsPage() {
   const [sessions, setSessions] = useState<FleetSession[] | null>(null)
   const [devices, setDevices] = useState<Device[]>([])
   const [showLaunch, setShowLaunch] = useState(false)
-  const [showAll, setShowAll] = useState(false)
+  const [showAll, setShowAll] = useState(true)
+  const [query, setQuery] = useState('')
+  const [error, setError] = useState('')
   const navigate = useNavigate()
-
   const load = useCallback(async () => {
     try {
-      const [s, d] = await Promise.all([
-        api.get<FleetSession[]>('/api/agents'),
-        api.get<Device[]>('/api/devices'),
-      ])
-      setSessions(s)
-      setDevices(d)
-    } catch {
-      /* transient */
-    }
+      const [s, d] = await Promise.all([api.get<FleetSession[]>('/api/agents'), api.get<Device[]>('/api/devices')])
+      setSessions(s); setDevices(d); setError('')
+    } catch { setError('Unable to refresh sessions. Displayed data may be out of date.') }
   }, [])
-
   usePoll(load, 8000)
-  useHubEvents((e) => {
-    if (e.type === 'sessions.changed') load()
-  })
-
-  const agents = (sessions ?? []).filter(
-    (s) => showAll || (s.kind && s.kind !== 'shell'),
-  )
+  useHubEvents((e) => { if (['sessions.changed', 'device.online', 'device.offline'].includes(e.type)) load() })
+  const agents = (sessions ?? []).filter((s) => (showAll || (s.kind && s.kind !== 'shell')) && `${s.name} ${s.deviceName} ${s.kind}`.toLowerCase().includes(query.trim().toLowerCase()))
 
   return (
     <div className="page-shell">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <p className="eyebrow mb-3">Active work</p>
-          <h1 className="text-3xl font-semibold tracking-[-0.04em] text-zinc-100">Agents</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Every coding agent running across your fleet.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-400">
-            <input
-              type="checkbox"
-              checked={showAll}
-              onChange={(e) => setShowAll(e.target.checked)}
-              className="accent-lime-300"
-            />
-            show plain terminals
-          </label>
-          <button
-            onClick={() => setShowLaunch(true)}
-            className="btn-primary"
-          >
-            ▸ Launch agent
-          </button>
-        </div>
-      </div>
-
-      {sessions === null ? (
-        <p className="text-zinc-500">Loading…</p>
-      ) : agents.length === 0 ? (
-        <div className="surface rounded-2xl p-12 text-center">
-          <p className="mb-2 text-zinc-300">Nothing running yet.</p>
-          <p className="text-sm text-zinc-500">
-            Launch Claude Code, Codex, or any CLI agent on any of your machines
-            — then watch and steer them all from here.
-          </p>
-        </div>
-      ) : (
-        <div className="surface overflow-hidden rounded-2xl">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-900 text-left text-xs text-zinc-500">
-              <tr>
-                <th className="px-4 py-2.5 font-medium">Session</th>
-                <th className="px-4 py-2.5 font-medium">Device</th>
-                <th className="px-4 py-2.5 font-medium">Kind</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Last activity</th>
-                <th className="w-24 px-4 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map((s) => (
-                <tr
-                  key={`${s.deviceId}:${s.name}`}
-                  className="cursor-pointer border-t border-zinc-800/60 transition hover:bg-zinc-900/60"
-                  onClick={() => navigate(`/devices/${s.deviceId}`)}
-                >
-                  <td className="px-4 py-3 font-mono text-[13px] text-zinc-200">
-                    {s.name}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-300">{s.deviceName}</td>
-                  <td className="px-4 py-3 text-zinc-400">
-                    {s.kind || 'terminal'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="flex items-center gap-2">
-                      <StatusBadge status={s.status} kind={s.kind} />
-                      <span
-                        className={
-                          s.status === 'working'
-                            ? 'text-emerald-300'
-                            : 'text-zinc-400'
-                        }
-                      >
-                        {s.status}
-                      </span>
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-500">
-                    {timeAgo(s.lastActivity)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-xs text-lime-400">
-                    open →
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showLaunch && (
-        <LaunchSessionModal
-          devices={devices}
-          onLaunched={(deviceId) => {
-            setShowLaunch(false)
-            navigate(`/devices/${deviceId}`)
-          }}
-          onClose={() => setShowLaunch(false)}
-        />
-      )}
+      <header className="page-heading"><div><p className="eyebrow">Your workspace</p><h1>Sessions</h1><p>Pick up where you left off. Or start something new.</p></div><button onClick={() => setShowLaunch(true)} className="btn-primary" disabled={!devices.some((d) => d.online)}><Icon name="plus" size={16} />New session</button></header>
+      {error && <div className="error-banner" role="alert">{error}<button onClick={load}>Retry</button></div>}
+      <div className="fleet-controls"><label className="search-field"><Icon name="search" size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search sessions" placeholder="Search sessions, machines, or agents…" /></label><label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-lime-300" />Include terminals</label></div>
+      {sessions === null ? <p className="p-6 text-sm text-zinc-500">{error ? 'Agent runs unavailable.' : 'Loading runs…'}</p> : agents.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="terminal" size={25} /></span><h2>{query ? 'No matching runs' : 'Space for your next great idea'}</h2><p>{query ? 'Try another session, device, or agent name.' : 'Launch Claude Code, Codex, or your favorite CLI on a connected machine. Follow every run right here.'}</p>{query ? <button className="btn-secondary" onClick={() => setQuery('')}>Clear search</button> : devices.some((d) => d.online) ? <button onClick={() => setShowLaunch(true)} className="btn-secondary"><Icon name="plus" size={16} />Launch your first agent</button> : <Link to="/fleet" className="btn-secondary">Connect a device</Link>}</div> : <div className="agent-list">{agents.map((s) => <Link key={`${s.deviceId}:${s.name}`} to={`/devices/${s.deviceId}?session=${encodeURIComponent(s.name)}`} className="agent-row"><span className="device-icon"><Icon name="terminal" /></span><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-medium">{s.name}</h2><p className="mt-1 text-xs text-zinc-500">{s.deviceName} · {s.kind || 'terminal'}</p></div><span className="flex items-center gap-2 text-xs text-zinc-400"><StatusBadge status={s.status} kind={s.kind} />{s.status}</span><span className="text-[11px] text-zinc-500">{timeAgo(s.lastActivity)}</span><Icon name="chevron" size={15} className="text-zinc-500" /></Link>)}</div>}
+      {showLaunch && <LaunchSessionModal devices={devices} onLaunched={(deviceId, session) => { setShowLaunch(false); navigate(`/devices/${deviceId}?session=${encodeURIComponent(session)}`) }} onClose={() => setShowLaunch(false)} />}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatBytes, timeAgo } from '../api'
 import { usePoll } from '../hooks'
@@ -17,17 +17,18 @@ export default function DevicePage() {
   const requestedSession = searchParams.get('session')
   const [tab, setTab] = useState<'overview' | 'terminal' | 'files'>(requestedSession ? 'terminal' : 'overview')
   const [showLaunch, setShowLaunch] = useState(false)
+  const requestId = useRef(0)
 
   const load = useCallback(async () => {
+    const request = ++requestId.current
     try {
       const devices = await api.get<Device[]>('/api/devices')
       const d = devices.find((x) => x.id === id) ?? null
+      const s = d?.online ? await api.get<Session[]>(`/api/devices/${id}/sessions`) : []
+      if (request !== requestId.current) return
       setDevice(d)
-      if (d?.online) {
-        const s = await api.get<Session[]>(`/api/devices/${id}/sessions`)
-        setSessions(s)
-        setActive((a) => a ?? requestedSession ?? s[0]?.name ?? null)
-      }
+      setSessions(s)
+      setActive((a) => a ?? requestedSession ?? s[0]?.name ?? null)
     } catch {
       /* transient */
     }
@@ -35,13 +36,15 @@ export default function DevicePage() {
 
   usePoll(load, 10000)
 
-  // Reset when navigating between devices.
+  // A sidebar selection may change only the session query, not the route.
   useEffect(() => {
-    setActive(null)
+    setActive(requestedSession)
     setSessions([])
     setDevice(null)
     setTab(requestedSession ? 'terminal' : 'overview')
-  }, [id, requestedSession])
+    load()
+    return () => { requestId.current++ }
+  }, [id, requestedSession, load])
 
   const newQuickTerminal = () => {
     // tmux new-session -A on the agent side creates it on first attach.
@@ -82,10 +85,10 @@ export default function DevicePage() {
   }
 
   return (
-    <div className="flex h-full min-h-[calc(100dvh-64px)] flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-4 sm:px-7">
         <div className="flex items-center gap-3">
-          <Link to="/" className="text-zinc-600 hover:text-zinc-200" aria-label="Back to fleet">
+          <Link to="/fleet" className="text-zinc-600 hover:text-zinc-200" aria-label="Back to fleet">
             ←
           </Link>
           <span

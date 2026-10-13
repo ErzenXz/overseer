@@ -5,17 +5,72 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ErzenXz/overseer/internal/fleet"
 )
 
 const protocolVersion = "2024-11-05"
+const deviceSessionQueryTimeout = 5 * time.Second
+
+type sessionSummary struct {
+	working, idle, other int
+	available            bool
+}
+
+func collectSessionSummaries(ctx context.Context, client *fleet.Client, devices []fleet.Device) []sessionSummary {
+	summaries := make([]sessionSummary, len(devices))
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, 8)
+
+schedule:
+	for i, d := range devices {
+		if !d.Online {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			break schedule
+		case limit <- struct{}{}:
+		}
+		if ctx.Err() != nil {
+			<-limit
+			break schedule
+		}
+		wg.Add(1)
+		go func(i int, d fleet.Device) {
+			defer wg.Done()
+			defer func() { <-limit }()
+			sessions, err := client.SessionsContext(ctx, d.Id)
+			if err != nil {
+				return
+			}
+			summary := sessionSummary{available: true}
+			for _, session := range sessions {
+				switch session.Status {
+				case "working":
+					summary.working++
+				case "idle":
+					summary.idle++
+				case "exited":
+				default:
+					summary.other++
+				}
+			}
+			summaries[i] = summary
+		}(i, d)
+	}
+	wg.Wait()
+	return summaries
+}
 
 type rpcRequest struct {
 	Jsonrpc string          `json:"jsonrpc"`
@@ -129,8 +184,8 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return map[string]any{"type": "object", "properties": props, "required": required}
 }
 
-func str(desc string) map[string]any  { return map[string]any{"type": "string", "description": desc} }
-func num(desc string) map[string]any  { return map[string]any{"type": "number", "description": desc} }
+func str(desc string) map[string]any   { return map[string]any{"type": "string", "description": desc} }
+func num(desc string) map[string]any   { return map[string]any{"type": "number", "description": desc} }
 func boolp(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 
 func toolDefs() []map[string]any {
@@ -139,7 +194,7 @@ func toolDefs() []map[string]any {
 	return []map[string]any{
 		{
 			"name":        "list_devices",
-			"description": "List every device in the Overseer fleet with online status, OS, and whether tmux is available.",
+			"description": "List every device with online status, OS, tmux availability, CPU usage/cores, memory, load averages, and live session counts (working/idle/other). Use this best-effort snapshot to choose a device before create_session. Unavailable stats or session counts are explicitly marked; counts include terminals and agents and exclude exited sessions. This is not a capacity reservation.",
 			"inputSchema": obj(map[string]any{}),
 		},
 		{
@@ -247,8 +302,11 @@ func callTool(client *fleet.Client, name string, rawArgs json.RawMessage) (strin
 		if err != nil {
 			return "", err
 		}
+		ctx, cancel := context.WithTimeout(context.Background(), deviceSessionQueryTimeout)
+		defer cancel()
+		summaries := collectSessionSummaries(ctx, client, devices)
 		var b strings.Builder
-		for _, d := range devices {
+		for i, d := range devices {
 			status := "offline"
 			if d.Online {
 				status = "online"
@@ -262,6 +320,28 @@ func callTool(client *fleet.Client, name string, rawArgs json.RawMessage) (strin
 				tmux = " (no tmux: sessions won't persist)"
 			}
 			fmt.Fprintf(&b, "- %s%s — id %s, %s/%s, %s%s\n", d.Name, hub, d.Id, d.OS, d.Arch, status, tmux)
+			if !d.Online || d.Stats == nil {
+				fmt.Fprintln(&b, "  CPU / RAM / load: unavailable")
+			} else {
+				s := d.Stats
+				fmt.Fprintf(&b, "  CPU %.1f%% (%d cores)\n", s.CPUPercent, s.CPUCores)
+				if s.MemTotal > 0 {
+					fmt.Fprintf(&b, "  RAM %.1f%% (%d / %d bytes)\n", float64(s.MemUsed)/float64(s.MemTotal)*100, s.MemUsed, s.MemTotal)
+				} else {
+					fmt.Fprintln(&b, "  RAM: unavailable")
+				}
+				if strings.EqualFold(d.OS, "windows") {
+					fmt.Fprintln(&b, "  Load: unavailable on Windows")
+				} else {
+					fmt.Fprintf(&b, "  Load (1/5/15 min): %.2f / %.2f / %.2f\n", s.Load1, s.Load5, s.Load15)
+				}
+			}
+			summary := summaries[i]
+			if summary.available {
+				fmt.Fprintf(&b, "  Sessions: %d live (%d working, %d idle, %d other; exited excluded)\n", summary.working+summary.idle+summary.other, summary.working, summary.idle, summary.other)
+			} else {
+				fmt.Fprintln(&b, "  Sessions: unavailable")
+			}
 		}
 		if b.Len() == 0 {
 			return "No devices in the fleet yet.", nil
