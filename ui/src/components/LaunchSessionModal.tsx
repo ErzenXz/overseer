@@ -30,7 +30,7 @@ export default function LaunchSessionModal({
       setPresets(ps)
       const claude = ps.find((p) => p.kind === 'claude')
       if (claude) selectPreset(claude, ps)
-    })
+    }).catch(() => setError('Could not load presets. Enter a command below or leave it empty for a shell.'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -69,14 +69,15 @@ export default function LaunchSessionModal({
     'w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-lime-500'
 
   return (
-    <Modal title="Launch session" onClose={onClose}>
+    <Modal title="New session" onClose={onClose}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         {devices.length > 1 && (
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-300">
+            <label htmlFor="session-device" className="mb-1 block text-sm font-medium text-zinc-300">
               Device
             </label>
             <select
+              id="session-device"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
               className={inputClass}
@@ -113,10 +114,11 @@ export default function LaunchSessionModal({
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-zinc-300">
+          <label htmlFor="session-command" className="mb-1 block text-sm font-medium text-zinc-300">
             Command
           </label>
           <input
+            id="session-command"
             value={command}
             onChange={(e) => {
               setCommand(e.target.value)
@@ -129,10 +131,11 @@ export default function LaunchSessionModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-300">
+            <label htmlFor="session-name" className="mb-1 block text-sm font-medium text-zinc-300">
               Session name
             </label>
             <input
+              id="session-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -142,10 +145,11 @@ export default function LaunchSessionModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-300">
+            <label htmlFor="session-directory" className="mb-1 block text-sm font-medium text-zinc-300">
               Working directory
             </label>
             <input
+              id="session-directory"
               value={cwd}
               onChange={(e) => setCwd(e.target.value)}
               placeholder="~ (home)"
@@ -154,7 +158,7 @@ export default function LaunchSessionModal({
           </div>
         </div>
 
-        {error && <p className="text-sm text-rose-400">{error}</p>}
+        {error && <p className="text-sm text-rose-400" role="alert">{error}</p>}
         <button
           type="submit"
           disabled={busy || !deviceId}

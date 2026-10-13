@@ -62,7 +62,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<Layout version={me.version} />}>
-        <Route path="/" element={<Navigate to="/fleet" replace />} />
+        <Route path="/" element={<Navigate to="/agents" replace />} />
         <Route path="/code" element={<CodingPage />} />
         <Route path="/code/:projectId" element={<CodingPage />} />
         <Route path="/fleet" element={<Dashboard />} />
