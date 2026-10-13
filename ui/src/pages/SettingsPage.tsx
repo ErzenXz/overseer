@@ -6,8 +6,7 @@ import type { ApiTokenInfo, Preset, UpdateStatus } from '../types'
 export default function SettingsPage() {
   return (
     <div className="page-shell max-w-4xl">
-      <p className="eyebrow mb-3">Hub controls</p>
-      <h1 className="mb-8 text-3xl font-semibold tracking-[-0.04em] text-zinc-100">Settings</h1>
+      <header className="page-heading"><div><p className="eyebrow">Make it yours</p><h1>Settings</h1><p>Manage your hub, integrations, and agent presets.</p></div></header>
       <SoftwareUpdates />
       <ApiTokens />
       <Presets />

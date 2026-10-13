@@ -72,15 +72,11 @@ export default function SetupPage() {
 
   return (
     <div className="page-shell">
-      <section className="mb-9 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+      <section className="page-heading">
         <div>
-          <p className="eyebrow mb-3">Machine setup</p>
-          <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-white sm:text-4xl">
-            Prepare a coding machine from one place.
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-            Install the major coding agents, open their secure sign-in flows, and add private remote access without moving auth files between computers.
-          </p>
+          <p className="eyebrow">Ready for what's next</p>
+          <h1>Machine setup</h1>
+          <p>Install your tools. Connect securely. Start building.</p>
         </div>
         <div className="surface flex min-w-72 items-center gap-3 rounded-xl p-3">
           <span className={`h-2 w-2 rounded-full ${selected?.online ? 'bg-lime-300' : 'bg-zinc-700'}`} />
@@ -152,7 +148,7 @@ export default function SetupPage() {
           <section className="mt-7 border-l border-lime-300/30 pl-5">
             <h2 className="text-sm font-semibold text-zinc-200">Why legacy agent sign-in still opens once per machine</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-500">
-              Codex, Claude, and Gemini store device credentials in their own protected local storage. LiveAgent starts each official login flow and keeps it visible in a remote terminal, but never copies those private tokens into the hub database. The built-in fx workspace above is the one-login path across nodes.
+              Codex, Claude, and Gemini store device credentials in their own protected local storage. Overseer starts each official login flow and keeps it visible in a remote terminal, but never copies those private tokens into the hub database. The built-in fx workspace above is the one-login path across nodes.
             </p>
           </section>
         </>

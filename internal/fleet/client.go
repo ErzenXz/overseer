@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // Client talks to a hub with an API token.
@@ -124,15 +126,16 @@ func (c *Client) do(method, path string, body any, out any) error {
 // --- typed API surface ---
 
 type Device struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
-	IsHub    bool   `json:"isHub"`
-	Online   bool   `json:"online"`
-	Tmux     bool   `json:"tmux"`
-	LastSeen int64  `json:"lastSeen"`
+	Id       string          `json:"id"`
+	Name     string          `json:"name"`
+	Hostname string          `json:"hostname"`
+	OS       string          `json:"os"`
+	Arch     string          `json:"arch"`
+	IsHub    bool            `json:"isHub"`
+	Online   bool            `json:"online"`
+	Tmux     bool            `json:"tmux"`
+	LastSeen int64           `json:"lastSeen"`
+	Stats    *protocol.Stats `json:"stats,omitempty"`
 }
 
 type Session struct {

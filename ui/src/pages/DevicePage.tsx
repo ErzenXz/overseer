@@ -82,10 +82,10 @@ export default function DevicePage() {
   }
 
   return (
-    <div className="flex h-full min-h-[calc(100dvh-64px)] flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-4 sm:px-7">
         <div className="flex items-center gap-3">
-          <Link to="/" className="text-zinc-600 hover:text-zinc-200" aria-label="Back to fleet">
+          <Link to="/fleet" className="text-zinc-600 hover:text-zinc-200" aria-label="Back to fleet">
             ←
           </Link>
           <span

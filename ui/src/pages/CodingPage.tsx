@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import FxTerminal from '../components/FxTerminal'
 import ProjectModal from '../components/ProjectModal'
 import { useHubEvents, usePoll } from '../hooks'
 import type { Device, Project } from '../types'
+import Icon from '../components/Icon'
 
 export default function CodingPage() {
   const { projectId } = useParams()
@@ -12,6 +13,7 @@ export default function CodingPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [devices, setDevices] = useState<Device[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState('')
   const [editing, setEditing] = useState<Project | undefined>()
   const [showModal, setShowModal] = useState(false)
   const [showLoginHint, setShowLoginHint] = useState(() => localStorage.getItem('liveagent.fx.login-hint') !== 'hidden')
@@ -26,8 +28,9 @@ export default function CodingPage() {
       setProjects(nextProjects)
       setDevices(nextDevices)
       setLoaded(true)
+      setError('')
     } catch {
-      /* keep the last live snapshot */
+      setError('Unable to load projects. Please try again.')
     }
   }, [])
 
@@ -44,37 +47,30 @@ export default function CodingPage() {
     }
   }, [searchParams, setSearchParams])
 
-  useEffect(() => {
-    if (!projectId && projects.length > 0) navigate(`/code/${projects[0].id}`, { replace: true })
-  }, [navigate, projectId, projects])
-
   const project = useMemo(() => projects.find((item) => item.id === projectId), [projectId, projects])
   const device = useMemo(() => devices.find((item) => item.id === project?.deviceId), [devices, project])
 
   const removeProject = async () => {
-    if (!project || !window.confirm(`Remove ${project.name} from LiveAgent? Files on ${device?.name ?? 'the machine'} will not be deleted.`)) return
-    await api.del(`/api/projects/${project.id}`)
-    window.dispatchEvent(new Event('liveagent:projects-changed'))
-    const remaining = projects.filter((item) => item.id !== project.id)
-    setProjects(remaining)
-    navigate(remaining[0] ? `/code/${remaining[0].id}` : '/code')
+    if (!project || !window.confirm(`Remove ${project.name} from Overseer? Files on ${device?.name ?? 'the machine'} will not be deleted.`)) return
+    try {
+      await api.del(`/api/projects/${project.id}`)
+      window.dispatchEvent(new Event('liveagent:projects-changed'))
+      setProjects((items) => items.filter((item) => item.id !== project.id))
+      navigate('/code')
+    } catch { setError('Could not remove the project. Please try again.') }
   }
 
-  if (loaded && projects.length === 0) {
+  if (!projectId) {
     return (
-      <div className="code-empty">
-        <div className="code-empty-mark"><span>fx</span></div>
-        <p className="eyebrow mt-7">Coding workspace</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em] text-white">What should we build?</h1>
-        <p className="mt-3 max-w-lg text-center text-sm leading-6 text-zinc-500">
-          Add a project, choose the PC where its files live, and let fx work there from this browser.
-        </p>
-        <button onClick={() => setShowModal(true)} className="btn-primary mt-6">Add your first project</button>
+      <div className="page-shell">
+        <header className="page-heading"><div><p className="eyebrow">A place for your work</p><h1>Projects</h1><p>Pick a project. Build on any machine in your fleet.</p></div><button onClick={() => { setEditing(undefined); setShowModal(true) }} className="btn-primary"><Icon name="plus" size={16} />New project</button></header>
+        {error && <div className="error-banner" role="alert">{error}<button onClick={load}>Retry</button></div>}
+        {!loaded ? <p className="text-sm text-zinc-500">{error ? 'Projects unavailable.' : 'Loading projects…'}</p> : projects.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="code" size={26} /></span><h2>A new home for your next idea</h2><p>Connect a directory on one of your machines. Your files stay there; your workspace comes with you.</p><button onClick={() => setShowModal(true)} className="btn-primary"><Icon name="plus" size={16} />Create your first project</button><span className="mt-5 text-[11px] text-zinc-500">Powered by fx · Runs in your browser</span></div> : <div className="project-grid">{projects.map((item) => { const machine = devices.find((d) => d.id === item.deviceId); return <Link key={item.id} to={`/code/${item.id}`} className="surface project-card"><div className="flex items-center justify-between text-zinc-400"><Icon name="folder" size={23} /><Icon name="arrow" size={16} /></div><h2>{item.name}</h2><p className="truncate font-mono text-[11px] text-zinc-500">{item.path}</p><p className="mt-6 flex items-center gap-2 text-xs text-zinc-400"><span className={`node-dot ${machine?.online ? 'node-dot-online' : ''}`} />{machine?.name ?? 'Unknown machine'}</p></Link> })}</div>}
         {showModal && (
           <ProjectModal
             devices={devices}
             onClose={() => setShowModal(false)}
-            onSaved={(saved) => { setShowModal(false); setProjects([saved]); navigate(`/code/${saved.id}`) }}
+            onSaved={(saved) => { setShowModal(false); setProjects((items) => [...items, saved]); navigate(`/code/${saved.id}`) }}
           />
         )}
       </div>
@@ -82,11 +78,12 @@ export default function CodingPage() {
   }
 
   if (!project) {
-    return <div className="grid h-full place-items-center text-sm text-zinc-600">Loading workspace…</div>
+    return <div className="page-shell"><div className="empty-state"><h2>{error || (loaded ? 'Project not found' : 'Loading workspace…')}</h2><Link to="/code" className="btn-secondary">Back to projects</Link></div></div>
   }
 
   return (
     <div className="coding-shell">
+      {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
       <header className="coding-toolbar">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
