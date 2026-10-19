@@ -60,6 +60,68 @@ CREATE TABLE IF NOT EXISTS projects (
 	FOREIGN KEY(device_id) REFERENCES devices(id)
 );
 CREATE INDEX IF NOT EXISTS projects_device_id ON projects(device_id);
+CREATE TABLE IF NOT EXISTS threads (
+	id            TEXT PRIMARY KEY,
+	title         TEXT NOT NULL,
+	device_id     TEXT NOT NULL,
+	agent         TEXT NOT NULL,
+	command       TEXT NOT NULL DEFAULT '',
+	cwd           TEXT NOT NULL DEFAULT '',
+	model         TEXT NOT NULL DEFAULT '',
+	access        TEXT NOT NULL DEFAULT 'edits',
+	status        TEXT NOT NULL DEFAULT 'starting',
+	error         TEXT NOT NULL DEFAULT '',
+	created_at    INTEGER NOT NULL,
+	updated_at    INTEGER NOT NULL,
+	last_read_at  INTEGER NOT NULL DEFAULT 0,
+	terminal      TEXT NOT NULL DEFAULT '',
+	pr            TEXT NOT NULL DEFAULT '',
+	usage         TEXT NOT NULL DEFAULT '',
+	automation_id TEXT NOT NULL DEFAULT '',
+	resume_id     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS threads_updated_at ON threads(updated_at);
+CREATE TABLE IF NOT EXISTS thread_messages (
+	thread_id  TEXT NOT NULL,
+	id         TEXT NOT NULL,
+	seq        INTEGER NOT NULL,
+	at         INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	role       TEXT NOT NULL,
+	text       TEXT NOT NULL DEFAULT '',
+	data       TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (thread_id, id)
+);
+CREATE INDEX IF NOT EXISTS thread_messages_seq ON thread_messages(thread_id, seq);
+CREATE TABLE IF NOT EXISTS mcp_servers (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	transport  TEXT NOT NULL,
+	command    TEXT NOT NULL DEFAULT '',
+	args       TEXT NOT NULL DEFAULT '',
+	env        TEXT NOT NULL DEFAULT '',
+	url        TEXT NOT NULL DEFAULT '',
+	headers    TEXT NOT NULL DEFAULT '',
+	enabled    INTEGER NOT NULL DEFAULT 1,
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS automations (
+	id             TEXT PRIMARY KEY,
+	name           TEXT NOT NULL,
+	prompt         TEXT NOT NULL,
+	device_id      TEXT NOT NULL,
+	agent          TEXT NOT NULL,
+	command        TEXT NOT NULL DEFAULT '',
+	model          TEXT NOT NULL DEFAULT '',
+	cwd            TEXT NOT NULL DEFAULT '',
+	access         TEXT NOT NULL DEFAULT 'edits',
+	schedule       TEXT NOT NULL,
+	enabled        INTEGER NOT NULL DEFAULT 1,
+	created_at     INTEGER NOT NULL,
+	last_run_at    INTEGER NOT NULL DEFAULT 0,
+	last_thread_id TEXT NOT NULL DEFAULT '',
+	next_run_at    INTEGER NOT NULL DEFAULT 0
+);
 `
 
 func OpenStore(path string) (*Store, error) {

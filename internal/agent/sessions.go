@@ -110,7 +110,14 @@ func (a *Agent) killSession(name string) error {
 	return nil
 }
 
-// --- ephemeral fallback (no tmux): sessions exist only while attached ---
+// --- ephemeral fallback (no tmux): sessions live in this agent process ---
+//
+// Without tmux the agent itself keeps the PTY. The process starts on first
+// attach and keeps running when the browser detaches; a new attach takes the
+// session over and replays recent output. It ends when its process exits, the
+// session is killed, or the agent restarts.
+
+const ephemeralScrollback = 128 * 1024
 
 type ephemeralSession struct {
 	name      string
@@ -120,9 +127,12 @@ type ephemeralSession struct {
 	createdAt int64
 
 	mu        sync.Mutex
-	stream    *termStream
-	attaching bool // reserved between the attach check and pty start (guards TOCTOU)
+	backend   terminalBackend // nil until first attach
+	channel   uint32          // 0 when detached
+	starting  bool            // reserved between the attach check and pty start
 	activity  int64
+	scroll    []byte
+	closeOnce sync.Once
 }
 
 var (
@@ -150,7 +160,7 @@ func (a *Agent) listEphemeral() []protocol.Session {
 		out = append(out, protocol.Session{
 			Name: e.name, Kind: e.kind, Status: status,
 			CreatedAt: e.createdAt, LastActivity: e.activity,
-			Attached: e.stream != nil, Ephemeral: true,
+			Attached: e.channel != 0, Ephemeral: true,
 		})
 		e.mu.Unlock()
 	}
@@ -179,74 +189,132 @@ func (a *Agent) killEphemeral(name string) bool {
 		return false
 	}
 	e.mu.Lock()
-	if e.stream != nil {
-		e.stream.close()
-	}
+	backend := e.backend
 	e.mu.Unlock()
+	if backend != nil {
+		// Closing the PTY ends pumpEphemeral, which reaps the process.
+		e.closeOnce.Do(func() { backend.Close() })
+	}
 	return true
 }
 
-// attachEphemeral starts the session's process directly on a PTY. Without
-// tmux there is nothing to reattach to — the process lives and dies with the
-// terminal channel.
+// detach drops the browser view on channel without touching the process.
+func (e *ephemeralSession) detach(channel uint32) {
+	e.mu.Lock()
+	if e.channel == channel {
+		e.channel = 0
+	}
+	e.mu.Unlock()
+}
+
+// attachEphemeral binds channel to the session, starting its process on the
+// first attach. A second attach takes over: the previous view is told the
+// session moved and stops receiving output.
 func (a *Agent) attachEphemeral(channel uint32, e *ephemeralSession, req protocol.TermOpen) {
-	fail := func(err error) {
-		m, _ := protocol.NewMsg(protocol.TypeTermExit, 0, channel, nil)
+	fail := func(ch uint32, err error) {
+		m, _ := protocol.NewMsg(protocol.TypeTermExit, 0, ch, nil)
 		m.Error = err.Error()
 		a.send(m)
 	}
-	// Reserve the session atomically so two concurrent attaches can't both
-	// start a PTY (which would orphan the loser's process and fd).
+
 	e.mu.Lock()
-	if e.stream != nil || e.attaching {
+	if e.starting {
 		e.mu.Unlock()
-		fail(fmt.Errorf("ephemeral session %q is already attached elsewhere", e.name))
+		fail(channel, fmt.Errorf("session %q is starting, try again", e.name))
 		return
 	}
-	e.attaching = true
-	e.mu.Unlock()
-
-	var cmd *exec.Cmd
-	if e.command != "" {
-		cmd = shellCommandContext(context.Background(), e.command, false)
-	} else {
-		cmd = shellCommandContext(context.Background(), "", true)
-	}
-	if e.cwd != "" {
-		cmd.Dir = e.cwd
-	}
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-
-	backend, err := startTerminal(cmd, clampDim(req.Cols), clampDim(req.Rows))
-	if err != nil {
+	if e.backend == nil {
+		e.starting = true
+		e.mu.Unlock()
+		var cmd *exec.Cmd
+		if e.command != "" {
+			cmd = shellCommandContext(context.Background(), e.command, false)
+		} else {
+			cmd = shellCommandContext(context.Background(), "", true)
+		}
+		if e.cwd != "" {
+			if dir, err := resolveCwd(e.cwd); err == nil {
+				cmd.Dir = dir
+			}
+		}
+		cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+		backend, err := startTerminal(cmd, clampDim(req.Cols), clampDim(req.Rows))
 		e.mu.Lock()
-		e.attaching = false
-		e.mu.Unlock()
-		fail(fmt.Errorf("starting pty: %w", err))
-		return
+		e.starting = false
+		if err != nil {
+			e.mu.Unlock()
+			fail(channel, fmt.Errorf("starting pty: %w", err))
+			return
+		}
+		e.backend = backend
+		go a.pumpEphemeral(e)
 	}
-	t := &termStream{channel: channel, backend: backend}
-
-	e.mu.Lock()
-	e.stream = t
-	e.attaching = false
+	previous := e.channel
+	e.channel = channel
 	e.activity = time.Now().Unix()
+	backend := e.backend
+	replay := append([]byte(nil), e.scroll...)
 	e.mu.Unlock()
 
 	a.mu.Lock()
-	a.terms[channel] = t
+	if previous != 0 {
+		delete(a.terms, previous)
+	}
+	a.terms[channel] = &termStream{channel: channel, backend: backend, eph: e}
 	a.mu.Unlock()
+	if previous != 0 && previous != channel {
+		fail(previous, fmt.Errorf("opened in another window"))
+	}
 
+	_ = backend.Resize(clampDim(req.Cols), clampDim(req.Rows))
 	opened, _ := protocol.NewMsg(protocol.TypeTermOpened, 0, channel, nil)
 	a.send(opened)
+	if len(replay) > 0 {
+		_ = a.sendBinary(channel, replay)
+	}
+}
 
-	go func() {
-		a.pumpTerm(t)
-		// The process is gone; the ephemeral session goes with it.
-		ephMu.Lock()
-		if ephByName[e.name] != nil && ephByName[e.name] == e {
-			delete(ephByName, e.name)
+// pumpEphemeral owns the session's PTY for its whole life, forwarding output
+// to whichever channel is attached and keeping recent output for replay.
+func (a *Agent) pumpEphemeral(e *ephemeralSession) {
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := e.backend.Read(buf)
+		if n > 0 {
+			e.mu.Lock()
+			e.scroll = append(e.scroll, buf[:n]...)
+			if over := len(e.scroll) - ephemeralScrollback; over > 0 {
+				e.scroll = append([]byte(nil), e.scroll[over:]...)
+			}
+			e.activity = time.Now().Unix()
+			channel := e.channel
+			e.mu.Unlock()
+			if channel != 0 {
+				_ = a.sendBinary(channel, buf[:n])
+			}
 		}
-		ephMu.Unlock()
-	}()
+		if err != nil {
+			break
+		}
+	}
+	e.backend.KillWait()
+	e.closeOnce.Do(func() { e.backend.Close() })
+
+	ephMu.Lock()
+	if ephByName[e.name] == e {
+		delete(ephByName, e.name)
+	}
+	ephMu.Unlock()
+
+	e.mu.Lock()
+	channel := e.channel
+	e.channel = 0
+	e.mu.Unlock()
+	if channel != 0 {
+		a.mu.Lock()
+		delete(a.terms, channel)
+		a.mu.Unlock()
+		exit, _ := protocol.NewMsg(protocol.TypeTermExit, 0, channel, nil)
+		a.send(exit)
+	}
 }

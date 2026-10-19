@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -45,6 +46,7 @@ type Server struct {
 	loginRL       *rateLimiter
 	events        *eventBus
 	registry      *registry
+	threads       *threadService
 	mux           *http.ServeMux
 	updates       *updateManager
 	updateApplied atomic.Bool
@@ -83,6 +85,8 @@ func NewServer(opts Options) (*Server, error) {
 		registry: newRegistry(events),
 		mux:      http.NewServeMux(),
 	}
+	s.threads = newThreadService(s)
+	s.resetInterruptedThreads()
 	s.routes()
 	s.updates = newUpdateManager(store, opts.Version, opts.GithubRepo)
 	return s, nil
@@ -127,6 +131,7 @@ func (s *Server) Run(ctx context.Context) error {
 		internalSrv.Shutdown(shutdownCtx)
 	}()
 	go s.runEmbeddedAgent(runCtx)
+	go s.runAutomations(runCtx)
 
 	if s.opts.TLSDomain != "" {
 		err := s.runTLS(runCtx)
@@ -283,8 +288,30 @@ func (s *Server) routes() {
 	m.HandleFunc("PATCH /api/updates", s.requireAuth(s.handleUpdateSettings))
 	m.HandleFunc("POST /api/updates/install", s.requireAuth(s.handleUpdateInstall))
 	m.HandleFunc("POST /api/updates/rollback", s.requireAuth(s.handleUpdateRollback))
+	m.HandleFunc("GET /api/threads", s.requireAuth(s.handleListThreads))
+	m.HandleFunc("POST /api/threads", s.requireAuth(s.handleCreateThread))
+	m.HandleFunc("GET /api/threads/{id}", s.requireAuth(s.handleGetThread))
+	m.HandleFunc("PATCH /api/threads/{id}", s.requireAuth(s.handlePatchThread))
+	m.HandleFunc("DELETE /api/threads/{id}", s.requireAuth(s.handleDeleteThread))
+	m.HandleFunc("POST /api/threads/{id}/prompt", s.requireAuth(s.handleThreadPrompt))
+	m.HandleFunc("POST /api/threads/{id}/cancel", s.requireAuth(s.handleThreadCancel))
+	m.HandleFunc("POST /api/threads/{id}/approval", s.requireAuth(s.handleThreadApproval))
+	m.HandleFunc("GET /api/agent-kinds", s.requireAuth(s.handleAgentKinds))
+	m.HandleFunc("GET /api/devices/{id}/agents", s.requireAuth(s.handleDeviceAgents))
+	m.HandleFunc("GET /api/devices/{id}/desktop", s.requireAuth(s.handleDeviceDesktop))
+	m.HandleFunc("GET /api/mcp-servers", s.requireAuth(s.handleListMcpServers))
+	m.HandleFunc("POST /api/mcp-servers", s.requireAuth(s.handleCreateMcpServer))
+	m.HandleFunc("PATCH /api/mcp-servers/{id}", s.requireAuth(s.handlePatchMcpServer))
+	m.HandleFunc("DELETE /api/mcp-servers/{id}", s.requireAuth(s.handleDeleteMcpServer))
+	m.HandleFunc("GET /api/automations", s.requireAuth(s.handleListAutomations))
+	m.HandleFunc("POST /api/automations", s.requireAuth(s.handleCreateAutomation))
+	m.HandleFunc("PATCH /api/automations/{id}", s.requireAuth(s.handlePatchAutomation))
+	m.HandleFunc("DELETE /api/automations/{id}", s.requireAuth(s.handleDeleteAutomation))
+	m.HandleFunc("POST /api/automations/{id}/run", s.requireAuth(s.handleRunAutomation))
 	m.HandleFunc("GET /api/ws/term", s.requireAuth(s.handleTermWS))
 	m.HandleFunc("GET /api/ws/events", s.requireAuth(s.handleEventsWS))
+	m.HandleFunc("GET /api/ws/threads/{id}", s.requireAuth(s.handleThreadWS))
+	m.HandleFunc("GET /api/ws/desktop", s.requireAuth(s.handleDesktopWS))
 
 	// Web UI (embedded SPA) at everything else.
 	if s.opts.UI != nil {
@@ -293,6 +320,12 @@ func (s *Server) routes() {
 }
 
 // handleUI serves the embedded SPA with index.html fallback for client routes.
+// The web app ships a PWA manifest; Go's built-in table doesn't know the
+// extension, and browsers warn when it arrives as text/plain.
+func init() {
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
+
 func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, "/")
 	if p == "" {
