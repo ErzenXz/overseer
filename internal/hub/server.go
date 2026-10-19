@@ -92,6 +92,18 @@ func NewServer(opts Options) (*Server, error) {
 	return s, nil
 }
 
+// logSetupCode prints the first-run link while the hub has no password.
+func (s *Server) logSetupCode(base string) {
+	code, err := s.ensureSetupCode()
+	if err != nil {
+		log.Printf("setup code: %v", err)
+		return
+	}
+	if code != "" {
+		log.Printf("First-run setup: open %s/?setup=%s to choose the admin password (setup code %s)", base, code, code)
+	}
+}
+
 // newHTTPServer builds an http.Server for the shared mux with sane timeouts.
 // ReadTimeout/WriteTimeout are intentionally unset: they would break
 // long-lived WebSockets and large transfers (hijacked conns manage their own
@@ -161,6 +173,7 @@ func (s *Server) runPlain(ctx context.Context) error {
 		srv.Shutdown(shutdownCtx)
 	}()
 	log.Printf("Overseer hub listening on http://%s", displayAddr(ln.Addr().String()))
+	s.logSetupCode("http://" + displayAddr(ln.Addr().String()))
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		return err
 	}
@@ -202,6 +215,7 @@ func (s *Server) runTLS(ctx context.Context) error {
 	}()
 
 	log.Printf("Overseer hub listening on https://%s (auto-TLS via Let's Encrypt)", s.opts.TLSDomain)
+	s.logSetupCode("https://" + s.opts.TLSDomain)
 	// Certs are supplied by TLSConfig, so no cert/key files here.
 	if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 		return err
@@ -251,6 +265,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/enroll", s.handleEnroll)
 	m.HandleFunc("GET /install/", s.handleInstallScript)
 	m.HandleFunc("GET /api/agent-binary", s.handleAgentBinary)
+	m.HandleFunc("GET /api/agent-binary/sha256", s.handleAgentBinarySum)
 	m.HandleFunc("GET /api/ws/agent", s.handleAgentWS)
 
 	// Remote MCP endpoint (does its own Bearer-token auth).

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 )
 
@@ -61,5 +62,43 @@ func TestLatestRejectsReleaseWithoutChecksums(t *testing.T) {
 
 	if _, err := Latest(context.Background(), "acme/overseer", "linux", "amd64"); err == nil {
 		t.Fatal("expected a release without checksums.txt to be rejected")
+	}
+}
+
+// A new version that keeps failing before it is healthy is rolled back after
+// MaxStartAttempts; a version that proves itself clears the marker.
+func TestCrashLoopRollsBack(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "overseer")
+	if err := writePending(exe, pendingUpdate{From: "v1.0.0", To: "v1.1.0"}); err != nil {
+		t.Fatal(err)
+	}
+	rolled := 0
+	rollback := func() error { rolled++; return nil }
+	for i := 1; i <= MaxStartAttempts; i++ {
+		back, err := checkStartup(exe, "v1.1.0", rollback)
+		if err != nil || back {
+			t.Fatalf("start %d: rolledBack=%v err=%v", i, back, err)
+		}
+	}
+	back, err := checkStartup(exe, "v1.1.0", rollback)
+	if err != nil || !back || rolled != 1 {
+		t.Fatalf("expected rollback after %d failed starts: rolledBack=%v rolled=%d err=%v", MaxStartAttempts, back, rolled, err)
+	}
+	if _, ok := readPending(exe); ok {
+		t.Fatal("marker should be cleared after rollback")
+	}
+}
+
+func TestStartupIgnoresMarkerForOtherVersion(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "overseer")
+	if err := writePending(exe, pendingUpdate{From: "v1.0.0", To: "v1.1.0"}); err != nil {
+		t.Fatal(err)
+	}
+	back, err := checkStartup(exe, "v1.0.0", func() error { t.Fatal("must not roll back"); return nil })
+	if err != nil || back {
+		t.Fatalf("rolledBack=%v err=%v", back, err)
+	}
+	if _, ok := readPending(exe); ok {
+		t.Fatal("stale marker should be removed")
 	}
 }

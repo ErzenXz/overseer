@@ -36,6 +36,7 @@ Usage:
   overseer agent enroll --hub URL --token TOKEN            Enroll this device with a hub
   overseer agent run                                       Run the device agent (foreground)
   overseer agent install-service                           Install + start the agent as a service
+  overseer agent uninstall                                 Stop and remove the agent service
   overseer fleet login --hub URL --token API_TOKEN         Save fleet CLI credentials
   overseer fleet devices                                   List devices
   overseer fleet sessions [device]                         List sessions (fleet-wide or one device)
@@ -128,6 +129,24 @@ func signalContext() context.Context {
 	return ctx
 }
 
+// guardUpdate is the crash-loop check for service-managed processes: a just
+// updated version that keeps failing to stay up is rolled back to the
+// previous verified binary, and one that stays up clears the check.
+func guardUpdate() error {
+	if os.Getenv("OVERSEER_MANAGED") == "" {
+		return nil
+	}
+	rolledBack, err := updater.CheckStartup(version, os.Getenv("OVERSEER_WINDOWS_TASK"))
+	if err != nil {
+		log.Printf("update health check: %v", err)
+	}
+	if rolledBack {
+		return fmt.Errorf("version %s kept failing after an update; restored the previous version, restarting", version)
+	}
+	go updater.ConfirmHealthyAfter(context.Background())
+	return nil
+}
+
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", ":4200", "listen address (ignored when --tls-domain is set)")
@@ -140,6 +159,9 @@ func cmdServe(args []string) error {
 		return fmt.Errorf("--tls-email is required with --tls-domain (Let's Encrypt needs a contact address)")
 	}
 
+	if err := guardUpdate(); err != nil {
+		return err
+	}
 	srv, err := hub.NewServer(hub.Options{
 		Addr:       *addr,
 		DataDir:    *dataDir,
@@ -157,7 +179,7 @@ func cmdServe(args []string) error {
 
 func cmdAgent(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: overseer agent <enroll|run|install-service>")
+		return fmt.Errorf("usage: overseer agent <enroll|run|install-service|uninstall>")
 	}
 	switch args[0] {
 	case "enroll":
@@ -179,6 +201,9 @@ func cmdAgent(args []string) error {
 		if err != nil {
 			return err
 		}
+		if err := guardUpdate(); err != nil {
+			return err
+		}
 		return agent.New(cfg, version).Run(signalContext())
 	case "install-service":
 		if _, err := agent.LoadConfig(); err != nil {
@@ -188,6 +213,18 @@ func cmdAgent(args []string) error {
 			return err
 		}
 		fmt.Println("agent service installed and started")
+		return nil
+	case "uninstall":
+		if err := agent.UninstallService(); err != nil {
+			return err
+		}
+		exe, _ := os.Executable()
+		fmt.Println("agent service removed and this machine disconnected from its hub")
+		if runtime.GOOS == "windows" {
+			fmt.Printf("delete %s to remove the binary too, and remove the machine in the hub's Machines page\n", exe)
+		} else {
+			fmt.Printf("rm %q removes the binary too; remove the machine in the hub's Machines page\n", exe)
+		}
 		return nil
 	default:
 		return fmt.Errorf("unknown agent subcommand %q", args[0])

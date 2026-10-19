@@ -52,10 +52,10 @@ export function Install() {
                 </p>
               </div>
               <p className="mt-4 text-[14px] leading-relaxed text-ink-2">
-                Then open{" "}
-                <code className="kbd-code">http://localhost:4200</code> and set
-                an admin password. The hub machine shows up as your first
-                device.
+                Then open the link the installer prints (it carries a one-time
+                setup code, so nobody else on your network can claim the hub
+                first) and choose an admin password. The hub machine shows up
+                as your first device.
               </p>
             </li>
 

@@ -200,7 +200,14 @@ func TestAuthFlow(t *testing.T) {
 		t.Fatalf("short password: %d, want 400", resp.StatusCode)
 	}
 	// Proper setup logs us in.
-	if resp := post("/api/setup", map[string]string{"password": "a-strong-password"}); resp.StatusCode != 200 {
+	if resp := post("/api/setup", map[string]string{"password": "a-strong-password", "code": "WRONG-CODE"}); resp.StatusCode != 403 {
+		t.Fatalf("setup without the right code: %d", resp.StatusCode)
+	}
+	code, err := srv.ensureSetupCode()
+	if err != nil || code == "" {
+		t.Fatalf("setup code: %q %v", code, err)
+	}
+	if resp := post("/api/setup", map[string]string{"password": "a-strong-password", "code": strings.ToLower(code)}); resp.StatusCode != 200 {
 		t.Fatalf("setup: %d", resp.StatusCode)
 	}
 	if resp, _ := client.Get(ts.URL + "/api/devices"); resp.StatusCode != 200 {

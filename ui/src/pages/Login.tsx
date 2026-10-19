@@ -11,6 +11,8 @@ export default function Login({
   setupDone: boolean
   onSuccess: () => void
 }) {
+  // Installers print a link with ?setup=CODE so the one-time code fills itself.
+  const [code, setCode] = useState(() => new URLSearchParams(location.search).get('setup') ?? '')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
@@ -26,10 +28,12 @@ export default function Login({
     }
     setBusy(true)
     try {
-      await api.post(setupDone ? '/api/login' : '/api/setup', { password })
+      await api.post(setupDone ? '/api/login' : '/api/setup', setupDone ? { password } : { password, code })
+      if (!setupDone) history.replaceState(null, '', location.pathname)
       onSuccess()
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setError('Incorrect password. Try again.')
+      else if (err instanceof ApiError && err.status === 403) setError('That setup code isn’t right. It’s in the installer output and the hub’s log.')
       else setError(err instanceof ApiError ? err.message : 'Couldn’t reach your hub. Try again.')
     } finally {
       setBusy(false)
@@ -49,13 +53,22 @@ export default function Login({
             {setupDone ? 'Enter your password to continue.' : 'Choose the administrator password for this hub.'}
           </p>
           <form onSubmit={submit} aria-busy={busy}>
+            {!setupDone && (
+              <div className="login-field">
+                <label htmlFor="setup-code">Setup code</label>
+                <div className="login-input">
+                  <input id="setup-code" name="setup-code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="ABCDE-23456" autoComplete="one-time-code" autoCapitalize="characters" spellCheck={false} required disabled={busy} style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.04em' }} />
+                </div>
+                <p className="login-help">Shown by the installer and in the hub’s log. It keeps anyone else on your network from claiming this hub first.</p>
+              </div>
+            )}
             <PasswordField
               id="password"
               label="Password"
               value={password}
               onChange={setPassword}
               autoComplete={setupDone ? 'current-password' : 'new-password'}
-              autoFocus
+              autoFocus={setupDone || !!code}
               minLength={setupDone ? undefined : 8}
               disabled={busy}
             />

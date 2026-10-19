@@ -625,6 +625,7 @@ a.settings-row:hover, button.settings-row:hover { background: var(--bg-subtle); 
 .login-input input:disabled { opacity: .6; }
 .login-input > button { display: grid; place-items: center; align-self: stretch; width: 40px; flex-shrink: 0; color: #9a9a9a; border-radius: 7px; }
 .login-input > button:hover { color: #333; }
+.login-help { margin-top: 6px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .login-error { margin: 12px 0 0; color: var(--color-danger); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .login-submit { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 42px; margin-top: 20px; border: 1px solid var(--bg-inverse); border-radius: 8px; background: var(--bg-inverse); color: #fff; font-size: 13px; font-weight: 500; }
 .login-submit:hover { background: var(--bg-inverse-hover); }

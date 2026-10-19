@@ -109,6 +109,8 @@ done
 chmod +x "$MOCK_BIN"/*
 
 export PATH="$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
+# The mocked curl cannot reach a hub, so skip the post-install health wait.
+export OVERSEER_WAIT_SECONDS=0
 export INSTALLER_FIXTURE_ARCHIVE="$FIXTURE_ARCHIVE"
 export INSTALLER_FAKE_BINARY="$FAKE_BINARY"
 
@@ -151,8 +153,10 @@ run_macos() {
   [ -f "$plist" ]
   grep -q 'ProgramArguments' "$plist"
   grep -q '&amp;' "$plist"
+  grep -q '<key>PATH</key>' "$plist"
   OVERSEER_DATA_DIR="$data" OVERSEER_BIN_DIR="$bindir" OVERSEER_LAUNCH_AGENT_DIR="$agents" sh "$ROOT/scripts/install-macos.sh" uninstall >/dev/null
   [ ! -e "$bindir/overseer" ]
+  [ -z "${INSTALLER_SHOW_OUTPUT:-}" ] || printf '%s\n' "$output"
   printf '%s\n' 'installer-macos: ok (release 404 -> source fallback -> escaped launchd -> uninstall)'
 }
 

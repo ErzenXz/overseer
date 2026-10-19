@@ -33,7 +33,7 @@ const QA: { q: string; a: ReactNode }[] = [
   },
   {
     q: "How is it updated?",
-    a: "Installed hubs check for stable releases every six hours and update themselves by default, and device agents follow the hub's version. Every download is verified against its checksum, and the previous version is kept for one-click rollback.",
+    a: "Installed hubs check for stable releases every six hours and update themselves by default, and device agents follow the hub's version. Every download is verified against its checksum, the previous version is kept for one-click rollback, and a version that keeps crashing after an update is rolled back automatically.",
   },
   {
     q: "What does it cost?",
