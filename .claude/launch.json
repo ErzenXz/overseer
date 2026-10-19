@@ -2,15 +2,46 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "ui",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
+      "port": 5173
+    },
+    {
       "name": "overseer-hub",
-      "runtimeExecutable": "./overseer",
-      "runtimeArgs": ["serve", "--addr", ":4200", "--data-dir", "/tmp/overseer-dev-data"],
+      "runtimeExecutable": "go",
+      "runtimeArgs": [
+        "run",
+        "./cmd/overseer",
+        "serve",
+        "--addr",
+        ":4200",
+        "--data-dir",
+        "/tmp/overseer-dev-data"
+      ],
       "port": 4200
     },
     {
       "name": "site",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "site", "run", "dev", "--", "--port", "5180"],
+      "runtimeArgs": [
+        "--prefix",
+        "site",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5180"
+      ],
       "port": 5180
     }
   ]

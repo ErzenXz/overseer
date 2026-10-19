@@ -146,17 +146,33 @@ reattachable sessions. Windows uses the native ConPTY API for fully interactive
 PowerShell and coding-agent terminals; those sessions are live but not yet
 reattachable after a disconnect.
 
-### 3. Launch an agent
+### 3. Start a session
 
-Open a device, hit **Launch agent**, pick Claude Code / Codex / a shell, choose
-a working directory, go. Watch it — and every other agent across your fleet —
-on the **Agents** page.
+Click **New session**, type what you want, pick the machine, folder and agent,
+and press Enter. You get a chat with the agent: its steps fold into
+“Worked for 2m 10s”, edits show as diffs, and when it wants to run something
+you approve or reject it right there. Sessions keep running when you close the
+tab.
 
-Or open **Code**, add a project, choose the machine and absolute working
-directory, then sign in from the embedded fx terminal. The fx login, prompt
-history, and saved sessions stay in that browser profile; commands execute on
-the selected project machine through the authenticated hub. Embedded fx needs
-Chrome or Edge 137+ with WebAssembly JSPI support.
+- **Claude Code** and **Codex** are driven through their own machine
+  protocols (`claude --print` stream-json and `codex app-server`).
+- **Gemini CLI, OpenCode, Goose, Copilot CLI, Cursor Agent** — or any other
+  agent — run over the [Agent Client Protocol](https://agentclientprotocol.com).
+- Open the panel on the right of a session for its **Shell**, the machine's
+  **Desktop**, **Files**, **Changes** and **Plan**.
+
+**Remote desktop.** Every machine has a **Desktop** tab. Overseer tunnels the
+machine's own VNC server through the agent connection, so it is never exposed
+to the network. Turn it on with *System Settings → General → Sharing → Screen
+Sharing* on macOS, `x11vnc -localhost -forever` or `wayvnc` on Linux, or a VNC
+server such as TightVNC on Windows.
+
+**Automations** run a prompt on a schedule (cron), and **Customize** holds MCP
+servers that every agent gets on every machine. **Review** lists your open pull
+requests using the GitHub CLI on one of your machines.
+
+The **Projects** page still embeds fx: add a project, choose the machine and
+folder, then sign in from the embedded fx terminal (Chrome or Edge 137+).
 
 ### 4. Prepare coding tools and private access
 
@@ -305,6 +321,8 @@ go run ./cmd/overseer serve
 
 # Terminal 2: UI with hot reload (proxies /api to :4200)
 cd ui && npm install && npm run dev
+# The dev UI starts on demo data. To use the real hub, run this in the
+# browser console and reload:  localStorage.setItem('overseer:mock', 'off')
 
 make test        # go vet + unit + integration tests (some need tmux)
 make cross       # cross-compile darwin/linux/windows × amd64/arm64 into dist/
@@ -313,6 +331,8 @@ make cross       # cross-compile darwin/linux/windows × amd64/arm64 into dist/
 Project layout: `cmd/overseer` (entrypoint + subcommands), `internal/protocol`
 (wire format), `internal/hub` (server), `internal/agent` (device side),
 `internal/fleet` (API client), `internal/mcp` (MCP server), `ui` (React app).
+The sessions, desktop, automations and MCP APIs are described in
+[`docs/agent-sessions-api.md`](docs/agent-sessions-api.md).
 
 ## Status & roadmap
 

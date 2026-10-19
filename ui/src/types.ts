@@ -127,7 +127,122 @@ export interface FsListing {
 }
 
 export interface HubEvent {
-  type: 'device.online' | 'device.offline' | 'device.stats' | 'sessions.changed'
+  type: 'device.online' | 'device.offline' | 'device.stats' | 'sessions.changed' | 'threads.changed'
   deviceId?: string
   stats?: Stats
+}
+
+// ---- Agent threads (see docs/agent-sessions-api.md) ----
+
+export type Access = 'ask' | 'edits' | 'auto' | 'full'
+export type ThreadStatus = 'starting' | 'working' | 'waiting' | 'idle' | 'error' | 'stopped'
+
+export interface PullRequestRef {
+  url: string
+  number: number
+  state: 'open' | 'merged' | 'closed' | 'draft'
+  checks?: 'passing' | 'failing' | 'pending'
+}
+
+export interface Thread {
+  id: string
+  title: string
+  deviceId: string
+  deviceName: string
+  agent: string
+  command?: string
+  cwd: string
+  model?: string
+  access: Access
+  status: ThreadStatus
+  error?: string
+  createdAt: number
+  updatedAt: number
+  lastReadAt: number
+  terminal?: string
+  pr?: PullRequestRef
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number }
+  automationId?: string
+}
+
+export interface ToolFile {
+  path: string
+  additions?: number
+  deletions?: number
+  diff?: string
+}
+
+export interface ThreadMessage {
+  id: string
+  seq: number
+  at: number
+  updatedAt: number
+  role: 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'approval' | 'error' | 'status'
+  text: string
+  turn?: string
+  tool?: {
+    name: string
+    title: string
+    status: 'running' | 'completed' | 'error'
+    input?: string
+    output?: string
+    files?: ToolFile[]
+  }
+  plan?: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
+  approval?: {
+    id: string
+    title: string
+    detail?: string
+    options: { id: string; label: string; kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' }[]
+    resolved?: string
+  }
+  durationMs?: number
+}
+
+export interface AgentKind {
+  id: string
+  name: string
+  protocol: 'native' | 'acp'
+  models?: string[]
+}
+
+export interface DeviceAgent {
+  id: string
+  installed: boolean
+  version?: string
+}
+
+export interface DesktopInfo {
+  available: boolean
+  port: number
+  reason?: string
+}
+
+export interface McpServer {
+  id: string
+  name: string
+  transport: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
+  enabled: boolean
+  builtin?: boolean
+}
+
+export interface Automation {
+  id: string
+  name: string
+  prompt: string
+  deviceId: string
+  agent: string
+  cwd: string
+  access: Access
+  schedule: string
+  enabled: boolean
+  createdAt: number
+  lastRunAt?: number
+  lastThreadId?: string
+  nextRunAt?: number
 }

@@ -56,29 +56,31 @@ export default function CodingPage() {
       await api.del(`/api/projects/${project.id}`)
       window.dispatchEvent(new Event('liveagent:projects-changed'))
       setProjects((items) => items.filter((item) => item.id !== project.id))
-      navigate('/code')
+      navigate('/projects')
     } catch { setError('Could not remove the project. Please try again.') }
   }
 
   if (!projectId) {
     return (
-      <div className="page-shell">
-        <header className="page-heading"><div><h1>Projects</h1><p>Your code, organized by workspace.</p></div><button onClick={() => { setEditing(undefined); setShowModal(true) }} className="btn-primary"><Icon name="plus" size={16} />New project</button></header>
+      <div className="main-scroll"><div className="page">
+        <h1 className="page-title">Projects</h1>
+        <p className="page-sub">Folders on your machines, with a browser workspace and one-click agent sessions</p>
+        <div className="page-toolbar mb-8"><span className="grow" /><button onClick={() => { setEditing(undefined); setShowModal(true) }} className="btn btn-dark"><Icon name="plus" size={16} />New project</button></div>
         {error && <div className="error-banner" role="alert">{error}<button onClick={load}>Retry</button></div>}
-        {!loaded ? <p className="text-sm text-muted">{error ? 'Projects unavailable.' : 'Loading projects…'}</p> : projects.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="code" size={26} /></span><h2>No projects yet</h2><p>Open a directory on a connected machine to start a project.</p><button onClick={() => setShowModal(true)} className="btn-primary"><Icon name="plus" size={16} />New project</button><span className="mt-5 text-[11px] text-muted">Powered by fx · Runs in your browser</span></div> : <div className="project-grid">{projects.map((item) => { const machine = devices.find((d) => d.id === item.deviceId); return <Link key={item.id} to={`/code/${item.id}`} className="surface project-card"><div className="flex items-center justify-between text-muted"><Icon name="folder" size={23} /><Icon name="arrow" size={16} /></div><h2>{item.name}</h2><p className="truncate font-mono text-[11px] text-muted">{item.path}</p><p className="mt-6 flex items-center gap-2 text-xs text-muted"><span className={`node-dot ${machine?.online ? 'node-dot-online' : ''}`} />{machine?.name ?? 'Unknown machine'}</p></Link> })}</div>}
+        {!loaded ? <p className="text-sm text-muted">{error ? 'Projects unavailable.' : 'Loading projects…'}</p> : projects.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="code" size={26} /></span><h2>No projects yet</h2><p>Open a directory on a connected machine to start a project.</p><button onClick={() => setShowModal(true)} className="btn-primary"><Icon name="plus" size={16} />New project</button><span className="mt-5 text-[11px] text-muted">Powered by fx · Runs in your browser</span></div> : <div className="grid-cards">{projects.map((item) => { const machine = devices.find((d) => d.id === item.deviceId); return <div key={item.id} className="tpl-card"><Link to={`/projects/${item.id}`} className="tpl-card-title hover:underline"><Icon name="folder" size={19} className="text-muted" />{item.name}</Link><p className="tpl-card-desc font-mono text-[13px]">{item.path}</p><div className="tpl-card-tags items-center"><span className="chip"><span className={`dot ${machine?.online ? 'dot-green' : ''}`} />{machine?.name ?? 'Unknown machine'}</span><span className="flex-1" /><Link to={`/?device=${item.deviceId}&cwd=${encodeURIComponent(item.path)}`} className="btn btn-sm btn-outline">New session</Link><Link to={`/projects/${item.id}`} className="btn btn-sm btn-ghost">Open</Link></div></div> })}</div>}
         {showModal && (
           <ProjectModal
             devices={devices}
             onClose={() => setShowModal(false)}
-            onSaved={(saved) => { setShowModal(false); setProjects((items) => [...items, saved]); navigate(`/code/${saved.id}`) }}
+            onSaved={(saved) => { setShowModal(false); setProjects((items) => [...items, saved]); navigate(`/projects/${saved.id}`) }}
           />
         )}
-      </div>
+      </div></div>
     )
   }
 
   if (!project) {
-    return <div className="page-shell"><div className="empty-state"><h2>{error || (loaded ? 'Project not found' : 'Loading workspace…')}</h2><Link to="/code" className="btn-secondary">Back to projects</Link></div></div>
+    return <div className="page-shell"><div className="empty-state"><h2>{error || (loaded ? 'Project not found' : 'Loading workspace…')}</h2><Link to="/projects" className="btn-secondary">Back to projects</Link></div></div>
   }
 
   return (
@@ -128,7 +130,7 @@ export default function CodingPage() {
           onSaved={(saved) => {
             setShowModal(false)
             setProjects((current) => current.map((item) => item.id === saved.id ? saved : item))
-            navigate(`/code/${saved.id}`)
+            navigate(`/projects/${saved.id}`)
           }}
         />
       )}
