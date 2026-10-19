@@ -6,7 +6,7 @@ import AddDeviceModal from '../components/AddDeviceModal'
 import Icon from '../components/Icon'
 import { Menu, MenuItem, MenuSeparator } from '../components/Menu'
 import { devicesResource, terminalsResource, useDevices, useTerminals, useThreads } from '../store'
-import type { Device } from '../types'
+import { metricMissing, type Device } from '../types'
 import SetupPage from './SetupPage'
 
 type Tab = 'machines' | 'terminals' | 'setup'
@@ -14,7 +14,9 @@ type Tab = 'machines' | 'terminals' | 'setup'
 export function osLabel(device: Device) {
   const names: Record<string, string> = { darwin: 'macOS', linux: 'Linux', windows: 'Windows' }
   const platform = device.platform && device.platform !== device.os ? device.platform : names[device.os] ?? device.os
-  return [platform.charAt(0).toUpperCase() + platform.slice(1), device.platformVersion].filter(Boolean).join(' ')
+  // Agents report e.g. "ubuntu"; keep names that already have casing ("macOS").
+  const label = platform === platform.toLowerCase() ? platform.charAt(0).toUpperCase() + platform.slice(1) : platform
+  return [label, device.platformVersion].filter(Boolean).join(' ')
 }
 
 export function pct(used = 0, total = 0) {
@@ -106,9 +108,9 @@ export default function MachinesPage() {
                     </div>
                     {device.online && s ? (
                       <div className="machine-row-stats">
-                        <Stat label="CPU" value={cpu} />
-                        <Stat label="Memory" value={mem} />
-                        <Stat label="Disk" value={disk} detail={`${formatBytes((s.diskTotal ?? 0) - (s.diskUsed ?? 0))} free`} />
+                        <Stat label="CPU" value={metricMissing(s, 'cpu') ? null : cpu} />
+                        <Stat label="Memory" value={metricMissing(s, 'memory') || !s.memTotal ? null : mem} />
+                        <Stat label="Disk" value={metricMissing(s, 'disk') || !s.diskTotal ? null : disk} detail={`${formatBytes((s.diskTotal ?? 0) - (s.diskUsed ?? 0))} free`} />
                       </div>
                     ) : <span className="machine-row-stats" />}
                     <Icon name="chevron" size={16} className="text-faint" />
@@ -151,11 +153,12 @@ export default function MachinesPage() {
   )
 }
 
-function Stat({ label, value, detail }: { label: string; value: number; detail?: string }) {
+// Stat shows one usage meter; null means the agent couldn't collect it.
+function Stat({ label, value, detail }: { label: string; value: number | null; detail?: string }) {
   return (
-    <div className="stat" title={detail}>
-      <div className="stat-label"><span>{label}</span><span className="data-number">{value}%</span></div>
-      <div className={`meter ${value > 90 ? 'meter-bad' : value > 75 ? 'meter-warn' : ''}`}><span style={{ width: `${Math.min(100, value)}%` }} /></div>
+    <div className="stat" title={value === null ? `${label} unavailable` : detail}>
+      <div className="stat-label"><span>{label}</span><span className="data-number">{value === null ? '—' : `${value}%`}</span></div>
+      <div className={`meter ${value !== null && value > 90 ? 'meter-bad' : value !== null && value > 75 ? 'meter-warn' : ''}`}><span style={{ width: `${Math.min(100, value ?? 0)}%` }} /></div>
     </div>
   )
 }

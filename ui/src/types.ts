@@ -14,6 +14,8 @@ export interface Stats {
   netTxBytes: number
   processCount: number
   uptimeSec: number
+  // Metrics the agent could not collect in this snapshot (newer agents only).
+  unavailable?: ('cpu' | 'load' | 'memory' | 'swap' | 'disk' | 'uptime' | 'network' | 'processes')[]
 }
 
 export interface Device {
@@ -245,4 +247,8 @@ export interface Automation {
   lastRunAt?: number
   lastThreadId?: string
   nextRunAt?: number
+}
+
+export function metricMissing(stats: Stats | undefined, metric: NonNullable<Stats['unavailable']>[number]) {
+  return !stats || !!stats.unavailable?.includes(metric)
 }

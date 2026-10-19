@@ -22,11 +22,12 @@ func TestListDevicesCapacity(t *testing.T) {
 				{"id":"empty","name":"Empty","os":"windows","online":true,"stats":{"cpuCores":4}},
 				{"id":"missing","name":"Starting","online":true,"tmux":true},
 				{"id":"failed","name":"Unreachable","online":true,"tmux":true},
-				{"id":"offline","name":"Offline","online":false,"stats":{"cpuPercent":99}}
+				{"id":"offline","name":"Offline","online":false,"stats":{"cpuPercent":99}},
+				{"id":"partial","name":"Partial","os":"linux","online":true,"tmux":true,"stats":{"cpuCores":2,"memUsed":5,"memTotal":10,"unavailable":["cpu","load"]}}
 			]`))
 		case "/api/devices/busy/sessions":
 			w.Write([]byte(`[{"name":"a","status":"working","kind":"claude"},{"name":"b","status":"idle","kind":"shell"},{"name":"c","status":"exited"},{"name":"d","status":"unknown"}]`))
-		case "/api/devices/empty/sessions", "/api/devices/missing/sessions":
+		case "/api/devices/empty/sessions", "/api/devices/missing/sessions", "/api/devices/partial/sessions":
 			w.Write([]byte(`[]`))
 		case "/api/devices/failed/sessions":
 			http.Error(w, `{"error":"device not responding"}`, http.StatusBadGateway)
@@ -63,6 +64,8 @@ func TestListDevicesCapacity(t *testing.T) {
 		"Unreachable — id failed, /, online\n  CPU / RAM / load: unavailable\n  Sessions: unavailable",
 		"Offline — id offline, /, offline\n  CPU / RAM / load: unavailable\n  Sessions: unavailable",
 		"(no tmux: sessions won't persist)",
+		// A metric the agent reports as uncollected is never shown as a zero.
+		"Partial — id partial, linux/, online\n  CPU: unavailable (2 cores)\n  RAM 50.0% (5 / 10 bytes)\n  Load: unavailable\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)

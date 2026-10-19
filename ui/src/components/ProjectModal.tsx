@@ -21,6 +21,9 @@ export default function ProjectModal({
   const [path, setPath] = useState(project?.path ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // One id per dialog: if a create times out and the user retries, the hub
+  // sees the same id and returns the project it already made.
+  const [requestId] = useState(() => Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) => byte.toString(16).padStart(2, '0')).join(''))
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
@@ -31,7 +34,7 @@ export default function ProjectModal({
       const body = { name: name.trim(), deviceId, path: path.trim() }
       const saved = project
         ? await api.patch<Project>(`/api/projects/${project.id}`, body)
-        : await api.post<Project>('/api/projects', body)
+        : await api.post<Project>('/api/projects', { ...body, requestId })
       window.dispatchEvent(new Event('liveagent:projects-changed'))
       onSaved(saved)
     } catch (cause) {

@@ -298,14 +298,29 @@ type Project struct {
 }
 
 func (s *Store) CreateProject(name, deviceId, path string) (*Project, error) {
-	now := time.Now().Unix()
-	p := &Project{
-		Id: randomToken()[:16], Name: name, DeviceId: deviceId, Path: path,
-		CreatedAt: now, UpdatedAt: now,
-	}
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, device_id, path, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, p.Id, p.Name, p.DeviceId, p.Path, p.CreatedAt, p.UpdatedAt)
+	p, _, err := s.CreateProjectWithId(randomToken()[:16], name, deviceId, path)
 	return p, err
+}
+
+// CreateProjectWithId inserts a project under a caller-chosen id. If that id
+// already exists (a retried request whose first response was lost), it
+// returns the stored project unchanged with created=false.
+func (s *Store) CreateProjectWithId(id, name, deviceId, path string) (p *Project, created bool, err error) {
+	now := time.Now().Unix()
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO projects (id, name, device_id, path, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, id, name, deviceId, path, now, now)
+	if err != nil {
+		return nil, false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, false, err
+	}
+	p, err = s.ProjectById(id)
+	if err == nil && p == nil {
+		err = fmt.Errorf("project %s vanished after insert", id)
+	}
+	return p, n == 1, err
 }
 
 func (s *Store) ProjectById(id string) (*Project, error) {

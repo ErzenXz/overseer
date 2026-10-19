@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import FxTerminal from '../components/FxTerminal'
@@ -10,7 +10,15 @@ import Icon from '../components/Icon'
 export default function CodingPage() {
   const { projectId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [projects, setProjects] = useState<Project[]>([])
+  const [projects, setProjectsState] = useState<Project[]>([])
+  // Polls, hub events and local edits race; a response may only apply if no
+  // newer request started and no local edit happened while it was in flight.
+  const requestSeq = useRef(0)
+  const editSeq = useRef(0)
+  const setProjects = useCallback((update: Project[] | ((items: Project[]) => Project[])) => {
+    editSeq.current++
+    setProjectsState(update)
+  }, [])
   const [devices, setDevices] = useState<Device[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState('')
@@ -20,17 +28,20 @@ export default function CodingPage() {
   const navigate = useNavigate()
 
   const load = useCallback(async () => {
+    const request = ++requestSeq.current
+    const edits = editSeq.current
     try {
       const [nextProjects, nextDevices] = await Promise.all([
         api.get<Project[]>('/api/projects'),
         api.get<Device[]>('/api/devices'),
       ])
-      setProjects(nextProjects)
+      if (request !== requestSeq.current) return
       setDevices(nextDevices)
+      if (edits === editSeq.current) setProjectsState(nextProjects)
       setLoaded(true)
       setError('')
     } catch {
-      setError('Unable to load projects. Please try again.')
+      if (request === requestSeq.current) setError('Unable to load projects. Please try again.')
     }
   }, [])
 
@@ -72,7 +83,7 @@ export default function CodingPage() {
           <ProjectModal
             devices={devices}
             onClose={() => setShowModal(false)}
-            onSaved={(saved) => { setShowModal(false); setProjects((items) => [...items, saved]); navigate(`/projects/${saved.id}`) }}
+            onSaved={(saved) => { setShowModal(false); setProjects((items) => [...items.filter((item) => item.id !== saved.id), saved]); navigate(`/projects/${saved.id}`) }}
           />
         )}
       </div></div>

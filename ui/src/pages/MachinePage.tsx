@@ -10,7 +10,7 @@ import Terminal from '../components/Terminal'
 import VncViewer from '../components/VncViewer'
 import { SidebarToggle, useOwnHeader, useShell } from '../shell'
 import { devicesResource, terminalsResource, useDevices, useTerminals, useThreads } from '../store'
-import type { Device } from '../types'
+import { metricMissing, type Device } from '../types'
 import { osLabel, pct } from './MachinesPage'
 
 type Tab = 'overview' | 'desktop' | 'terminal' | 'files' | 'agents'
@@ -108,10 +108,10 @@ function Overview({ device, onTab }: { device: Device; onTab: (tab: Tab) => void
         </div>
         {device.online && s ? (
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card label="CPU" value={`${Math.round(s.cpuPercent)}%`} detail={`${s.cpuCores} cores · load ${s.load1.toFixed(2)}`} pctValue={s.cpuPercent} />
-            <Card label="Memory" value={formatBytes(s.memUsed)} detail={`of ${formatBytes(s.memTotal)}`} pctValue={pct(s.memUsed, s.memTotal)} />
-            <Card label="Disk free" value={formatBytes(s.diskTotal - s.diskUsed)} detail={`of ${formatBytes(s.diskTotal)}`} pctValue={pct(s.diskUsed, s.diskTotal)} />
-            <Card label="Uptime" value={`${Math.floor(s.uptimeSec / 86400)}d ${Math.floor((s.uptimeSec % 86400) / 3600)}h`} detail={`${s.processCount} processes`} />
+            <Card label="CPU" value={metricMissing(s, 'cpu') ? '—' : `${Math.round(s.cpuPercent)}%`} detail={`${s.cpuCores} cores · load ${metricMissing(s, 'load') ? 'unavailable' : s.load1.toFixed(2)}`} pctValue={metricMissing(s, 'cpu') ? undefined : s.cpuPercent} />
+            <Card label="Memory" value={metricMissing(s, 'memory') || !s.memTotal ? '—' : formatBytes(s.memUsed)} detail={metricMissing(s, 'memory') || !s.memTotal ? 'unavailable' : `of ${formatBytes(s.memTotal)}`} pctValue={metricMissing(s, 'memory') || !s.memTotal ? undefined : pct(s.memUsed, s.memTotal)} />
+            <Card label="Disk free" value={metricMissing(s, 'disk') || !s.diskTotal ? '—' : formatBytes(s.diskTotal - s.diskUsed)} detail={metricMissing(s, 'disk') || !s.diskTotal ? 'unavailable' : `of ${formatBytes(s.diskTotal)}`} pctValue={metricMissing(s, 'disk') || !s.diskTotal ? undefined : pct(s.diskUsed, s.diskTotal)} />
+            <Card label="Uptime" value={metricMissing(s, 'uptime') ? '—' : `${Math.floor(s.uptimeSec / 86400)}d ${Math.floor((s.uptimeSec % 86400) / 3600)}h`} detail={metricMissing(s, 'processes') ? 'processes unavailable' : `${s.processCount} processes`} />
           </div>
         ) : !device.online ? (
           <div className="callout mt-8" style={{ borderLeftColor: 'var(--text-4)' }}><div><div className="callout-title">Offline</div><p className="callout-text">Last seen {relativeTime(device.lastSeen)}. Sessions on it resume when it reconnects.</p></div></div>

@@ -104,6 +104,32 @@ type Stats struct {
 	NetTxBytes   uint64  `json:"netTxBytes"`
 	ProcessCount uint64  `json:"processCount"`
 	UptimeSec    uint64  `json:"uptimeSec"`
+	// Unavailable names the metrics the agent could not collect this time
+	// (one of the Metric* constants), so a zero reading is never mistaken
+	// for a real one. Agents older than this field never send it.
+	Unavailable []string `json:"unavailable,omitempty"`
+}
+
+// Metric names used in Stats.Unavailable.
+const (
+	MetricCPU       = "cpu"
+	MetricLoad      = "load"
+	MetricMemory    = "memory"
+	MetricSwap      = "swap"
+	MetricDisk      = "disk"
+	MetricUptime    = "uptime"
+	MetricNetwork   = "network"
+	MetricProcesses = "processes"
+)
+
+// Missing reports whether metric was not collected in this snapshot.
+func (s *Stats) Missing(metric string) bool {
+	for _, m := range s.Unavailable {
+		if m == metric {
+			return true
+		}
+	}
+	return false
 }
 
 // Session describes one terminal session on a device.

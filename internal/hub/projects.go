@@ -14,6 +14,22 @@ type projectInput struct {
 	Name     string `json:"name"`
 	DeviceId string `json:"deviceId"`
 	Path     string `json:"path"`
+	// RequestId makes create idempotent: the client picks it once per create
+	// and resends it on retry, and it becomes the project's id.
+	RequestId string `json:"requestId,omitempty"`
+}
+
+// validRequestId accepts the ids clients may choose for new projects.
+func validRequestId(id string) bool {
+	if len(id) < 8 || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func cleanProjectInput(input projectInput) (projectInput, string) {
@@ -68,12 +84,22 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if !s.validateProjectDevice(w, input.DeviceId) {
 		return
 	}
-	project, err := s.store.CreateProject(input.Name, input.DeviceId, input.Path)
+	id := randomToken()[:16]
+	if input.RequestId != "" {
+		if !validRequestId(input.RequestId) {
+			httpError(w, http.StatusBadRequest, "requestId must be 8–64 letters, digits, - or _")
+			return
+		}
+		id = input.RequestId
+	}
+	project, created, err := s.store.CreateProjectWithId(id, input.Name, input.DeviceId, input.Path)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
+	if created {
+		w.WriteHeader(http.StatusCreated)
+	}
 	writeJSON(w, project)
 }
 

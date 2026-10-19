@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ErzenXz/overseer/internal/fleet"
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 const protocolVersion = "2024-11-05"
@@ -324,14 +325,20 @@ func callTool(client *fleet.Client, name string, rawArgs json.RawMessage) (strin
 				fmt.Fprintln(&b, "  CPU / RAM / load: unavailable")
 			} else {
 				s := d.Stats
-				fmt.Fprintf(&b, "  CPU %.1f%% (%d cores)\n", s.CPUPercent, s.CPUCores)
-				if s.MemTotal > 0 {
+				if s.Missing(protocol.MetricCPU) {
+					fmt.Fprintf(&b, "  CPU: unavailable (%d cores)\n", s.CPUCores)
+				} else {
+					fmt.Fprintf(&b, "  CPU %.1f%% (%d cores)\n", s.CPUPercent, s.CPUCores)
+				}
+				if s.MemTotal > 0 && !s.Missing(protocol.MetricMemory) {
 					fmt.Fprintf(&b, "  RAM %.1f%% (%d / %d bytes)\n", float64(s.MemUsed)/float64(s.MemTotal)*100, s.MemUsed, s.MemTotal)
 				} else {
 					fmt.Fprintln(&b, "  RAM: unavailable")
 				}
 				if strings.EqualFold(d.OS, "windows") {
 					fmt.Fprintln(&b, "  Load: unavailable on Windows")
+				} else if s.Missing(protocol.MetricLoad) {
+					fmt.Fprintln(&b, "  Load: unavailable")
 				} else {
 					fmt.Fprintf(&b, "  Load (1/5/15 min): %.2f / %.2f / %.2f\n", s.Load1, s.Load5, s.Load15)
 				}

@@ -17,15 +17,29 @@ function createResource<T>(path: string, intervalMs: number) {
     snapshot = { value, error }
     listeners.forEach((listener) => listener())
   }
-  const refresh = () => {
-    if (inflight) return inflight
+  // A response may only replace state that is no newer than its request:
+  // local updates bump `version`, and a refresh asked for while one is in
+  // flight runs again afterwards instead of reusing the older response.
+  let version = 0
+  let again = false
+  const refresh = (): Promise<void> => {
+    if (inflight) { again = true; return inflight }
+    const started = version
     inflight = api.get<T>(path)
-      .then((next) => { value = next; error = '' })
-      .catch((cause) => { error = cause instanceof Error ? cause.message : 'Request failed' })
-      .finally(() => { inflight = null; emit() })
+      .then((next) => {
+        if (version === started) { value = next; error = '' }
+        else again = true
+      })
+      .catch((cause) => { if (version === started) error = cause instanceof Error ? cause.message : 'Request failed' })
+      .finally(() => {
+        inflight = null
+        emit()
+        if (again) { again = false; refresh() }
+      })
     return inflight
   }
   const set = (updater: (current: T | null) => T | null) => {
+    version++
     value = updater(value)
     emit()
   }
