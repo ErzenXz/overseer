@@ -1,25 +1,32 @@
 import { Nav } from "./components/Nav";
 import { Hero } from "./components/Hero";
-import { Install } from "./components/Install";
-import { Capabilities } from "./components/Capabilities";
-import { FleetAgents } from "./components/FleetAgents";
+import { Agents } from "./components/Agents";
+import { Features } from "./components/Features";
 import { HowItWorks } from "./components/HowItWorks";
-import { Exposure } from "./components/Exposure";
-import { OverseerCode } from "./components/OverseerCode";
-import { Footer } from "./components/Footer";
+import { Security } from "./components/Security";
+import { Install } from "./components/Install";
+import { FAQ } from "./components/FAQ";
+import { ClosingCTA, Footer } from "./components/Footer";
 
 export default function App() {
   return (
     <>
+      <a
+        href="#main"
+        className="sr-only z-[60] rounded-lg bg-inverse px-4 py-2 text-on-inverse focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      >
+        Skip to content
+      </a>
       <Nav />
-      <main>
+      <main id="main">
         <Hero />
-        <Install />
-        <Capabilities />
-        <FleetAgents />
+        <Agents />
+        <Features />
         <HowItWorks />
-        <Exposure />
-        <OverseerCode />
+        <Security />
+        <Install />
+        <FAQ />
+        <ClosingCTA />
       </main>
       <Footer />
     </>
