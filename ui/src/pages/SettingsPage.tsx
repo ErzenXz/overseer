@@ -6,7 +6,7 @@ import type { ApiTokenInfo, Preset, UpdateStatus } from '../types'
 export default function SettingsPage() {
   return (
     <div className="page-shell max-w-4xl">
-      <header className="page-heading"><div><p className="eyebrow">Make it yours</p><h1>Settings</h1><p>Manage your hub, integrations, and agent presets.</p></div></header>
+      <header className="page-heading"><div><h1>Settings</h1><p>Hub preferences, integrations, and session presets.</p></div></header>
       <SoftwareUpdates />
       <ApiTokens />
       <Presets />
@@ -18,7 +18,7 @@ export default function SettingsPage() {
 const cardClass =
   'surface mb-5 rounded-2xl p-6'
 const inputClass =
-  'rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-lime-500'
+  'rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-accent'
 
 function SoftwareUpdates() {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
@@ -69,44 +69,44 @@ function SoftwareUpdates() {
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-medium text-zinc-100">Software updates</h2>
-            {status?.updateAvailable && <span className="rounded-full bg-lime-400/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-lime-300">Update ready</span>}
+            <h2 className="text-lg font-medium text-ink">Software updates</h2>
+            {status?.updateAvailable && <span className="rounded-full bg-accent/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-accent">Update ready</span>}
           </div>
-          <p className="max-w-xl text-sm leading-6 text-zinc-400">
+          <p className="max-w-xl text-sm leading-6 text-muted">
             Stable releases are checksum-verified, tested before replacement, and keep one previous version ready for rollback.
           </p>
         </div>
-        <label className="flex shrink-0 items-center gap-3 text-sm text-zinc-300">
+        <label className="flex shrink-0 items-center gap-3 text-sm text-secondary">
           <span>Auto-update</span>
           <input
             type="checkbox"
             checked={status?.autoUpdate ?? true}
             disabled={!status?.managed}
             onChange={(event) => setAuto(event.target.checked)}
-            className="h-4 w-4 accent-lime-400"
+            className="h-4 w-4 accent-accent"
           />
         </label>
       </div>
 
-      <div className="mt-5 grid gap-px overflow-hidden rounded-xl border border-zinc-800 bg-zinc-800 sm:grid-cols-3">
-        <div className="bg-zinc-950/70 p-4"><p className="eyebrow">Installed</p><p className="mt-2 font-mono text-sm text-zinc-200">{status?.currentVersion || 'Loading…'}</p></div>
-        <div className="bg-zinc-950/70 p-4"><p className="eyebrow">Stable release</p><p className="mt-2 font-mono text-sm text-zinc-200">{status?.latestVersion || 'Not checked'}</p></div>
-        <div className="bg-zinc-950/70 p-4"><p className="eyebrow">Device fleet</p><p className="mt-2 text-sm text-zinc-200">{status ? `${status.fleetTotal - status.fleetOutdated}/${status.fleetTotal} current` : 'Loading…'}</p></div>
+      <div className="mt-5 grid gap-px overflow-hidden rounded-xl border border-line bg-tint sm:grid-cols-3">
+        <div className="bg-canvas/70 p-4"><p className="eyebrow">Installed</p><p className="mt-2 font-mono text-sm text-ink">{status?.currentVersion || 'Loading…'}</p></div>
+        <div className="bg-canvas/70 p-4"><p className="eyebrow">Stable release</p><p className="mt-2 font-mono text-sm text-ink">{status?.latestVersion || 'Not checked'}</p></div>
+        <div className="bg-canvas/70 p-4"><p className="eyebrow">Device fleet</p><p className="mt-2 text-sm text-ink">{status ? `${status.fleetTotal - status.fleetOutdated}/${status.fleetTotal} current` : 'Loading…'}</p></div>
       </div>
 
       {!status?.managed && status && (
-        <p className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-200/80">
+        <p className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-warning">
           This is a standalone/debug run. It can check releases, but automatic replacement is enabled after installing Overseer as a background service. You can also run <code className="font-mono">overseer update</code> manually.
         </p>
       )}
-      {(message || status?.error) && <p className="mt-4 text-xs leading-5 text-zinc-400">{message || status?.error}</p>}
+      {(message || status?.error) && <p className="mt-4 text-xs leading-5 text-muted">{message || status?.error}</p>}
 
       <div className="mt-5 flex flex-wrap gap-2">
         <button className="btn-secondary" disabled={!!busy} onClick={() => run('check')}>{busy === 'check' ? 'Checking…' : 'Check now'}</button>
         {status?.updateAvailable && status.managed && <button className="btn-primary" disabled={!!busy} onClick={() => run('install')}>{busy === 'install' ? 'Installing…' : `Install ${status.latestVersion}`}</button>}
         {status?.rollbackVersion && status.managed && <button className="btn-secondary" disabled={!!busy} onClick={() => run('rollback')}>Restore {status.rollbackVersion}</button>}
       </div>
-      {status?.lastChecked ? <p className="mt-3 text-[11px] text-zinc-600">Last checked {timeAgo(status.lastChecked)} · managed agents retry automatically and update to the hub release.</p> : null}
+      {status?.lastChecked ? <p className="mt-3 text-[11px] text-muted">Last checked {timeAgo(status.lastChecked)} · managed agents retry automatically and update to the hub release.</p> : null}
     </section>
   )
 }
@@ -141,9 +141,9 @@ function ApiTokens() {
 
   return (
     <section className={cardClass}>
-      <h2 className="mb-1 text-lg font-medium text-zinc-100">API tokens</h2>
-      <p className="mb-4 text-sm text-zinc-400">
-        For the <code className="text-lime-300">overseer fleet</code> CLI and
+      <h2 className="mb-1 text-lg font-medium text-ink">API tokens</h2>
+      <p className="mb-4 text-sm text-muted">
+        For the <code className="text-accent">overseer fleet</code> CLI and
         the MCP server — this is how your coding agents get hands on the fleet.
       </p>
       <form onSubmit={create} className="mb-4 flex flex-col gap-2 sm:flex-row">
@@ -160,25 +160,25 @@ function ApiTokens() {
       </form>
       {fresh && (
         <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
-          <p className="mb-2 text-xs text-emerald-300">
+          <p className="mb-2 text-xs text-positive">
             Copy this now — it won't be shown again:
           </p>
-          <code className="block overflow-x-auto whitespace-nowrap font-mono text-[13px] text-emerald-200">
+          <code className="block overflow-x-auto whitespace-nowrap font-mono text-[13px] text-positive">
             {fresh}
           </code>
         </div>
       )}
-      <ul className="divide-y divide-zinc-800/60">
+      <ul className="divide-y divide-line/60">
         {tokens.map((t) => (
           <li key={t.id} className="flex items-center justify-between py-2">
-            <span className="text-sm text-zinc-200">{t.name}</span>
+            <span className="text-sm text-ink">{t.name}</span>
             <span className="flex items-center gap-4">
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-muted">
                 created {timeAgo(t.createdAt)}
               </span>
               <button
                 onClick={() => revoke(t.id)}
-                className="text-xs text-zinc-500 hover:text-rose-400"
+                className="text-xs text-muted hover:text-danger"
               >
                 Revoke
               </button>
@@ -186,7 +186,7 @@ function ApiTokens() {
           </li>
         ))}
         {tokens.length === 0 && (
-          <li className="py-2 text-sm text-zinc-500">No tokens yet.</li>
+          <li className="py-2 text-sm text-muted">No tokens yet.</li>
         )}
       </ul>
     </section>
@@ -222,10 +222,10 @@ function Presets() {
 
   return (
     <section className={cardClass}>
-      <h2 className="mb-1 text-lg font-medium text-zinc-100">
+      <h2 className="mb-1 text-lg font-medium text-ink">
         Launch presets
       </h2>
-      <p className="mb-4 text-sm text-zinc-400">
+      <p className="mb-4 text-sm text-muted">
         One-click commands in the Launch dialog. Add your favorite agents.
       </p>
       <form onSubmit={create} className="mb-4 flex flex-col gap-2 sm:flex-row">
@@ -246,17 +246,17 @@ function Presets() {
           Add
         </button>
       </form>
-      <ul className="divide-y divide-zinc-800/60">
+      <ul className="divide-y divide-line/60">
         {presets.map((p) => (
           <li key={p.id} className="flex items-center justify-between py-2">
-            <span className="text-sm text-zinc-200">{p.name}</span>
+            <span className="text-sm text-ink">{p.name}</span>
             <span className="flex items-center gap-4">
-              <code className="font-mono text-xs text-zinc-400">
+              <code className="font-mono text-xs text-muted">
                 {p.command || '(shell)'}
               </code>
               <button
                 onClick={() => remove(p.id)}
-                className="text-xs text-zinc-500 hover:text-rose-400"
+                className="text-xs text-muted hover:text-danger"
               >
                 Delete
               </button>
@@ -272,37 +272,37 @@ function McpHelp() {
   const origin = location.origin
   return (
     <section className={cardClass}>
-      <h2 className="mb-1 text-lg font-medium text-zinc-100">
+      <h2 className="mb-1 text-lg font-medium text-ink">
         Give an agent control of your fleet
       </h2>
-      <p className="mb-4 text-sm text-zinc-400">
+      <p className="mb-4 text-sm text-muted">
         Run a coding agent on any machine with the{' '}
-        <code className="text-lime-300">overseer</code> binary and an API token,
+        <code className="text-accent">overseer</code> binary and an API token,
         and it can see every device, launch worker agents, read their output,
         and steer them. For Claude Code:
       </p>
-      <pre className="overflow-x-auto rounded-lg border border-zinc-700 bg-zinc-950 p-4 font-mono text-[13px] leading-relaxed text-zinc-300">
+      <pre className="overflow-x-auto rounded-lg border border-line bg-canvas p-4 font-mono text-[13px] leading-relaxed text-secondary">
         {`overseer fleet login --hub ${origin} --token YOUR_API_TOKEN
 claude mcp add overseer -- overseer mcp`}
       </pre>
-      <p className="mt-3 text-xs text-zinc-500">
+      <p className="mt-3 text-xs text-muted">
         Then ask it things like “launch claude in ~/projects/api on the
         homelab box and have it fix the failing tests.”
       </p>
 
-      <div className="mt-6 border-t border-zinc-800 pt-5">
-        <h3 className="mb-1 text-sm font-medium text-zinc-100">
+      <div className="mt-6 border-t border-line pt-5">
+        <h3 className="mb-1 text-sm font-medium text-ink">
           Remote MCP (ChatGPT, Claude, Cursor)
         </h3>
-        <p className="mb-3 text-sm text-zinc-400">
+        <p className="mb-3 text-sm text-muted">
           Any client that supports remote MCP connectors can drive your fleet
           over HTTPS. Add this endpoint and paste an API token as the Bearer
           credential:
         </p>
-        <pre className="overflow-x-auto rounded-lg border border-zinc-700 bg-zinc-950 p-4 font-mono text-[13px] leading-relaxed text-zinc-300">
+        <pre className="overflow-x-auto rounded-lg border border-line bg-canvas p-4 font-mono text-[13px] leading-relaxed text-secondary">
           {`${origin.replace(/^http:/, 'https:')}/mcp`}
         </pre>
-        <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/8 p-3 text-xs text-amber-200/90">
+        <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/8 p-3 text-xs text-warning">
           ⚠️ This is a remote shell — the tools run commands and write files on
           your devices. Only expose it over HTTPS ({''}
           <code className="font-mono">--tls-domain</code> or a TLS proxy), and

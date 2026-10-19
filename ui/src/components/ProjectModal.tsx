@@ -60,12 +60,12 @@ export default function ProjectModal({
           <span className="field-label">Run on</span>
           <select value={deviceId} onChange={(event) => setDeviceId(event.target.value)} className="field-input mt-2">
             {devices.map((device) => (
-              <option key={device.id} value={device.id} className="bg-zinc-900">
+              <option key={device.id} value={device.id} className="bg-canvas">
                 {device.name} {device.online ? '· online' : '· offline'}
               </option>
             ))}
           </select>
-          <span className="mt-2 block text-xs text-zinc-600">fx sends commands only to this machine for this project.</span>
+          <span className="mt-2 block text-xs text-muted">fx sends commands only to this machine for this project.</span>
         </label>
 
         <label className="block">
@@ -78,9 +78,9 @@ export default function ProjectModal({
           />
         </label>
 
-        {error && <p className="rounded-lg border border-rose-400/20 bg-rose-400/[0.07] px-3 py-2 text-sm text-rose-200">{error}</p>}
+        {error && <p className="rounded-lg border border-rose-400/20 bg-rose-400/[0.07] px-3 py-2 text-sm text-danger">{error}</p>}
 
-        <div className="flex justify-end gap-2 border-t border-white/[0.07] pt-4">
+        <div className="flex justify-end gap-2 border-t border-line pt-4">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" disabled={saving || !name.trim() || !deviceId || !path.trim()} className="btn-primary">
             {saving ? 'Saving…' : project ? 'Save changes' : 'Add project'}

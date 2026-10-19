@@ -63,9 +63,9 @@ export default function CodingPage() {
   if (!projectId) {
     return (
       <div className="page-shell">
-        <header className="page-heading"><div><p className="eyebrow">A place for your work</p><h1>Projects</h1><p>Pick a project. Build on any machine in your fleet.</p></div><button onClick={() => { setEditing(undefined); setShowModal(true) }} className="btn-primary"><Icon name="plus" size={16} />New project</button></header>
+        <header className="page-heading"><div><h1>Projects</h1><p>Your code, organized by workspace.</p></div><button onClick={() => { setEditing(undefined); setShowModal(true) }} className="btn-primary"><Icon name="plus" size={16} />New project</button></header>
         {error && <div className="error-banner" role="alert">{error}<button onClick={load}>Retry</button></div>}
-        {!loaded ? <p className="text-sm text-zinc-500">{error ? 'Projects unavailable.' : 'Loading projects…'}</p> : projects.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="code" size={26} /></span><h2>A new home for your next idea</h2><p>Connect a directory on one of your machines. Your files stay there; your workspace comes with you.</p><button onClick={() => setShowModal(true)} className="btn-primary"><Icon name="plus" size={16} />Create your first project</button><span className="mt-5 text-[11px] text-zinc-500">Powered by fx · Runs in your browser</span></div> : <div className="project-grid">{projects.map((item) => { const machine = devices.find((d) => d.id === item.deviceId); return <Link key={item.id} to={`/code/${item.id}`} className="surface project-card"><div className="flex items-center justify-between text-zinc-400"><Icon name="folder" size={23} /><Icon name="arrow" size={16} /></div><h2>{item.name}</h2><p className="truncate font-mono text-[11px] text-zinc-500">{item.path}</p><p className="mt-6 flex items-center gap-2 text-xs text-zinc-400"><span className={`node-dot ${machine?.online ? 'node-dot-online' : ''}`} />{machine?.name ?? 'Unknown machine'}</p></Link> })}</div>}
+        {!loaded ? <p className="text-sm text-muted">{error ? 'Projects unavailable.' : 'Loading projects…'}</p> : projects.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="code" size={26} /></span><h2>No projects yet</h2><p>Open a directory on a connected machine to start a project.</p><button onClick={() => setShowModal(true)} className="btn-primary"><Icon name="plus" size={16} />New project</button><span className="mt-5 text-[11px] text-muted">Powered by fx · Runs in your browser</span></div> : <div className="project-grid">{projects.map((item) => { const machine = devices.find((d) => d.id === item.deviceId); return <Link key={item.id} to={`/code/${item.id}`} className="surface project-card"><div className="flex items-center justify-between text-muted"><Icon name="folder" size={23} /><Icon name="arrow" size={16} /></div><h2>{item.name}</h2><p className="truncate font-mono text-[11px] text-muted">{item.path}</p><p className="mt-6 flex items-center gap-2 text-xs text-muted"><span className={`node-dot ${machine?.online ? 'node-dot-online' : ''}`} />{machine?.name ?? 'Unknown machine'}</p></Link> })}</div>}
         {showModal && (
           <ProjectModal
             devices={devices}
@@ -87,10 +87,10 @@ export default function CodingPage() {
       <header className="coding-toolbar">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-semibold text-zinc-100">{project.name}</h1>
+            <h1 className="truncate text-sm font-semibold text-ink">{project.name}</h1>
             <span className={`node-dot ${device?.online ? 'node-dot-online' : ''}`} />
           </div>
-          <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">{project.path}</p>
+          <p className="mt-0.5 truncate font-mono text-[10px] text-muted">{project.path}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="machine-pill">

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Device, Preset } from '../types'
 import Modal from './Modal'
+import Icon from './Icon'
 
 // LaunchSessionModal starts a named session (usually a coding agent) on a
 // device. Used from both the device page (single device) and the agents page
@@ -66,15 +67,16 @@ export default function LaunchSessionModal({
   }
 
   const inputClass =
-    'w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-lime-500'
+    'field-input'
 
   return (
     <Modal title="New session" onClose={onClose}>
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-5">
+        {devices.length <= 1 && online[0] && <div className="launch-machine"><Icon name="monitor" size={16} /><span>{online[0].name}</span><span className="node-dot node-dot-online" /><span className="text-muted">Online</span></div>}
         {devices.length > 1 && (
           <div>
-            <label htmlFor="session-device" className="mb-1 block text-sm font-medium text-zinc-300">
-              Device
+            <label htmlFor="session-device" className="mb-2 block field-label">
+              Machine
             </label>
             <select
               id="session-device"
@@ -91,30 +93,26 @@ export default function LaunchSessionModal({
           </div>
         )}
 
-        <div>
-          <label className="mb-1 block text-sm font-medium text-zinc-300">
-            What to run
-          </label>
-          <div className="flex flex-wrap gap-2">
+        <fieldset>
+          <legend className="mb-2 field-label">Run with</legend>
+          <div className="preset-options">
             {presets.map((p) => (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => selectPreset(p)}
-                className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-                  presetId === p.id
-                    ? 'border-lime-500 bg-lime-500/10 text-lime-300'
-                    : 'border-zinc-700 text-zinc-300 hover:border-zinc-600'
-                }`}
+                aria-pressed={presetId === p.id}
+                className="preset-option"
               >
+                <Icon name={p.kind === 'shell' ? 'terminal' : 'code'} size={18} />
                 {p.name}
               </button>
             ))}
           </div>
-        </div>
+        </fieldset>
 
         <div>
-          <label htmlFor="session-command" className="mb-1 block text-sm font-medium text-zinc-300">
+          <label htmlFor="session-command" className="mb-2 block field-label">
             Command
           </label>
           <input
@@ -124,14 +122,14 @@ export default function LaunchSessionModal({
               setCommand(e.target.value)
               setPresetId(null)
             }}
-            placeholder="empty = plain shell"
+            placeholder="Leave empty for a shell"
             className={`${inputClass} font-mono`}
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="session-name" className="mb-1 block text-sm font-medium text-zinc-300">
+            <label htmlFor="session-name" className="mb-2 block field-label">
               Session name
             </label>
             <input
@@ -145,27 +143,30 @@ export default function LaunchSessionModal({
             />
           </div>
           <div>
-            <label htmlFor="session-directory" className="mb-1 block text-sm font-medium text-zinc-300">
+            <label htmlFor="session-directory" className="mb-2 block field-label">
               Working directory
             </label>
             <input
               id="session-directory"
               value={cwd}
               onChange={(e) => setCwd(e.target.value)}
-              placeholder="~ (home)"
+              placeholder="Home directory"
               className={`${inputClass} font-mono`}
             />
           </div>
         </div>
 
-        {error && <p className="text-sm text-rose-400" role="alert">{error}</p>}
+        {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+        <div className="flex justify-end gap-2 border-t border-line pt-5 mt-1">
+        <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         <button
           type="submit"
           disabled={busy || !deviceId}
           className="btn-primary"
         >
-          {busy ? 'Launching…' : 'Launch'}
+          {busy ? 'Starting…' : 'Start session'}
         </button>
+        </div>
       </form>
     </Modal>
   )

@@ -171,7 +171,7 @@ export default function FxTerminal({ project, device }: { project: Project; devi
     <div className="relative h-full min-h-0 overflow-hidden bg-[#151719]">
       <div ref={hostRef} className="fx-terminal-host h-full w-full px-3 py-4 sm:px-5" />
       {state === 'loading' && (
-        <div className="absolute inset-0 grid place-items-center bg-[#151719] text-xs text-zinc-500">
+        <div className="absolute inset-0 grid place-items-center bg-[#151719] text-xs text-zinc-400">
           <span className="flex items-center gap-2"><span className="spinner" />Booting fx runtime…</span>
         </div>
       )}
@@ -181,11 +181,11 @@ export default function FxTerminal({ project, device }: { project: Project; devi
 
 function TerminalNotice({ title, body }: { title: string; body: string }) {
   return (
-    <div className="grid h-full min-h-80 place-items-center bg-[#151719] p-8 text-center">
+    <div className="grid h-full min-h-80 place-items-center bg-canvas p-8 text-center">
       <div className="max-w-md">
-        <span className="mx-auto grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.04] font-mono text-sm text-amber-200">fx</span>
-        <h2 className="mt-4 text-base font-semibold text-zinc-200">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-500">{body}</p>
+        <span className="mx-auto grid h-10 w-10 place-items-center rounded-xl border border-line bg-panel font-mono text-sm text-accent">fx</span>
+        <h2 className="mt-4 text-base font-semibold text-ink">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-muted">{body}</p>
       </div>
     </div>
   )

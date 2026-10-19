@@ -33,7 +33,7 @@ export default function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -44,13 +44,13 @@ export default function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`surface max-h-[90dvh] overflow-y-auto w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} rounded-2xl bg-[#111416] p-6`}
+        className={`surface modal-surface max-h-[90dvh] overflow-y-auto w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} rounded-2xl bg-panel p-7`}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id={titleId} className="text-lg font-semibold text-zinc-100">{title}</h2>
+        <div className="mb-6 flex items-center justify-between">
+          <h2 id={titleId} className="text-lg font-semibold tracking-tight text-ink">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+            className="rounded p-1 text-muted hover:bg-tint hover:text-secondary"
             aria-label="Close"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

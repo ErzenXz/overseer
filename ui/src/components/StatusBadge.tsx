@@ -13,15 +13,15 @@ export default function StatusBadge({
 }) {
   const color =
     status === 'working'
-      ? 'bg-emerald-400 animate-pulse'
+      ? 'bg-positive animate-pulse'
       : status === 'idle'
-        ? 'bg-zinc-500'
+        ? 'bg-muted'
         : 'bg-rose-500'
   return (
     <span className="flex items-center gap-1.5" title={`${kind || 'terminal'} — ${status}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
       {kind && kind !== 'shell' && (
-        <span className="text-[11px] text-lime-400">{kindIcons[kind] ?? '●'}</span>
+        <span className="text-[11px] text-accent">{kindIcons[kind] ?? '●'}</span>
       )}
     </span>
   )

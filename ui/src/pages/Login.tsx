@@ -37,8 +37,8 @@ export default function Login({
       <div className="brand"><span className="brand-mark"><Icon name="fleet" size={19} /></span>overseer<span className="brand-period">.</span></div>
       <div className="login-panel">
         <span className="empty-icon"><Icon name="shield" size={25} /></span>
-        <h1>{setupDone ? 'Welcome back.' : 'Your fleet. Your rules.'}</h1>
-        <p>{setupDone ? 'Your machines and projects, right where you left them.' : 'One workspace for all your machines. Choose an admin password to get started.'}</p>
+        <h1>{setupDone ? 'Welcome to Overseer' : 'Set up your workspace'}</h1>
+        <p>{setupDone ? 'Sign in to your workspace.' : 'Choose an administrator password to get started.'}</p>
       <form
         onSubmit={submit}
         className="w-full"
@@ -71,12 +71,12 @@ export default function Login({
               required
               className="field-input mb-4"
             />
-            <p className="mb-4 text-xs text-zinc-500">
+            <p className="mb-4 text-xs text-muted">
               At least 8 characters. This is the only account — keep it safe.
             </p>
           </>
         )}
-        {error && <p className="mb-4 text-sm text-rose-400" role="alert">{error}</p>}
+        {error && <p className="mb-4 text-sm text-danger" role="alert">{error}</p>}
         <button
           type="submit"
           disabled={busy}

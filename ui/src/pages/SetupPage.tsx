@@ -74,40 +74,39 @@ export default function SetupPage() {
     <div className="page-shell">
       <section className="page-heading">
         <div>
-          <p className="eyebrow">Ready for what's next</p>
           <h1>Machine setup</h1>
-          <p>Install your tools. Connect securely. Start building.</p>
+          <p>Install agent tools and configure remote access.</p>
         </div>
-        <div className="surface flex min-w-72 items-center gap-3 rounded-xl p-3">
-          <span className={`h-2 w-2 rounded-full ${selected?.online ? 'bg-lime-300' : 'bg-zinc-700'}`} />
+        <div className="surface flex w-full sm:w-auto sm:min-w-72 items-center gap-3 rounded-xl p-3">
+          <span className={`h-2 w-2 rounded-full ${selected?.online ? 'bg-accent' : 'bg-muted'}`} />
           <select
             value={deviceId}
             onChange={(e) => setDeviceId(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-zinc-100"
+            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-ink"
             aria-label="Device to configure"
           >
             {devices.filter((d) => d.online).map((d) => (
-              <option key={d.id} value={d.id} className="bg-zinc-900">
+              <option key={d.id} value={d.id} className="bg-canvas">
                 {d.name} · {d.os}/{d.arch}
               </option>
             ))}
           </select>
-          <button onClick={loadSetup} disabled={refreshing || !deviceId} className="text-xs font-medium text-zinc-500 hover:text-white">
+          <button onClick={loadSetup} disabled={refreshing || !deviceId} className="text-xs font-medium text-muted hover:text-ink">
             {refreshing ? 'Checking…' : 'Refresh'}
           </button>
         </div>
       </section>
 
-      {error && <div className="mb-5 rounded-lg border border-rose-400/20 bg-rose-400/[0.07] px-4 py-3 text-sm text-rose-200">{error}</div>}
+      {error && <div className="mb-5 rounded-lg border border-rose-400/20 bg-rose-400/[0.07] px-4 py-3 text-sm text-danger">{error}</div>}
 
       <section className="mb-5 grid gap-4 rounded-2xl border border-[#82aaff]/15 bg-[#82aaff]/[0.045] p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:p-6">
-        <span className="grid h-11 w-11 place-items-center rounded-xl border border-[#82aaff]/20 bg-[#82aaff]/10 font-mono text-sm font-semibold text-[#bdd0ff]">fx</span>
+        <span className="grid h-11 w-11 place-items-center rounded-xl border border-[#82aaff]/20 bg-[#82aaff]/10 font-mono text-sm font-semibold text-accent">fx</span>
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-zinc-200">fx control plane is built in</h2>
-            <span className="rounded bg-[#77d9ab]/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#77d9ab]">ready</span>
+            <h2 className="text-sm font-semibold text-ink">fx control plane is built in</h2>
+            <span className="rounded bg-[#77d9ab]/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-positive">ready</span>
           </div>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-500">Sign in once from Code. The embedded fx runtime stays in your browser and routes work to any project node, so fx itself does not need to be installed or authenticated on every PC.</p>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">Sign in once from Code. The embedded fx runtime stays in your browser and routes work to any project node, so fx itself does not need to be installed or authenticated on every PC.</p>
         </div>
         <button onClick={() => navigate('/code')} className="btn-secondary">Open Code</button>
       </section>
@@ -122,12 +121,12 @@ export default function SetupPage() {
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <span className="eyebrow">Agent pack</span>
-                <span className="text-xs text-zinc-600">{setup.os}/{setup.arch}</span>
+                <span className="text-xs text-muted">{setup.os}/{setup.arch}</span>
               </div>
-              <h2 className="text-xl font-semibold tracking-tight text-zinc-100">
+              <h2 className="text-xl font-semibold tracking-tight text-ink">
                 {readyCount === 3 ? 'Core agents are installed' : `${readyCount} of 3 core agents ready`}
               </h2>
-              <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
+              <p className="mt-1 max-w-xl text-sm leading-6 text-muted">
                 One setup terminal installs Codex, Claude Code, and Gemini CLI using their official distribution paths.
               </p>
             </div>
@@ -145,9 +144,9 @@ export default function SetupPage() {
             ))}
           </section>
 
-          <section className="mt-7 border-l border-lime-300/30 pl-5">
-            <h2 className="text-sm font-semibold text-zinc-200">Why legacy agent sign-in still opens once per machine</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-500">
+          <section className="mt-7 border-l border-accent/30 pl-5">
+            <h2 className="text-sm font-semibold text-ink">Why legacy agent sign-in still opens once per machine</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
               Codex, Claude, and Gemini store device credentials in their own protected local storage. Overseer starts each official login flow and keeps it visible in a remote terminal, but never copies those private tokens into the hub database. The built-in fx workspace above is the one-login path across nodes.
             </p>
           </section>
@@ -169,19 +168,19 @@ function ToolCard({
   return (
     <article className={`surface rounded-2xl p-5 sm:p-6 ${isRemote ? 'lg:col-span-2' : ''}`}>
       <div className="flex items-start gap-4">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white/[0.06] font-mono text-[11px] font-bold tracking-wider text-lime-200">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-tint font-mono text-[11px] font-bold tracking-wider text-accent">
           {toolMarks[tool.id]}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-semibold tracking-tight text-zinc-100">{tool.name}</h2>
+            <h2 className="font-semibold tracking-tight text-ink">{tool.name}</h2>
             <Status installed={tool.installed} connected={connected} auth={tool.auth} />
           </div>
-          <p className="mt-1 text-sm leading-6 text-zinc-500">{tool.description}</p>
-          {tool.version && <p className="mt-2 truncate font-mono text-[11px] text-zinc-600">{tool.version}</p>}
+          <p className="mt-1 text-sm leading-6 text-muted">{tool.description}</p>
+          {tool.version && <p className="mt-2 truncate font-mono text-[11px] text-muted">{tool.version}</p>}
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-4">
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
         <button onClick={() => onLaunch(`install-${tool.id}`, tool.installCommand)} className={tool.installed ? 'btn-secondary' : 'btn-primary'}>
           {tool.installed ? 'Update or repair' : 'Install'}
         </button>
@@ -190,23 +189,23 @@ function ToolCard({
             {isRemote ? (connected ? 'Refresh private access' : 'Connect privately') : connected ? 'Open again' : 'Sign in'}
           </button>
         )}
-        <a href={tool.docsUrl} target="_blank" rel="noreferrer" className="ml-auto text-xs font-medium text-zinc-600 hover:text-zinc-300">
+        <a href={tool.docsUrl} target="_blank" rel="noreferrer" className="ml-auto text-xs font-medium text-muted hover:text-secondary">
           Official guide ↗
         </a>
       </div>
-      {tool.note && <p className="mt-3 text-xs leading-5 text-zinc-600">{tool.note}</p>}
+      {tool.note && <p className="mt-3 text-xs leading-5 text-muted">{tool.note}</p>}
     </article>
   )
 }
 
 function Status({ installed, connected, auth }: { installed: boolean; connected: boolean; auth: string }) {
   const label = !installed ? 'Not installed' : auth === 'not-required' ? 'Ready' : connected ? 'Connected' : auth === 'ready' ? 'Sign-in needed' : 'Installed'
-  const color = !installed ? 'bg-zinc-700 text-zinc-400' : connected ? 'bg-lime-300/10 text-lime-300' : 'bg-amber-300/10 text-amber-200'
+  const color = !installed ? 'bg-tint text-muted' : connected ? 'bg-positive/10 text-positive' : 'bg-amber-300/10 text-warning'
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${color}`}>{label}</span>
 }
 
 function EmptyState() {
-  return <div className="surface rounded-2xl p-12 text-center"><p className="font-medium text-zinc-200">No online machines</p><p className="mt-2 text-sm text-zinc-500">Connect a device first, then return here to prepare it.</p></div>
+  return <div className="surface rounded-2xl p-12 text-center"><p className="font-medium text-ink">No online machines</p><p className="mt-2 text-sm text-muted">Connect a device first, then return here to prepare it.</p></div>
 }
 
 function SetupSkeleton() {
