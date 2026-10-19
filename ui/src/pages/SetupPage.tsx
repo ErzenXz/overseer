@@ -99,8 +99,8 @@ export default function SetupPage() {
 
       {error && <div className="mb-5 rounded-lg border border-rose-400/20 bg-rose-400/[0.07] px-4 py-3 text-sm text-danger">{error}</div>}
 
-      <section className="mb-5 grid gap-4 rounded-2xl border border-[#82aaff]/15 bg-[#82aaff]/[0.045] p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:p-6">
-        <span className="grid h-11 w-11 place-items-center rounded-xl border border-[#82aaff]/20 bg-[#82aaff]/10 font-mono text-sm font-semibold text-accent">fx</span>
+      <section className="mb-5 grid gap-4 rounded-xl border border-line bg-panel p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:p-6">
+        <span className="grid h-9 w-9 place-items-center rounded-lg bg-tint font-mono text-sm text-secondary">fx</span>
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold text-ink">fx control plane is built in</h2>

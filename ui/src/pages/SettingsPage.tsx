@@ -2,21 +2,39 @@ import { FormEvent, useCallback, useState } from 'react'
 import { api, timeAgo } from '../api'
 import { usePoll } from '../hooks'
 import type { ApiTokenInfo, Preset, UpdateStatus } from '../types'
+import { Link, useSearchParams } from 'react-router-dom'
+import Icon from '../components/Icon'
+import { settingsSections } from '../settings'
 
 export default function SettingsPage() {
+  const [params] = useSearchParams()
+  const section = settingsSections.find((item) => item.id === params.get('section'))
+  if (!section) return (
+    <div className="settings-page">
+      <header className="settings-heading"><h1>Workspace</h1><p>Preferences and settings</p></header>
+      <div className="settings-group" aria-label="Workspace settings">
+        {settingsSections.filter((item) => item.group === 'Workspace').map((item) => <Link className="settings-row" to={`/settings?section=${item.id}`} key={item.id}><span className="settings-row-icon"><Icon name={item.icon} size={18} /></span><span>{item.title}</span><Icon name="chevron" size={15} /></Link>)}
+      </div>
+      <header className="settings-group-heading"><h2>Agents</h2><p>Configure your tools and sessions</p></header>
+      <div className="settings-group" aria-label="Agent settings">
+        {settingsSections.filter((item) => item.group === 'Agents').map((item) => <Link className="settings-row" to={`/settings?section=${item.id}`} key={item.id}><span className="settings-row-icon"><Icon name={item.icon} size={18} /></span><span>{item.title}</span><Icon name="chevron" size={15} /></Link>)}
+      </div>
+    </div>
+  )
   return (
-    <div className="page-shell max-w-4xl">
-      <header className="page-heading"><div><h1>Settings</h1><p>Hub preferences, integrations, and session presets.</p></div></header>
-      <SoftwareUpdates />
-      <ApiTokens />
-      <Presets />
-      <McpHelp />
+    <div className="settings-page">
+      <header className="settings-heading"><h1>{section.title}</h1><p>{section.description}</p></header>
+      {section.id === 'general' && <SoftwareUpdates />}
+      {section.id === 'connections' && <ApiTokens />}
+      {section.id === 'presets' && <Presets />}
+      {section.id === 'mcp' && <McpHelp />}
+      <Link to="/settings" className="settings-back"><Icon name="arrow" size={14} className="rotate-180" />All settings</Link>
     </div>
   )
 }
 
 const cardClass =
-  'surface mb-5 rounded-2xl p-6'
+  'settings-detail'
 const inputClass =
   'rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-accent'
 
@@ -306,7 +324,8 @@ claude mcp add overseer -- overseer mcp`}
           ⚠️ This is a remote shell — the tools run commands and write files on
           your devices. Only expose it over HTTPS ({''}
           <code className="font-mono">--tls-domain</code> or a TLS proxy), and
-          treat the API token like an SSH key. Revoke it above if it leaks.
+          treat the API token like an SSH key. Revoke it in{' '}
+          <Link to="/settings?section=connections" className="underline">Connections</Link> if it leaks.
         </div>
       </div>
     </section>

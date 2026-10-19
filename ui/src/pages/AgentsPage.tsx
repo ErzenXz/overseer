@@ -47,8 +47,8 @@ export default function AgentsPage() {
   return (
     <div className="page-shell sessions-page">
       <header className="page-heading">
-        <div><h1>Sessions</h1><p>Your agents and terminals, together.</p></div>
-        <button onClick={() => setShowLaunch(true)} className="btn-primary" disabled={!online} title={!online ? 'Connect a machine to start a session' : undefined}><Icon name="plus" size={16} />New session</button>
+        <div><h1>Sessions</h1><p>Pick up where you left off.</p></div>
+        <button onClick={() => setShowLaunch(true)} className="btn-secondary" disabled={!online} title={!online ? 'Connect a machine to start a session' : undefined}><Icon name="plus" size={16} />New session</button>
       </header>
       {error && <div className="error-banner" role="alert">{error}<button onClick={load}>Retry</button></div>}
       <div className="session-tools">
@@ -61,26 +61,23 @@ export default function AgentsPage() {
         </div>
       </div>
       <section className="session-collection" aria-label="Session list" aria-busy={sessions === null && !error}>
-        <div className="session-table-head" aria-hidden="true"><span>Session</span><span>Machine</span><span>Status</span><span>Last active</span><span /></div>
         {sessions === null ? <div className="session-loading" role="status">{error ? 'Sessions unavailable.' : 'Loading sessions…'}</div> : visible.length === 0 ? (
           <div className="empty-state session-empty">
             <span className="empty-icon"><Icon name={filtered ? 'search' : 'terminal'} size={26} /></span>
-            <h2>{filtered ? 'No matching sessions' : 'Ready when you are'}</h2>
+            <h2>{filtered ? 'No matching sessions' : 'Start your first session'}</h2>
             <p>{filtered ? 'Try a different search or filter.' : 'Start an agent or open a terminal on a connected machine.'}</p>
             {filtered ? <button className="btn-secondary" onClick={() => { setQuery(''); setFilter('all'); setKind('all') }}>Clear filters</button> : online ? <button onClick={() => setShowLaunch(true)} className="btn-primary"><Icon name="plus" size={15} />New session</button> : <Link to="/fleet" className="btn-primary">Connect a machine<Icon name="arrow" size={15} /></Link>}
           </div>
         ) : visible.map((session) => (
           <Link key={`${session.deviceId}:${session.name}`} to={`/devices/${session.deviceId}?session=${encodeURIComponent(session.name)}`} className="session-row">
-            <div className="session-identity"><span className={`session-app-icon ${session.kind && session.kind !== 'shell' ? 'session-app-agent' : ''}`}><Icon name={session.kind && session.kind !== 'shell' ? 'code' : 'terminal'} size={19} /></span><div className="min-w-0"><h2>{session.name}</h2><p>{session.kind === 'claude' ? 'Claude Code' : session.kind === 'codex' ? 'Codex' : !session.kind || session.kind === 'shell' ? 'Terminal' : session.kind}</p></div></div>
-            <span className="session-machine"><Icon name="monitor" size={14} /><span>{session.deviceName}</span></span>
+            <div className="session-identity"><span className="session-app-icon"><Icon name={session.kind && session.kind !== 'shell' ? 'code' : 'terminal'} size={18} /></span><div className="min-w-0"><h2>{session.name}</h2><p className="truncate">{session.kind === 'claude' ? 'Claude Code' : session.kind === 'codex' ? 'Codex' : !session.kind || session.kind === 'shell' ? 'Terminal' : session.kind}<span className="px-1.5">·</span>{session.deviceName}</p></div></div>
             <span className={`session-state session-state-${session.status}`}><span />{session.status === 'working' ? 'Working' : session.status === 'idle' ? 'Idle' : 'Ended'}</span>
             <span className="session-updated">{timeAgo(session.lastActivity)}</span>
             <Icon name="chevron" size={14} className="session-chevron" />
           </Link>
         ))}
       </section>
-      <footer className="sessions-footer"><span>{sessions === null ? 'Connecting to your workspace' : `${visible.length} ${visible.length === 1 ? 'session' : 'sessions'}`}<span className="footer-divider">·</span>Sorted by recent activity</span><Link to="/fleet"><span className={`node-dot ${online ? 'node-dot-online' : ''}`} />{online} {online === 1 ? 'machine' : 'machines'} online<Icon name="chevron" size={12} /></Link></footer>
-      <div className="workspace-links"><Link to="/setup"><Icon name="setup" size={15} />Set up an agent<Icon name="arrow" size={13} /></Link><Link to="/settings"><Icon name="settings" size={15} />Manage presets<Icon name="arrow" size={13} /></Link></div>
+      <footer className="sessions-footer"><span>{sessions === null ? 'Connecting to your workspace' : `${visible.length} ${visible.length === 1 ? 'session' : 'sessions'}`}</span><Link to="/fleet">{online} {online === 1 ? 'machine' : 'machines'} online<Icon name="chevron" size={12} /></Link></footer>
       {showLaunch && <LaunchSessionModal devices={devices} onLaunched={(deviceId, session) => { setShowLaunch(false); navigate(`/devices/${deviceId}?session=${encodeURIComponent(session)}`) }} onClose={() => setShowLaunch(false)} />}
     </div>
   )
