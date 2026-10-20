@@ -73,7 +73,7 @@ function Security() {
             <h2 id="approve-title" className="h-feature mt-4">The agent asks. You decide.</h2>
             <p className="mt-4 text-[15px] leading-relaxed text-ink-3">A Claude Code session asking before it runs a test command. The same works from your phone.</p>
             <div className="mt-6 flex flex-wrap gap-2.5">
-              <a href={DOCS} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline">Remote access guide<ArrowRight size={14} /></a>
+              <a href={`${DOCS}remote-access/`} className="btn btn-sm btn-outline">Remote access guide<ArrowRight size={14} /></a>
               <a href={`${REPO}/security`} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">Report a vulnerability</a>
             </div>
           </Reveal>

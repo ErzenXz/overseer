@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .vercel
 .env*
+
+# Docs HTML entries, written by vite.config.ts
+/docs/

@@ -11,7 +11,7 @@ function Download() {
   const order = [os, ...OS_ORDER.filter((item) => item !== os)];
   return (
     <>
-      <PageHeader label="Download" title={<>Install once. <span className="text-ink-4">Add every machine.</span></>} aside={<Art name="orbit" className="absolute inset-0" />}>
+      <PageHeader label="Download" title={<>Install once. <span className="text-ink-4">Add every machine.</span></>} aside={<Art name="orbit-dark" className="absolute inset-0" />}>
         Free and open source. One binary for the hub, every machine, the CLI and the MCP server. macOS, Linux and Windows, on Intel/AMD or ARM.
       </PageHeader>
 
@@ -29,7 +29,7 @@ function Download() {
                 <div className="cell py-7">
                   <div className="flex items-center gap-2">
                     <h3 className="text-[17px] font-semibold">{item.label}</h3>
-                    {id === os && <span className="rounded-full bg-hover px-2 py-0.5 font-mono text-[11px] text-ink-3">your system</span>}
+                    {id === os && <span className="rounded-full bg-hover px-2 py-0.5 font-mono text-[11px] whitespace-nowrap text-ink-3">your system</span>}
                   </div>
                   <p className="mt-1 text-[13.5px] text-ink-3">{item.shell}</p>
                 </div>
@@ -88,7 +88,7 @@ function Download() {
         </div>
         <div className="flex flex-wrap gap-2.5 border-t border-line px-6 py-5 sm:px-9">
           <a href={RELEASES} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline"><GithubLogo size={15} />Releases</a>
-          <a href={DOCS} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline">Full install guide<ArrowRight size={14} /></a>
+          <a href={`${DOCS}quick-start/`} className="btn btn-sm btn-outline">Full install guide<ArrowRight size={14} /></a>
           <a href={REPO} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">Source code</a>
         </div>
       </section>

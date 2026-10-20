@@ -1,6 +1,6 @@
 export const REPO = "https://github.com/ErzenXz/overseer";
 export const RELEASES = `${REPO}/releases`;
-export const DOCS = `${REPO}#readme`;
+export const DOCS = "/docs/";
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const ISSUES = `${REPO}/issues`;
 

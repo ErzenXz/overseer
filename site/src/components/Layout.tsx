@@ -1,27 +1,29 @@
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource-variable/inter";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "../index.css";
 import { Footer } from "./Footer";
 import { Nav, type Page } from "./Nav";
 
-function Layout({ page, children }: { page: Page; children: ReactNode }) {
+function Layout({ page, main, children }: { page: Page; main: boolean; children: ReactNode }) {
   return (
     <>
       <a href="#main" className="sr-only z-[60] rounded-lg bg-inverse px-4 py-2 text-on-inverse focus:not-sr-only focus:fixed focus:top-3 focus:left-3">Skip to content</a>
       <Nav page={page} />
-      <main id="main">{children}</main>
+      {main ? <main id="main">{children}</main> : children}
       <Footer />
     </>
   );
 }
 
-// mount renders one page of the site into #root.
-export function mount(page: Page, content: ReactNode) {
+// mount renders one page of the site into #root. Pages that lay out their own
+// <main> (the docs) pass { main: false }.
+export function mount(page: Page, content: ReactNode, { main = true }: { main?: boolean } = {}) {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      <Layout page={page}>{content}</Layout>
+      <Layout page={page} main={main}>{content}</Layout>
     </StrictMode>,
   );
 }
