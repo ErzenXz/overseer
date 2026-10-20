@@ -1,4 +1,4 @@
-import { DOCS, REPO } from "../lib/site";
+import { REPO } from "../lib/site";
 import { LogoMark } from "./Logo";
 
 export function Footer() {
@@ -11,7 +11,7 @@ export function Footer() {
           <span className="muted">· every coding agent, on every machine</span>
         </span>
         <nav aria-label="Footer">
-          <a href={DOCS} target="_blank" rel="noreferrer">Docs</a>
+          <a href="/docs/">Docs</a>
           <a href="/features/">Features</a>
           <a href="/security/">Security</a>
           <a href="/changelog/">Changelog</a>

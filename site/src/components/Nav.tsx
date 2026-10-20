@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRight, GithubLogo, List, MagnifyingGlass, X } from "@phosphor-icons/react";
-import { DOCS, INSTALL, REPO } from "../lib/site";
+import { INSTALL, REPO } from "../lib/site";
+import { DOC_PAGES, docHref } from "../docs/nav";
 import { LogoMark } from "./Logo";
 
-export type Page = "home" | "features" | "download" | "security" | "changelog";
+export type Page = "home" | "docs" | "features" | "download" | "security" | "changelog";
 
-const LINKS: { id: Page | "docs"; label: string; href: string; external?: boolean }[] = [
-  { id: "docs", label: "Docs", href: DOCS, external: true },
+const LINKS: { id: Page; label: string; href: string; external?: boolean }[] = [
+  { id: "docs", label: "Docs", href: "/docs/" },
   { id: "features", label: "Features", href: "/features/" },
   { id: "security", label: "Security", href: "/security/" },
   { id: "changelog", label: "Changelog", href: "/changelog/" },
@@ -14,7 +16,8 @@ const LINKS: { id: Page | "docs"; label: string; href: string; external?: boolea
 ];
 
 // Everything the ⌘K box can jump to: pages, sections and install commands.
-const TARGETS = [
+interface Target { label: string; hint: string; href?: string; external?: boolean; copy?: string; keywords?: string }
+const TARGETS: Target[] = [
   { label: "Download Overseer", hint: "Page", href: "/download/" },
   { label: "Features: every screen", hint: "Page", href: "/features/" },
   { label: "Sessions and approvals", hint: "Features", href: "/features/#sessions" },
@@ -24,26 +27,35 @@ const TARGETS = [
   { label: "Automations and review", hint: "Features", href: "/features/#automate" },
   { label: "Security", hint: "Page", href: "/security/" },
   { label: "Changelog", hint: "Page", href: "/changelog/" },
-  { label: "Install guide", hint: "Docs", href: DOCS, external: true },
+  ...DOC_PAGES.map((page) => ({ label: page.title, hint: "Docs", href: docHref(page.slug), keywords: page.description })),
   { label: "Source on GitHub", hint: "GitHub", href: REPO, external: true },
   ...Object.values(INSTALL).map((item) => ({ label: `Install on ${item.label}`, hint: "Copy command", copy: item.command })),
 ];
 
-function Palette({ onClose }: { onClose: () => void }) {
+function Palette({ page, onClose }: { page: Page; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [copied, setCopied] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  const results = useMemo(() => TARGETS.filter((t) => `${t.label} ${t.hint}`.toLowerCase().includes(query.toLowerCase())), [query]);
+  const [sections, setSections] = useState<Target[]>([]);
+  useEffect(() => { import("../docs/search").then((m) => setSections(m.DOC_SECTIONS)).catch(() => {}); }, []);
+  // Pages first; docs sections only once you type. On the docs, docs come first.
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const all: Target[] = q ? [...TARGETS, ...sections] : TARGETS;
+    const hits = all.filter((t) => `${t.label} ${t.hint} ${t.keywords ?? ""}`.toLowerCase().includes(q));
+    const rank = (t: Target) => (t.label.toLowerCase().startsWith(q) ? 0 : 1) + (page === "docs" && t.hint !== "Docs" && !sections.includes(t) ? 2 : 0);
+    return hits.sort((a, b) => rank(a) - rank(b)).slice(0, 40);
+  }, [query, sections, page]);
   useEffect(() => { input.current?.focus(); }, []);
   useEffect(() => setActive(0), [query]);
-  const choose = (target: (typeof TARGETS)[number]) => {
-    if ("copy" in target && target.copy) {
+  const choose = (target: Target) => {
+    if (target.copy) {
       navigator.clipboard?.writeText(target.copy).then(() => setCopied(target.label)).catch(() => {});
       return;
     }
-    if ("href" in target && target.href) {
-      if ("external" in target && target.external) window.open(target.href, "_blank", "noreferrer");
+    if (target.href) {
+      if (target.external) window.open(target.href, "_blank", "noreferrer");
       else window.location.href = target.href;
       onClose();
     }
@@ -55,7 +67,7 @@ function Palette({ onClose }: { onClose: () => void }) {
           ref={input}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search pages, features, install…"
+          placeholder={page === "docs" ? "Search docs…" : "Search docs, pages, install…"}
           aria-label="Search"
           onKeyDown={(e) => {
             if (e.key === "Escape") onClose();
@@ -66,7 +78,7 @@ function Palette({ onClose }: { onClose: () => void }) {
         />
         <div className="max-h-[50vh] overflow-y-auto py-2">
           {results.map((target, i) => (
-            <button key={target.label} type="button" className={`palette-item ${i === active ? "is-active" : ""}`} onMouseEnter={() => setActive(i)} onClick={() => choose(target)}>
+            <button key={`${target.hint}:${target.label}:${target.href ?? ""}`} type="button" className={`palette-item ${i === active ? "is-active" : ""}`} onMouseEnter={() => setActive(i)} onClick={() => choose(target)}>
               <span className="min-w-0 flex-1 truncate">{copied === target.label ? "Copied to clipboard" : target.label}</span>
               <span className="font-mono text-[11.5px] text-ink-4">{target.hint}</span>
             </button>
@@ -104,10 +116,11 @@ export function Nav({ page }: { page: Page }) {
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <button type="button" className="search-button hidden sm:inline-flex" onClick={() => setSearch(true)}>
-            <MagnifyingGlass size={14} /> Search…
+            <MagnifyingGlass size={14} /> {page === "docs" ? "Search docs…" : "Search…"}
             <kbd>⌘K</kbd>
           </button>
-          <a href={REPO} target="_blank" rel="noreferrer" aria-label="Overseer on GitHub" className="grid size-8 place-items-center rounded-lg text-ink-2 hover:text-ink"><GithubLogo size={20} /></a>
+          <button type="button" className="grid size-8 place-items-center rounded-lg text-ink-2 hover:text-ink sm:hidden" onClick={() => setSearch(true)} aria-label="Search"><MagnifyingGlass size={19} /></button>
+          <a href={REPO} target="_blank" rel="noreferrer" aria-label="Overseer on GitHub" className="grid size-8 place-items-center rounded-lg text-ink-2 hover:text-ink"><GithubLogo size={20} weight="fill" /></a>
           <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={open ? "Close menu" : "Open menu"} className="-mr-2 grid size-10 place-items-center rounded-lg text-ink-2 md:hidden">
             {open ? <X size={20} /> : <List size={20} />}
           </button>
@@ -121,7 +134,8 @@ export function Nav({ page }: { page: Page }) {
           </div>
         </div>
       )}
-      {search && <Palette onClose={() => setSearch(false)} />}
+      {/* In a portal: the header's backdrop blur would trap a fixed overlay. */}
+      {search && createPortal(<Palette page={page} onClose={() => setSearch(false)} />, document.body)}
     </header>
   );
 }

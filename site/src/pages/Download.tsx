@@ -88,7 +88,7 @@ function Download() {
         </div>
         <div className="flex flex-wrap gap-2.5 border-t border-line px-6 py-5 sm:px-9">
           <a href={RELEASES} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline"><GithubLogo size={15} />Releases</a>
-          <a href={DOCS} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline">Full install guide<ArrowRight size={14} /></a>
+          <a href={`${DOCS}quick-start/`} className="btn btn-sm btn-outline">Full install guide<ArrowRight size={14} /></a>
           <a href={REPO} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">Source code</a>
         </div>
       </section>
