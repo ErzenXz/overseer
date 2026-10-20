@@ -69,7 +69,7 @@ function Features() {
   return (
     <>
       <PageHeader label="Features" title={<>Every screen, <span className="text-ink-4">as it really is.</span></>}>
-        These are screenshots of the app itself, in your theme. Nothing on this page is a mockup.
+        These are screenshots of the app itself. Nothing on this page is a mockup.
       </PageHeader>
       <div className="rule" />
       <nav aria-label="Sections" className="frame flex gap-1 overflow-x-auto px-4 py-3 [scrollbar-width:none] sm:px-8">
