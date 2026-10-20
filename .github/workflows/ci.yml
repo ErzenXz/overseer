@@ -45,7 +45,8 @@ jobs:
             cmp "scripts/$f" "site/public/$f" || { echo "site/public/$f is out of date: cp scripts/$f site/public/"; exit 1; }
           done
       - name: Site changelog matches CHANGELOG.md
-        run: cmp CHANGELOG.md site/src/content/CHANGELOG.md || { echo "site changelog is out of date: cp CHANGELOG.md site/src/content/"; exit 1; }
+        run: |
+          cmp CHANGELOG.md site/src/content/CHANGELOG.md || { echo "site changelog is out of date, run: cp CHANGELOG.md site/src/content/"; exit 1; }
       - name: POSIX syntax (dash) and shellcheck
         run: |
           for f in scripts/install.sh scripts/install-macos.sh scripts/test-installers.sh; do dash -n "$f"; done
