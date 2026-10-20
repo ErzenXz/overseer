@@ -3,32 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#08090b" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-    <title>Overseer - control every machine you own from one browser tab</title>
+    <title>Overseer · Every coding agent, on every machine, from one tab</title>
     <meta
       name="description"
-      content="Self-hosted fleet control. Install the hub once, paste one command per device, then run live terminals and coding agents across every machine from one web UI."
+      content="Overseer is a self-hosted control plane for Claude Code, Codex, Gemini CLI and any ACP agent across all your computers. Approve risky commands, watch diffs, open the machine's shell and desktop, from your desk or your phone. Open source, one binary, no inbound ports."
     />
+    <link rel="canonical" href="https://liveagent-lime.vercel.app/" />
 
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Overseer" />
+    <meta property="og:url" content="https://liveagent-lime.vercel.app/" />
     <meta
       property="og:title"
-      content="Overseer - control every machine you own from one browser tab"
+      content="Overseer · Your own Devin, on your own machines"
     />
     <meta
       property="og:description"
-      content="Self-hosted fleet control. One binary for the hub, the device agent, the CLI, and the MCP server."
+      content="Run Claude Code, Codex, Gemini CLI and any ACP agent on every machine you own, and steer them all from one browser tab. Self-hosted and open source."
     />
-    <meta property="og:image" content="/shots/dashboard.png" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Overseer · Your own Devin, on your own machines" />
+    <meta
+      name="twitter:description"
+      content="Every coding agent, on every machine, from one tab. Self-hosted and open source."
+    />
   </head>
   <body>
     <script>
-      // Opt the page into scroll/entrance animation only when JS is running and
-      // the reader has not asked for reduced motion. Runs before first paint so
-      // there is no flash of content that then hides itself.
+      // Opt the page into entrance and scroll animation only when JS runs and
+      // the reader has not asked for reduced motion. Runs before first paint.
       if (
         window.matchMedia &&
         window.matchMedia("(prefers-reduced-motion: no-preference)").matches

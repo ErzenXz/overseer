@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,17 +28,32 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusConflict, "already set up")
 		return
 	}
+	if !s.loginRL.allow(r.RemoteAddr) {
+		httpError(w, http.StatusTooManyRequests, "too many attempts, try again in a minute")
+		return
+	}
 	var req struct {
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if err := readJSON(r, &req); err != nil || len(req.Password) < 8 {
 		httpError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+	code, err := s.ensureSetupCode()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !checkSetupCode(code, req.Code) {
+		httpError(w, http.StatusForbidden, "wrong setup code; it is in the installer output, the hub log, or "+filepath.Join(s.opts.DataDir, setupCodeFile))
 		return
 	}
 	if err := s.store.SetSetting("password_hash", hashPassword(req.Password)); err != nil {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.clearSetupCode()
 	s.issueSession(w, r)
 	writeJSON(w, map[string]bool{"ok": true})
 }
@@ -135,11 +151,9 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	base := fmt.Sprintf("%s://%s", scheme, r.Host)
+	// Behind Tailscale Serve or another TLS proxy the request arrives as
+	// plain HTTP; the command must still point at the https:// address.
+	base := requestBaseURL(r)
 	writeJSON(w, map[string]string{
 		"token":          token,
 		"command":        fmt.Sprintf("curl -fsSL %s/install/%s.sh | sh", base, token),

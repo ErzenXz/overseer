@@ -1,75 +1,85 @@
 import { useEffect, useState } from "react";
-import { GithubLogo, List, X, Eye } from "@phosphor-icons/react";
-import { REPO } from "../lib/site";
+import { GithubLogo, List, X } from "@phosphor-icons/react";
+import { DOCS, REPO } from "../lib/site";
+import { Logo } from "./Logo";
 
 const LINKS = [
+  { label: "Features", href: "#features" },
   { label: "How it works", href: "#how" },
-  { label: "Fleet agents", href: "#agents" },
-  { label: "Overseer Code", href: "#code" },
+  { label: "Security", href: "#security" },
+  { label: "Docs", href: DOCS, external: true },
 ];
 
 export function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
-  // IntersectionObserver on a sentinel instead of a scroll listener, so this
-  // costs nothing per frame.
   useEffect(() => {
     const sentinel = document.getElementById("nav-sentinel");
     if (!sentinel) return;
-    const io = new IntersectionObserver(
-      ([entry]) => setScrolled(!entry.isIntersecting),
-      { rootMargin: "0px" },
+    const io = new IntersectionObserver(([e]) =>
+      setScrolled(!e.isIntersecting),
     );
     io.observe(sentinel);
     return () => io.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
     <>
-      <div id="nav-sentinel" aria-hidden className="absolute top-0 h-px w-full" />
+      <div
+        id="nav-sentinel"
+        aria-hidden="true"
+        className="absolute top-0 h-2 w-full"
+      />
       <header
-        className={`fixed inset-x-0 top-0 z-40 transition-colors duration-300 ${
-          scrolled
-            ? "border-b border-line bg-ink-950/80 backdrop-blur-xl"
-            : "border-b border-transparent"
+        className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color] duration-300 ${
+          open
+            ? "border-line bg-page"
+            : scrolled
+              ? "border-line bg-page/80 backdrop-blur-xl backdrop-saturate-150"
+              : "border-transparent bg-page/0"
         }`}
       >
-        <nav className="mx-auto flex h-16 max-w-[1240px] items-center gap-8 px-5 lg:px-8">
-          <a href="#top" className="flex shrink-0 items-center gap-2.5">
-            <Eye size={20} weight="regular" className="text-beacon" />
-            <span className="text-[15px] font-semibold tracking-tight">
-              Overseer
-            </span>
+        <nav
+          aria-label="Main"
+          className="container-page flex h-14 items-center gap-8"
+        >
+          <a href="#top" aria-label="Overseer home" className="rounded-md">
+            <Logo />
           </a>
 
-          <div className="hidden flex-1 items-center gap-7 md:flex">
+          <div className="hidden items-center gap-1 md:flex">
             {LINKS.map((l) => (
               <a
-                key={l.href}
+                key={l.label}
                 href={l.href}
-                className="text-[13.5px] text-fg-muted transition-colors hover:text-fg"
+                {...(l.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                className="rounded-lg px-3 py-1.5 text-[14px] text-ink-3 transition-colors hover:text-ink"
               >
                 {l.label}
               </a>
             ))}
           </div>
 
-          <div className="ml-auto hidden items-center gap-3 md:flex">
+          <div className="ml-auto hidden items-center gap-2 md:flex">
             <a
               href={REPO}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-2 rounded-control px-3 py-2 text-[13.5px] text-fg-muted transition-colors hover:bg-ink-850 hover:text-fg"
+              className="btn btn-sm btn-ghost"
             >
-              <GithubLogo size={17} weight="regular" />
-              Source
+              <GithubLogo size={16} />
+              GitHub
             </a>
-            <a
-              href="#install"
-              className="rounded-control bg-beacon px-4 py-2 text-[13.5px] font-semibold text-ink-950 transition-transform duration-150 hover:bg-[#ffc04d] active:scale-[0.98]"
-            >
-              Install the hub
+            <a href="#install" className="btn btn-sm btn-dark">
+              Get started
             </a>
           </div>
 
@@ -77,22 +87,26 @@ export function Nav() {
             type="button"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
+            aria-controls="mobile-menu"
             aria-label={open ? "Close menu" : "Open menu"}
-            className="ml-auto rounded-control p-2 text-fg-muted transition-colors hover:text-fg md:hidden"
+            className="-mr-2 ml-auto grid size-10 place-items-center rounded-lg text-ink-2 hover:bg-hover md:hidden"
           >
             {open ? <X size={20} /> : <List size={20} />}
           </button>
         </nav>
 
         {open && (
-          <div className="border-t border-line bg-ink-950/95 px-5 py-4 backdrop-blur-xl md:hidden">
-            <div className="flex flex-col gap-1">
+          <div id="mobile-menu" className="border-t border-line md:hidden">
+            <div className="container-page flex flex-col py-3">
               {LINKS.map((l) => (
                 <a
-                  key={l.href}
+                  key={l.label}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-control px-2 py-3 text-[15px] text-fg-muted hover:bg-ink-850 hover:text-fg"
+                  {...(l.external
+                    ? { target: "_blank", rel: "noreferrer" }
+                    : {})}
+                  className="rounded-lg px-2 py-3 text-[16px] text-ink-2 hover:bg-hover"
                 >
                   {l.label}
                 </a>
@@ -101,16 +115,16 @@ export function Nav() {
                 href={REPO}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-control px-2 py-3 text-[15px] text-fg-muted hover:bg-ink-850 hover:text-fg"
+                className="flex items-center gap-2 rounded-lg px-2 py-3 text-[16px] text-ink-2 hover:bg-hover"
               >
-                Source
+                <GithubLogo size={18} /> GitHub
               </a>
               <a
                 href="#install"
                 onClick={() => setOpen(false)}
-                className="mt-2 rounded-control bg-beacon px-4 py-2.5 text-center text-[15px] font-semibold text-ink-950"
+                className="btn btn-dark mt-2 w-full"
               >
-                Install the hub
+                Get started
               </a>
             </div>
           </div>

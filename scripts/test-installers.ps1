@@ -24,6 +24,7 @@ $env:LOCALAPPDATA = $InstallBase
 $env:OVERSEER_INSTALL_SOURCE = "auto"
 $env:OVERSEER_DATA_DIR = Join-Path $InstallBase "Data & State"
 $env:OVERSEER_BIN_DIR = Join-Path $InstallBase "Programs"
+$env:OVERSEER_WAIT_SECONDS = "0" # the mocked web client cannot reach a hub
 
 function global:Invoke-WebRequest {
   param([switch]$UseBasicParsing, [string]$Uri, [string]$OutFile)
@@ -31,7 +32,8 @@ function global:Invoke-WebRequest {
   if ($Uri -match '/archive/') { Copy-Item -Force $SourceZip $OutFile; return }
   throw "unexpected URL in installer test: $Uri"
 }
-function global:schtasks.exe { $global:LASTEXITCODE = 0 }
+$global:SchtasksCalls = @()
+function global:schtasks.exe { $global:SchtasksCalls += ($args -join ' '); $global:LASTEXITCODE = 0 }
 function global:go {
   if ($args[0] -eq 'env') { return 'go1.25.0' }
   if ($args[0] -eq 'build') {
@@ -55,6 +57,9 @@ try {
   if (-not (Test-Path $runner)) { throw "Windows task runner was not created" }
   $runnerText = Get-Content -Raw $runner
   if ($runnerText -notmatch [regex]::Escape($env:OVERSEER_DATA_DIR)) { throw "Windows task runner lost the data path" }
+  $create = $global:SchtasksCalls | Where-Object { $_ -like '/Create*' } | Select-Object -First 1
+  if ($create -notmatch '-WindowStyle Hidden') { throw "Windows hub task would open a visible console window: $create" }
+  if ($output -match 'overseer: ') { throw "Windows installer reported an error: $output" }
   & (Join-Path $Root "scripts\install.ps1") uninstall | Out-Null
   if (Test-Path $installed) { throw "Windows uninstall left the binary behind" }
   Write-Host "installer-windows: ok (release 404 -> source fallback -> quoted task -> uninstall)"

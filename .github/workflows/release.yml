@@ -24,8 +24,21 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Test before publishing anything
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+          go vet ./...
+          go test ./...
+
       - name: Build UI + cross-compile binaries
         run: make cross VERSION=${{ github.ref_name }}
+
+      # The updater refuses a binary whose `version` output differs from the
+      # release tag, so check that here instead of on users' machines.
+      - name: Smoke-test the Linux binary reports the tag
+        run: |
+          got="$(./dist/overseer_linux_amd64 version)"
+          [ "$got" = "overseer ${{ github.ref_name }}" ] || { echo "binary reports '$got', expected 'overseer ${{ github.ref_name }}'"; exit 1; }
 
       - name: Package archives
         run: |
@@ -52,6 +65,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          # Tags like v1.2.0-rc.1 are previews; the updater only follows stable vX.Y.Z.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             dist/overseer_*
             dist/checksums.txt

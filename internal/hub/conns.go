@@ -246,6 +246,10 @@ func (s *Server) handleAgentMsg(c *agentConn, m protocol.Msg) {
 			default:
 			}
 		}
+	case m.Type == protocol.TypeThreadEvent:
+		s.threads.onAgentEvent(c, m.Data)
+	case m.Type == protocol.TypeThreadState:
+		s.threads.onAgentState(c, m.Data)
 	case m.Type == protocol.TypeStats:
 		var st protocol.Stats
 		if err := json.Unmarshal(m.Data, &st); err == nil {
@@ -269,6 +273,7 @@ func (s *Server) handleAgentMsg(c *agentConn, m protocol.Msg) {
 type event struct {
 	Type     string          `json:"type"`
 	DeviceId string          `json:"deviceId,omitempty"`
+	ThreadId string          `json:"threadId,omitempty"`
 	Stats    *protocol.Stats `json:"stats,omitempty"`
 }
 

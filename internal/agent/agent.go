@@ -46,8 +46,15 @@ type Agent struct {
 	conn              *websocket.Conn
 	terms             map[uint32]*termStream
 	files             map[uint32]*fileStream
+	tcps              map[uint32]*tcpStream
 	nextUpdateAttempt time.Time
 	updateApplied     bool
+
+	// threads are coding-agent processes keyed by hub thread id. They are
+	// deliberately not torn down with the hub connection.
+	threadMu    sync.Mutex
+	threads     map[string]threadAdapter
+	threadLocks map[string]*sync.Mutex // per-thread start/stop serialisation
 }
 
 func New(cfg Config, version string) *Agent {
@@ -57,6 +64,10 @@ func New(cfg Config, version string) *Agent {
 		version: version,
 		terms:   map[uint32]*termStream{},
 		files:   map[uint32]*fileStream{},
+		tcps:    map[uint32]*tcpStream{},
+		threads: map[string]threadAdapter{},
+
+		threadLocks: map[string]*sync.Mutex{},
 	}
 }
 
@@ -232,11 +243,16 @@ func (a *Agent) teardown() {
 	a.mu.Lock()
 	terms := a.terms
 	files := a.files
+	tcps := a.tcps
 	a.terms = map[uint32]*termStream{}
 	a.files = map[uint32]*fileStream{}
+	a.tcps = map[uint32]*tcpStream{}
 	a.conn = nil
 	a.mu.Unlock()
 	for _, t := range terms {
+		t.close()
+	}
+	for _, t := range tcps {
 		t.close()
 	}
 	for _, f := range files {
@@ -367,6 +383,58 @@ func (a *Agent) dispatch(m protocol.Msg) {
 		a.fsWriteFinish(m.Channel, "")
 	case protocol.TypeFsErr:
 		a.fsWriteFinish(m.Channel, m.Error)
+	case protocol.TypeTcpOpen:
+		var req protocol.TcpOpen
+		if err := json.Unmarshal(m.Data, &req); err == nil {
+			a.tcpOpen(m.Channel, req)
+		}
+	case protocol.TypeTcpClose:
+		a.tcpClose(m.Channel)
+	case protocol.TypeDesktopProbe:
+		go a.reply(m.Id, probeDesktop(), nil)
+	case protocol.TypeAgentsDetect:
+		go a.reply(m.Id, a.detectAgents(), nil)
+	case protocol.TypeThreadStart:
+		var req protocol.ThreadStart
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go func() {
+			res, err := a.threadStart(req)
+			a.reply(m.Id, res, err)
+		}()
+	case protocol.TypeThreadPrompt:
+		var req protocol.ThreadPrompt
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go a.reply(m.Id, struct{}{}, a.threadPrompt(req))
+	case protocol.TypeThreadCancel:
+		var req protocol.ThreadRef
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go a.reply(m.Id, struct{}{}, a.threadCancel(req))
+	case protocol.TypeThreadApproval:
+		var req protocol.ThreadApproval
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go a.reply(m.Id, struct{}{}, a.threadApproval(req))
+	case protocol.TypeThreadStop:
+		var req protocol.ThreadRef
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go func() {
+			a.threadStop(req)
+			a.reply(m.Id, struct{}{}, nil)
+		}()
 	}
 }
 
@@ -374,11 +442,14 @@ func (a *Agent) handleBinary(channel uint32, payload []byte) {
 	a.mu.Lock()
 	t := a.terms[channel]
 	f := a.files[channel]
+	tcp := a.tcps[channel]
 	a.mu.Unlock()
 	if t != nil {
 		t.write(payload)
 	} else if f != nil {
 		f.write(payload)
+	} else if tcp != nil {
+		tcp.write(payload)
 	}
 }
 

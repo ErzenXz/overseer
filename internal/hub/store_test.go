@@ -154,3 +154,36 @@ func TestDeletingDeviceDeletesItsProjects(t *testing.T) {
 		t.Fatalf("projects left after deleting device: %+v, %v", projects, err)
 	}
 }
+
+// A retried create (same request id) must return the first project, not add
+// a duplicate.
+func TestCreateProjectIdempotent(t *testing.T) {
+	s := testStore(t)
+	deviceId, _, err := s.CreateDevice("studio", "studio.local", "darwin", "arm64", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, created, err := s.CreateProjectWithId("req-123456", "Storefront", deviceId, "/srv/a")
+	if err != nil || !created {
+		t.Fatalf("first create: created=%v err=%v", created, err)
+	}
+	again, created, err := s.CreateProjectWithId("req-123456", "Storefront", deviceId, "/srv/a")
+	if err != nil || created {
+		t.Fatalf("retry: created=%v err=%v", created, err)
+	}
+	if again.Id != first.Id || again.CreatedAt != first.CreatedAt {
+		t.Fatalf("retry returned %+v, want %+v", again, first)
+	}
+	projects, err := s.ListProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("got %d projects after a retried create, want 1", len(projects))
+	}
+	for id, want := range map[string]bool{"req-123456": true, "short": false, "has space x": false, "../../etc/pass": false} {
+		if got := validRequestId(id); got != want {
+			t.Errorf("validRequestId(%q) = %v, want %v", id, got, want)
+		}
+	}
+}

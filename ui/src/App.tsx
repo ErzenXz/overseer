@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, setUnauthorizedHandler } from './api'
 import Layout from './components/Layout'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import DevicePage from './pages/DevicePage'
-import AgentsPage from './pages/AgentsPage'
+import NewSessionPage from './pages/NewSessionPage'
+import SessionPage from './pages/SessionPage'
+import SessionsPage from './pages/SessionsPage'
+import AutomationsPage from './pages/AutomationsPage'
+import MachinesPage from './pages/MachinesPage'
+import MachinePage from './pages/MachinePage'
+import ReviewPage from './pages/ReviewPage'
+import CustomizePage from './pages/CustomizePage'
 import SettingsPage from './pages/SettingsPage'
-import SetupPage from './pages/SetupPage'
 import CodingPage from './pages/CodingPage'
 
 interface Me {
@@ -41,37 +45,55 @@ export default function App() {
   }, [navigate])
 
   if (me === null) {
-    return (
-      <div className="flex h-full items-center justify-center text-zinc-500">
-        Loading…
-      </div>
-    )
+    return <div className="flex h-full items-center justify-center"><span className="spinner" /></div>
   }
 
   if (!me.authenticated) {
     return (
       <Routes>
-        <Route
-          path="*"
-          element={<Login setupDone={me.setupDone} onSuccess={refresh} />}
-        />
+        <Route path="*" element={<Login setupDone={me.setupDone} onSuccess={refresh} />} />
       </Routes>
     )
   }
 
   return (
     <Routes>
-      <Route element={<Layout version={me.version} />}>
-        <Route path="/" element={<Navigate to="/code" replace />} />
-        <Route path="/code" element={<CodingPage />} />
-        <Route path="/code/:projectId" element={<CodingPage />} />
-        <Route path="/fleet" element={<Dashboard />} />
-        <Route path="/devices/:id" element={<DevicePage />} />
-        <Route path="/agents" element={<AgentsPage />} />
-        <Route path="/setup" element={<SetupPage />} />
+      <Route element={<Layout />}>
+        <Route path="/" element={<NewSessionPage />} />
+        <Route path="/sessions" element={<SessionsPage />} />
+        <Route path="/sessions/:id" element={<SessionPage />} />
+        <Route path="/automations" element={<AutomationsPage />} />
+        <Route path="/machines" element={<MachinesPage />} />
+        <Route path="/machines/:id" element={<MachinePage />} />
+        <Route path="/review" element={<ReviewPage />} />
+        <Route path="/projects" element={<CodingPage />} />
+        <Route path="/projects/:projectId" element={<CodingPage />} />
+        <Route path="/customize" element={<CustomizePage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/:section" element={<SettingsPage />} />
+        {/* Old links keep working. */}
+        <Route path="/new" element={<Navigate to="/" replace />} />
+        <Route path="/agents" element={<Navigate to="/sessions" replace />} />
+        <Route path="/fleet" element={<Navigate to="/machines" replace />} />
+        <Route path="/setup" element={<Navigate to="/machines?tab=setup" replace />} />
+        <Route path="/code" element={<Navigate to="/projects" replace />} />
+        <Route path="/code/:projectId" element={<LegacyProject />} />
+        <Route path="/devices/:id" element={<LegacyDevice />} />
+        <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   )
+}
+
+function LegacyDevice() {
+  const { id = '' } = useParams()
+  const { search } = useLocation()
+  const session = new URLSearchParams(search).get('session')
+  return <Navigate to={`/machines/${id}${session ? `?tab=terminal&session=${encodeURIComponent(session)}` : ''}`} replace />
+}
+
+function LegacyProject() {
+  const { projectId = '' } = useParams()
+  return <Navigate to={`/projects/${projectId}`} replace />
 }

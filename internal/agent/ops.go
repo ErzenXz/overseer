@@ -46,19 +46,37 @@ func (a *Agent) statsLoop(ctx context.Context) {
 }
 
 func (a *Agent) sendStats(ctx context.Context) {
+	m, err := protocol.NewMsg(protocol.TypeStats, 0, 0, collectStats(ctx))
+	if err == nil {
+		a.send(m)
+	}
+}
+
+// collectStats takes one system snapshot. Every metric that fails to collect
+// is listed in Unavailable instead of being reported as zero.
+func collectStats(ctx context.Context) protocol.Stats {
 	var s protocol.Stats
+	missing := func(metric string) { s.Unavailable = append(s.Unavailable, metric) }
 	s.CPUCores, _ = cpu.CountsWithContext(ctx, true)
 	if pcts, err := cpu.PercentWithContext(ctx, 0, false); err == nil && len(pcts) > 0 {
 		s.CPUPercent = pcts[0]
+	} else {
+		missing(protocol.MetricCPU)
 	}
-	if avg, err := load.AvgWithContext(ctx); err == nil {
+	if avg, err := load.AvgWithContext(ctx); err == nil && runtime.GOOS != "windows" {
 		s.Load1, s.Load5, s.Load15 = avg.Load1, avg.Load5, avg.Load15
+	} else {
+		missing(protocol.MetricLoad)
 	}
-	if vm, err := mem.VirtualMemory(); err == nil {
+	if vm, err := mem.VirtualMemory(); err == nil && vm.Total > 0 {
 		s.MemUsed, s.MemTotal = vm.Used, vm.Total
+	} else {
+		missing(protocol.MetricMemory)
 	}
 	if swap, err := mem.SwapMemoryWithContext(ctx); err == nil {
 		s.SwapUsed, s.SwapTotal = swap.Used, swap.Total
+	} else {
+		missing(protocol.MetricSwap)
 	}
 	diskRoot := "/"
 	if runtime.GOOS == "windows" {
@@ -68,22 +86,27 @@ func (a *Agent) sendStats(ctx context.Context) {
 		}
 		diskRoot += `\`
 	}
-	if du, err := disk.Usage(diskRoot); err == nil {
+	if du, err := disk.Usage(diskRoot); err == nil && du.Total > 0 {
 		s.DiskUsed, s.DiskTotal = du.Used, du.Total
+	} else {
+		missing(protocol.MetricDisk)
 	}
 	if up, err := host.Uptime(); err == nil {
 		s.UptimeSec = up
+	} else {
+		missing(protocol.MetricUptime)
 	}
 	if counters, err := psnet.IOCountersWithContext(ctx, false); err == nil && len(counters) > 0 {
 		s.NetRxBytes, s.NetTxBytes = counters[0].BytesRecv, counters[0].BytesSent
+	} else {
+		missing(protocol.MetricNetwork)
 	}
 	if pids, err := process.PidsWithContext(ctx); err == nil {
 		s.ProcessCount = uint64(len(pids))
+	} else {
+		missing(protocol.MetricProcesses)
 	}
-	m, err := protocol.NewMsg(protocol.TypeStats, 0, 0, s)
-	if err == nil {
-		a.send(m)
-	}
+	return s
 }
 
 // --- exec ---

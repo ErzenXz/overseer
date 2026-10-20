@@ -62,34 +62,40 @@ On Windows 10/11 or Windows Server 2016+ (x64 or ARM64), from PowerShell:
 irm https://liveagent-lime.vercel.app/install.ps1 | iex
 ```
 
-The macOS and Windows installers run the hub in the signed-in user's background
-session and start it again at login. The Linux installer uses systemd and is the
-recommended option for an always-on server. All three installers select the
-matching `amd64` or `arm64` release automatically, verify its checksum, and
-fall back to a source build when a release has not been published yet. Source
-fallbacks use temporary Go 1.25 and Node 20 toolchains when the host does not
-already have compatible versions; they do not replace system toolchains.
+When it finishes, the installer prints a link like
+`http://192.168.1.20:4200/?setup=ABCDE-23456`. Open it and choose your admin
+password. The one-time **setup code** in that link stops anyone else on your
+network from claiming a fresh hub before you do. It is also in the hub's log
+and in `<data dir>/setup-code`, and it stops working once a password is set.
+
+The Linux installer uses systemd and is the best choice for an always-on
+server. The macOS and Windows installers run the hub in your user session and
+start it again at login; on Windows the task runs hidden, so no console window
+stays open.
+
+**What the installers check.** Each script only defines functions until its
+last line, so a download that is cut short never runs half an installer. The
+release binary for your CPU (`amd64` or `arm64`) is checked against the
+release's `checksums.txt` before it is installed. If no release exists yet,
+the installers build from source with temporary Go 1.25 and Node 20
+toolchains. Those toolchains are checked against pinned or officially
+published SHA-256 sums, and your system toolchains are left alone.
 
 Set `OVERSEER_INSTALL_SOURCE=binary` to require a published release or
-`OVERSEER_INSTALL_SOURCE=source` to force a source build. `OVERSEER_REF` selects
-the branch or commit for source installs, while a non-`latest`
-`OVERSEER_VERSION` selects the same release tag for both binary and source
-paths.
+`OVERSEER_INSTALL_SOURCE=source` to force a source build. `OVERSEER_VERSION`
+pins a release tag, and `OVERSEER_REF` picks the branch or commit for source
+builds.
 
-That installs `tmux` when missing, installs the `overseer` binary, creates an
-`overseer` service user, starts the hub as `overseer-hub.service`, and listens
-on `:4200`.
-
-To uninstall the service and binary while keeping hub data:
+**Uninstall** (keeps your data unless you add `OVERSEER_PURGE=1`):
 
 ```sh
-curl -fsSL https://liveagent-lime.vercel.app/install.sh | sh -s -- uninstall
+curl -fsSL https://liveagent-lime.vercel.app/install.sh | sh -s -- uninstall        # Linux
+curl -fsSL https://liveagent-lime.vercel.app/install-macos.sh | sh -s -- uninstall  # macOS
 ```
 
-Add `OVERSEER_PURGE=1` to also remove `/var/lib/overseer` and the service user.
-On macOS, pipe `sh -s -- uninstall`; on Windows, download the script and run it
-with `-Action uninstall`. Both preserve hub data unless `OVERSEER_PURGE=1` is
-set, matching the Linux safety model.
+```powershell
+& ([scriptblock]::Create((irm https://liveagent-lime.vercel.app/install.ps1))) uninstall
+```
 
 For HTTPS with Let's Encrypt, point DNS at the VM, open ports 80/443, then run:
 
@@ -107,8 +113,8 @@ make            # builds the UI + the ./overseer binary (needs Go 1.25 + Node 20
 ./overseer serve
 ```
 
-Open `http://localhost:4200`, set an admin password, and you're in. The hub
-machine shows up as your first device automatically.
+Open the setup link the hub prints in its log, choose an admin password, and
+you're in. The hub machine shows up as your first device automatically.
 
 The Vercel deployment is the public static product site. The authenticated hub
 remains a durable install on Linux, macOS, or Windows because it owns the local
@@ -131,8 +137,16 @@ curl -fsSL http://YOUR-HUB:4200/install/TOKEN.sh | sh
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm http://YOUR-HUB:4200/install/TOKEN.ps1 | iex"
 ```
 
-It downloads the agent, enrolls the device, installs a background service, and
-connects. The device pops up on your dashboard within seconds. If the joining
+It downloads the agent, checks it against the SHA-256 the hub publishes,
+enrolls the device, installs a background service, and connects. The device
+appears in Machines within seconds. Links work once and expire after 15
+minutes. The service records your `PATH`, so agents find Claude Code, Codex
+and your other CLIs. Remove a device with `~/.overseer/bin/overseer agent
+uninstall`.
+
+Use the hub's HTTPS address (Tailscale Serve or `--tls-domain`) when joining
+machines over networks you don't control: over plain HTTP, the checksum
+catches corrupted downloads but not someone deliberately rewriting traffic. If the joining
 device runs the same OS/arch as your hub, the binary comes straight from the
 hub (works on air-gapped LANs); otherwise the hub redirects the installer to
 the matching GitHub release build. For fully offline cross-platform setups,
@@ -146,17 +160,33 @@ reattachable sessions. Windows uses the native ConPTY API for fully interactive
 PowerShell and coding-agent terminals; those sessions are live but not yet
 reattachable after a disconnect.
 
-### 3. Launch an agent
+### 3. Start a session
 
-Open a device, hit **Launch agent**, pick Claude Code / Codex / a shell, choose
-a working directory, go. Watch it — and every other agent across your fleet —
-on the **Agents** page.
+Click **New session**, type what you want, pick the machine, folder and agent,
+and press Enter. You get a chat with the agent: its steps fold into
+“Worked for 2m 10s”, edits show as diffs, and when it wants to run something
+you approve or reject it right there. Sessions keep running when you close the
+tab.
 
-Or open **Code**, add a project, choose the machine and absolute working
-directory, then sign in from the embedded fx terminal. The fx login, prompt
-history, and saved sessions stay in that browser profile; commands execute on
-the selected project machine through the authenticated hub. Embedded fx needs
-Chrome or Edge 137+ with WebAssembly JSPI support.
+- **Claude Code** and **Codex** are driven through their own machine
+  protocols (`claude --print` stream-json and `codex app-server`).
+- **Gemini CLI, OpenCode, Goose, Copilot CLI, Cursor Agent** — or any other
+  agent — run over the [Agent Client Protocol](https://agentclientprotocol.com).
+- Open the panel on the right of a session for its **Shell**, the machine's
+  **Desktop**, **Files**, **Changes** and **Plan**.
+
+**Remote desktop.** Every machine has a **Desktop** tab. Overseer tunnels the
+machine's own VNC server through the agent connection, so it is never exposed
+to the network. Turn it on with *System Settings → General → Sharing → Screen
+Sharing* on macOS, `x11vnc -localhost -forever` or `wayvnc` on Linux, or a VNC
+server such as TightVNC on Windows.
+
+**Automations** run a prompt on a schedule (cron), and **Customize** holds MCP
+servers that every agent gets on every machine. **Review** lists your open pull
+requests using the GitHub CLI on one of your machines.
+
+The **Projects** page still embeds fx: add a project, choose the machine and
+folder, then sign in from the embedded fx terminal (Chrome or Edge 137+).
 
 ### 4. Prepare coding tools and private access
 
@@ -186,6 +216,18 @@ Now your agent has these tools: `list_devices`, `list_sessions`,
 `list_files`, `read_file`, `write_file`. Ask it things like *"launch claude in
 ~/projects/api on the homelab box and have it fix the failing tests, then report
 back."*
+
+`list_devices` includes CPU utilization and core count, RAM utilization and byte
+totals, 1/5/15-minute load averages, and live session counts split into working,
+idle, and other statuses. Counts include terminals and agents, excluding exited
+sessions. Metrics are reported at the snapshot level: a missing stats snapshot is
+unavailable, but present legacy snapshots do not include per-metric collection
+errors, so zero values cannot be distinguished from collector failures. Load
+averages are unavailable on Windows. Session queries share a five-second budget
+after the device list is fetched, with up to eight concurrent requests; failed or
+unfinished queries are marked unavailable (not zero). This is a best-effort
+snapshot for choosing a device before `create_session`, not a worker limit or
+reservation.
 
 The same operations are available as a CLI:
 
@@ -227,6 +269,12 @@ Replacement is atomic on Linux/macOS; Windows uses a detached swap helper after
 the running `.exe` exits. The previous verified binary is retained beside the
 new one, so **Restore previous version** can roll the hub back with one click.
 Release CI also publishes signed GitHub build provenance for the raw binaries.
+
+If a new version can't stay up (it crashes three times before running for 90
+seconds), the next start restores the previous verified binary on its own, so
+a bad release never leaves a machine in a restart loop. Releases are only
+published after the test suite passes and the built binary reports the tag's
+version.
 
 Managed device agents follow the hub's stable version automatically. Failed
 downloads leave the current agent running and retry later, while successful
@@ -293,6 +341,8 @@ go run ./cmd/overseer serve
 
 # Terminal 2: UI with hot reload (proxies /api to :4200)
 cd ui && npm install && npm run dev
+# The dev UI starts on demo data. To use the real hub, run this in the
+# browser console and reload:  localStorage.setItem('overseer:mock', 'off')
 
 make test        # go vet + unit + integration tests (some need tmux)
 make cross       # cross-compile darwin/linux/windows × amd64/arm64 into dist/
@@ -301,6 +351,8 @@ make cross       # cross-compile darwin/linux/windows × amd64/arm64 into dist/
 Project layout: `cmd/overseer` (entrypoint + subcommands), `internal/protocol`
 (wire format), `internal/hub` (server), `internal/agent` (device side),
 `internal/fleet` (API client), `internal/mcp` (MCP server), `ui` (React app).
+The sessions, desktop, automations and MCP APIs are described in
+[`docs/agent-sessions-api.md`](docs/agent-sessions-api.md).
 
 ## Status & roadmap
 

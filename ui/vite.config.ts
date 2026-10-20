@@ -12,6 +12,7 @@ export default defineConfig({
         ws: true,
       },
       '/install': 'http://localhost:4200',
+      '/mcp': 'http://localhost:4200',
     },
   },
 })

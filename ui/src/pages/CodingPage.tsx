@@ -1,33 +1,47 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import FxTerminal from '../components/FxTerminal'
 import ProjectModal from '../components/ProjectModal'
 import { useHubEvents, usePoll } from '../hooks'
 import type { Device, Project } from '../types'
+import Icon from '../components/Icon'
 
 export default function CodingPage() {
   const { projectId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [projects, setProjects] = useState<Project[]>([])
+  const [projects, setProjectsState] = useState<Project[]>([])
+  // Polls, hub events and local edits race; a response may only apply if no
+  // newer request started and no local edit happened while it was in flight.
+  const requestSeq = useRef(0)
+  const editSeq = useRef(0)
+  const setProjects = useCallback((update: Project[] | ((items: Project[]) => Project[])) => {
+    editSeq.current++
+    setProjectsState(update)
+  }, [])
   const [devices, setDevices] = useState<Device[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState('')
   const [editing, setEditing] = useState<Project | undefined>()
   const [showModal, setShowModal] = useState(false)
   const [showLoginHint, setShowLoginHint] = useState(() => localStorage.getItem('liveagent.fx.login-hint') !== 'hidden')
   const navigate = useNavigate()
 
   const load = useCallback(async () => {
+    const request = ++requestSeq.current
+    const edits = editSeq.current
     try {
       const [nextProjects, nextDevices] = await Promise.all([
         api.get<Project[]>('/api/projects'),
         api.get<Device[]>('/api/devices'),
       ])
-      setProjects(nextProjects)
+      if (request !== requestSeq.current) return
       setDevices(nextDevices)
+      if (edits === editSeq.current) setProjectsState(nextProjects)
       setLoaded(true)
+      setError('')
     } catch {
-      /* keep the last live snapshot */
+      if (request === requestSeq.current) setError('Unable to load projects. Please try again.')
     }
   }, [])
 
@@ -44,56 +58,52 @@ export default function CodingPage() {
     }
   }, [searchParams, setSearchParams])
 
-  useEffect(() => {
-    if (!projectId && projects.length > 0) navigate(`/code/${projects[0].id}`, { replace: true })
-  }, [navigate, projectId, projects])
-
   const project = useMemo(() => projects.find((item) => item.id === projectId), [projectId, projects])
   const device = useMemo(() => devices.find((item) => item.id === project?.deviceId), [devices, project])
 
   const removeProject = async () => {
-    if (!project || !window.confirm(`Remove ${project.name} from LiveAgent? Files on ${device?.name ?? 'the machine'} will not be deleted.`)) return
-    await api.del(`/api/projects/${project.id}`)
-    window.dispatchEvent(new Event('liveagent:projects-changed'))
-    const remaining = projects.filter((item) => item.id !== project.id)
-    setProjects(remaining)
-    navigate(remaining[0] ? `/code/${remaining[0].id}` : '/code')
+    if (!project || !window.confirm(`Remove ${project.name} from Overseer? Files on ${device?.name ?? 'the machine'} will not be deleted.`)) return
+    try {
+      await api.del(`/api/projects/${project.id}`)
+      window.dispatchEvent(new Event('liveagent:projects-changed'))
+      setProjects((items) => items.filter((item) => item.id !== project.id))
+      navigate('/projects')
+    } catch { setError('Could not remove the project. Please try again.') }
   }
 
-  if (loaded && projects.length === 0) {
+  if (!projectId) {
     return (
-      <div className="code-empty">
-        <div className="code-empty-mark"><span>fx</span></div>
-        <p className="eyebrow mt-7">Coding workspace</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em] text-white">What should we build?</h1>
-        <p className="mt-3 max-w-lg text-center text-sm leading-6 text-zinc-500">
-          Add a project, choose the PC where its files live, and let fx work there from this browser.
-        </p>
-        <button onClick={() => setShowModal(true)} className="btn-primary mt-6">Add your first project</button>
+      <div className="main-scroll"><div className="page">
+        <h1 className="page-title">Projects</h1>
+        <p className="page-sub">Folders on your machines, with a browser workspace and one-click agent sessions</p>
+        <div className="page-toolbar mb-8"><span className="grow" /><button onClick={() => { setEditing(undefined); setShowModal(true) }} className="btn btn-dark"><Icon name="plus" size={16} />New project</button></div>
+        {error && <div className="error-banner" role="alert">{error}<button onClick={load}>Retry</button></div>}
+        {!loaded ? <p className="text-sm text-muted">{error ? 'Projects unavailable.' : 'Loading projects…'}</p> : projects.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="code" size={26} /></span><h2>No projects yet</h2><p>Open a directory on a connected machine to start a project.</p><button onClick={() => setShowModal(true)} className="btn-primary"><Icon name="plus" size={16} />New project</button><span className="mt-5 text-[11px] text-muted">Powered by fx · Runs in your browser</span></div> : <div className="grid-cards">{projects.map((item) => { const machine = devices.find((d) => d.id === item.deviceId); return <div key={item.id} className="tpl-card"><Link to={`/projects/${item.id}`} className="tpl-card-title hover:underline"><Icon name="folder" size={19} className="text-muted" />{item.name}</Link><p className="tpl-card-desc font-mono text-[13px]">{item.path}</p><div className="tpl-card-tags items-center"><span className="chip"><span className={`dot ${machine?.online ? 'dot-green' : ''}`} />{machine?.name ?? 'Unknown machine'}</span><span className="flex-1" /><Link to={`/?device=${item.deviceId}&cwd=${encodeURIComponent(item.path)}`} className="btn btn-sm btn-outline">New session</Link><Link to={`/projects/${item.id}`} className="btn btn-sm btn-ghost">Open</Link></div></div> })}</div>}
         {showModal && (
           <ProjectModal
             devices={devices}
             onClose={() => setShowModal(false)}
-            onSaved={(saved) => { setShowModal(false); setProjects([saved]); navigate(`/code/${saved.id}`) }}
+            onSaved={(saved) => { setShowModal(false); setProjects((items) => [...items.filter((item) => item.id !== saved.id), saved]); navigate(`/projects/${saved.id}`) }}
           />
         )}
-      </div>
+      </div></div>
     )
   }
 
   if (!project) {
-    return <div className="grid h-full place-items-center text-sm text-zinc-600">Loading workspace…</div>
+    return <div className="page-shell"><div className="empty-state"><h2>{error || (loaded ? 'Project not found' : 'Loading workspace…')}</h2><Link to="/projects" className="btn-secondary">Back to projects</Link></div></div>
   }
 
   return (
     <div className="coding-shell">
+      {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
       <header className="coding-toolbar">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-semibold text-zinc-100">{project.name}</h1>
+            <h1 className="truncate text-sm font-semibold text-ink">{project.name}</h1>
             <span className={`node-dot ${device?.online ? 'node-dot-online' : ''}`} />
           </div>
-          <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">{project.path}</p>
+          <p className="mt-0.5 truncate font-mono text-[10px] text-muted">{project.path}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="machine-pill">
@@ -131,7 +141,7 @@ export default function CodingPage() {
           onSaved={(saved) => {
             setShowModal(false)
             setProjects((current) => current.map((item) => item.id === saved.id ? saved : item))
-            navigate(`/code/${saved.id}`)
+            navigate(`/projects/${saved.id}`)
           }}
         />
       )}

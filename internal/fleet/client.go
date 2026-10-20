@@ -4,6 +4,7 @@ package fleet
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ErzenXz/overseer/internal/protocol"
 )
 
 // Client talks to a hub with an API token.
@@ -84,6 +87,10 @@ func New(hubURL, token string) *Client {
 }
 
 func (c *Client) do(method, path string, body any, out any) error {
+	return c.doContext(context.Background(), method, path, body, out)
+}
+
+func (c *Client) doContext(ctx context.Context, method, path string, body any, out any) error {
 	var reader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -92,7 +99,7 @@ func (c *Client) do(method, path string, body any, out any) error {
 		}
 		reader = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, c.HubURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, c.HubURL+path, reader)
 	if err != nil {
 		return err
 	}
@@ -124,15 +131,16 @@ func (c *Client) do(method, path string, body any, out any) error {
 // --- typed API surface ---
 
 type Device struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
-	IsHub    bool   `json:"isHub"`
-	Online   bool   `json:"online"`
-	Tmux     bool   `json:"tmux"`
-	LastSeen int64  `json:"lastSeen"`
+	Id       string          `json:"id"`
+	Name     string          `json:"name"`
+	Hostname string          `json:"hostname"`
+	OS       string          `json:"os"`
+	Arch     string          `json:"arch"`
+	IsHub    bool            `json:"isHub"`
+	Online   bool            `json:"online"`
+	Tmux     bool            `json:"tmux"`
+	LastSeen int64           `json:"lastSeen"`
+	Stats    *protocol.Stats `json:"stats,omitempty"`
 }
 
 type Session struct {
@@ -181,8 +189,12 @@ func (c *Client) FleetSessions() ([]Session, error) {
 }
 
 func (c *Client) Sessions(deviceId string) ([]Session, error) {
+	return c.SessionsContext(context.Background(), deviceId)
+}
+
+func (c *Client) SessionsContext(ctx context.Context, deviceId string) ([]Session, error) {
 	var out []Session
-	err := c.do("GET", "/api/devices/"+deviceId+"/sessions", nil, &out)
+	err := c.doContext(ctx, "GET", "/api/devices/"+deviceId+"/sessions", nil, &out)
 	return out, err
 }
 

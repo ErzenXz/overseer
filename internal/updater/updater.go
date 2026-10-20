@@ -105,6 +105,19 @@ func getJSON(ctx context.Context, url string, dst any) error {
 	return json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(dst)
 }
 
+// AssetChecksum returns the published SHA-256 of asset in the release tag
+// (or the latest release when tag is ""), read from its checksums.txt.
+func AssetChecksum(ctx context.Context, repo, tag, asset string) (string, error) {
+	base := fmt.Sprintf("https://github.com/%s/releases/latest/download", repo)
+	if tag != "" {
+		if !isStableVersion(tag) {
+			return "", fmt.Errorf("%q is not a stable release version", tag)
+		}
+		base = fmt.Sprintf("https://github.com/%s/releases/download/%s", repo, tag)
+	}
+	return fetchChecksum(ctx, base+"/checksums.txt", asset)
+}
+
 // IsNewer compares stable vMAJOR.MINOR.PATCH versions. Development builds are
 // considered older than a real release so source-installed services can move
 // onto the supported release channel.
@@ -170,10 +183,19 @@ func Install(ctx context.Context, release Release, taskName string) error {
 		os.Remove(staged)
 		return err
 	}
+	// Arm crash-loop protection before the swap; see health.go.
+	if err := writePending(exe, pendingUpdate{From: binaryVersion(ctx, exe), To: release.Version}); err != nil {
+		os.Remove(staged)
+		return err
+	}
 	if runtime.GOOS == "windows" {
 		return scheduleWindowsSwap(exe, staged, taskName, false)
 	}
-	return swapUnix(exe, staged)
+	if err := swapUnix(exe, staged); err != nil {
+		_ = os.Remove(markerPath(exe))
+		return err
+	}
+	return nil
 }
 
 // Rollback restores the single previous verified binary retained beside the

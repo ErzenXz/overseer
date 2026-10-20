@@ -16,6 +16,9 @@ type termStream struct {
 	channel uint32
 	backend terminalBackend
 	once    sync.Once
+	// eph is set when this channel is a view onto an ephemeral session's
+	// long-lived PTY; closing the channel then only detaches the view.
+	eph *ephemeralSession
 }
 
 type terminalBackend interface {
@@ -34,6 +37,10 @@ func (t *termStream) write(p []byte) {
 // tears down. It deliberately does NOT Kill or Wait the process: those happen
 // only in pumpTerm, so Kill and Wait never race across goroutines.
 func (t *termStream) close() {
+	if t.eph != nil {
+		t.eph.detach(t.channel)
+		return
+	}
 	t.once.Do(func() {
 		t.backend.Close()
 	})

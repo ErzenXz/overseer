@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { wsURL } from './api'
+import { mockEnabled } from './mock'
 import type { HubEvent } from './types'
 
 // useHubEvents keeps one events WebSocket open and invokes the handler for
@@ -9,6 +10,7 @@ export function useHubEvents(onEvent: (e: HubEvent) => void) {
   handler.current = onEvent
 
   useEffect(() => {
+    if (mockEnabled) return
     let ws: WebSocket | null = null
     let timer: number | undefined
     let stopped = false

@@ -35,6 +35,20 @@ jobs:
           name: overseer-binaries
           path: dist/
 
+  installer-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Published installers match scripts/
+        run: |
+          for f in install.sh install-macos.sh install.ps1; do
+            cmp "scripts/$f" "site/public/$f" || { echo "site/public/$f is out of date: cp scripts/$f site/public/"; exit 1; }
+          done
+      - name: POSIX syntax (dash) and shellcheck
+        run: |
+          for f in scripts/install.sh scripts/install-macos.sh scripts/test-installers.sh; do dash -n "$f"; done
+          shellcheck -s sh -S warning scripts/install.sh scripts/install-macos.sh
+
   installer-unix:
     strategy:
       matrix:
@@ -52,6 +66,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Installer parses in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\scripts\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | Format-List | Out-String | Write-Host; exit 1 }
       - name: Exercise Windows release fallback installer
         shell: pwsh
         run: ./scripts/test-installers.ps1
+      - name: Go tests on Windows (service and updater paths)
+        run: go test ./internal/agent/ ./internal/updater/ -run "TestWindowsRunner|TestServicePath|TestCrashLoop|TestStartup|TestIsNewer|TestLatest"
+
