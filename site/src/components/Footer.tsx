@@ -1,6 +1,7 @@
+import { FleetField } from "./FleetField";
 import { ArrowRight, GithubLogo } from "@phosphor-icons/react";
 import { DOCS, ISSUES, LICENSE, RELEASES, REPO } from "../lib/site";
-import { Logo, LogoMark } from "./Logo";
+import { Logo } from "./Logo";
 
 const COLUMNS: {
   title: string;
@@ -29,10 +30,12 @@ const COLUMNS: {
 
 export function ClosingCTA() {
   return (
-    <section aria-labelledby="cta-title" className="border-t border-line">
-      <div className="container-page flex flex-col items-center py-24 text-center sm:py-32">
-        <LogoMark size={36} />
-        <h2 id="cta-title" className="h-section mt-8 max-w-[18ch]">
+    <section aria-labelledby="cta-title" className="cta-stage border-t border-line">
+      <div aria-hidden="true" className="hero-grid" />
+      <FleetField className="hero-field" centerY={0.24} labels={false} />
+      <div aria-hidden="true" className="hero-grain" />
+      <div className="container-page relative flex flex-col items-center pt-[220px] pb-24 text-center sm:pt-[260px] sm:pb-32">
+        <h2 id="cta-title" className="h-section max-w-[18ch]">
           Put every agent you have to work.
         </h2>
         <p className="lede mt-5 max-w-[48ch]">

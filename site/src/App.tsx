@@ -2,6 +2,7 @@ import { Nav } from "./components/Nav";
 import { Hero } from "./components/Hero";
 import { Agents } from "./components/Agents";
 import { Features } from "./components/Features";
+import { Showcase } from "./components/Showcase";
 import { HowItWorks } from "./components/HowItWorks";
 import { Security } from "./components/Security";
 import { Install } from "./components/Install";
@@ -21,6 +22,7 @@ export default function App() {
       <main id="main">
         <Hero />
         <Agents />
+        <Showcase />
         <Features />
         <HowItWorks />
         <Security />

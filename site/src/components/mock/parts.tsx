@@ -92,7 +92,7 @@ export function Vignette({
 }) {
   return (
     <figure
-      className={`relative overflow-hidden rounded-[20px] border border-line bg-subtle p-3 sm:p-5 ${className}`}
+      className={`stage-panel relative overflow-hidden rounded-[20px] border border-line p-3 sm:p-5 ${className}`}
     >
       <figcaption className="sr-only">{label}</figcaption>
       <div aria-hidden="true" className="relative">
