@@ -71,18 +71,23 @@ const tone: Record<string, string> = {
 
 export function Changelog() {
   return (
-    <section className="container-page pt-32 pb-24">
-      <div className="mx-auto max-w-[760px]">
-        <p className="text-[13px] font-medium tracking-wide text-ink-3 uppercase">Changelog</p>
-        <h1 className="mt-3 text-[clamp(32px,5vw,48px)] font-semibold leading-[1.08] tracking-[-0.02em] text-ink">
-          What’s new in Overseer
+    <>
+    <section className="frame">
+      <div className="section pb-14">
+        <p className="label rise">Changelog</p>
+        <h1 className="h-display rise mt-5 text-[42px] sm:text-[60px]">
+          What’s new <span className="text-ink-4">in Overseer.</span>
         </h1>
-        <p className="mt-4 max-w-[56ch] text-[17px] leading-relaxed text-ink-2">
+        <p className="lede rise mt-6 max-w-[56ch]">
           Every release, in plain words. Installed hubs and machines update on their own; downloads are on{" "}
           <a href={RELEASES} target="_blank" rel="noreferrer" className="text-accent hover:underline">GitHub</a>.
         </p>
-
-        <ol className="mt-16 space-y-16">
+      </div>
+    </section>
+    <div className="rule" />
+    <section className="frame">
+      <div className="section mx-auto max-w-[920px] pt-14">
+        <ol className="space-y-16">
           {releases.map((release, index) => (
             <li key={release.version} id={release.version} className="grid gap-4 md:grid-cols-[150px_1fr] md:gap-10">
               <div className="md:sticky md:top-24 md:self-start">
@@ -112,5 +117,6 @@ export function Changelog() {
         </ol>
       </div>
     </section>
+    </>
   );
 }

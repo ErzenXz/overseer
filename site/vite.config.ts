@@ -3,15 +3,14 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// Two static pages: the landing page and /changelog/.
+// A small multi-page site: each page is its own static HTML entry.
+const pages = ["index", "features/index", "download/index", "security/index", "changelog/index"];
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     rollupOptions: {
-      input: {
-        main: resolve(__dirname, "index.html"),
-        changelog: resolve(__dirname, "changelog/index.html"),
-      },
+      input: Object.fromEntries(pages.map((page) => [page.replace("/index", "") || "index", resolve(__dirname, `${page}.html`)])),
     },
   },
 });
