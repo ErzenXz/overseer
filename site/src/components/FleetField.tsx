@@ -60,7 +60,10 @@ export function FleetField({ className = "", centerY = 0.66, labels = true, anch
     const css = getComputedStyle(document.documentElement);
     const color = (name: string, fallback: string) =>
       css.getPropertyValue(name).trim() || fallback;
-    const ink = "236, 236, 236";
+    // Draw in the page's ink colour, so the field works on light and dark.
+    const hex = color("--ink", "#ededed").replace("#", "");
+    const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+    const ink = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) || 0).join(", ");
     const statusColor: Record<Status, string> = {
       idle: `rgba(${ink}, 0.55)`,
       working: `rgba(${ink}, 0.9)`,
@@ -250,7 +253,7 @@ export function FleetField({ className = "", centerY = 0.66, labels = true, anch
         ctx.globalAlpha = 0.35 + p.depth * 0.65;
         ctx.fillRect(p.x - size, p.y - size, size * 2, size * 2);
         ctx.globalAlpha = 1;
-        if (labels && !small && p.depth > 0.35) {
+        if (labels && width >= 820 && p.depth > 0.35) {
           const note = m.status === "waiting" ? "  needs approval" : m.status === "done" ? "  PR ready" : "";
           ctx.fillStyle = `rgba(${ink}, ${0.18 + p.depth * 0.32})`;
           ctx.fillText(m.label, p.x + size + 8, p.y);

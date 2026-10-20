@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <title>Download · Overseer</title>
+    <meta name="description" content="Install Overseer on macOS, Linux or Windows with one command, then add every machine." />
+    <link rel="canonical" href="https://overseer.sh/download/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Overseer" />
+    <meta property="og:url" content="https://overseer.sh/download/" />
+    <meta
+      property="og:title"
+      content="Overseer · Your own Devin, on your own machines"
+    />
+    <meta
+      property="og:description"
+      content="Run Claude Code, Codex, Gemini CLI and any ACP agent on every machine you own, and steer them all from one browser tab. Self-hosted and open source."
+    />
+    <meta property="og:image" content="https://overseer.sh/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://overseer.sh/og.jpg" />
+    <meta name="twitter:title" content="Overseer · Your own Devin, on your own machines" />
+    <meta
+      name="twitter:description"
+      content="Every coding agent, on every machine, from one tab. Self-hosted and open source."
+    />
+  </head>
+  <body>
+    <script>
+      // Opt the page into entrance and scroll animation only when JS runs and
+      // the reader has not asked for reduced motion. Runs before first paint.
+      if (
+        window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: no-preference)").matches
+      ) {
+        document.documentElement.classList.add("js-reveal");
+      }
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/pages/Download.tsx"></script>
+  </body>
+</html>
