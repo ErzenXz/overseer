@@ -283,6 +283,33 @@ Automatic replacement requires an installation made by the Linux, macOS, or
 Windows background-service installer. Source/debug runs still show whether a
 new release exists without silently changing themselves.
 
+## Custom services
+
+If you run the hub under your own systemd unit or launchd job instead of the
+installer's, it can still update itself. **Settings → General** lists what is
+missing and gives a ready-made fix. A custom service needs all three:
+
+1. **The managed flag.** Add `Environment=OVERSEER_MANAGED=hub` to the unit.
+   Without it the hub only reports new releases.
+2. **A binary the service user can replace.** Updates are staged next to the
+   running binary. Keep a copy the service user owns, for example
+   `<data dir>/bin/overseer`, and point `ExecStart` at it (a root-owned symlink
+   from `/usr/local/bin/overseer` is fine).
+3. **Restart after a clean exit.** A successful update exits with status 0 so
+   the new binary starts; use `Restart=always`, not `on-failure`.
+
+For systemd, `sudo systemctl edit <unit>` and add:
+
+```ini
+[Service]
+Environment=OVERSEER_MANAGED=hub
+Restart=always
+```
+
+Keep your existing data directory and service user: nothing needs to move.
+Then turn on **Auto-update** in Settings → General, or install the update from
+there.
+
 ## Accessing it from anywhere
 
 Overseer binds to `0.0.0.0:4200` over plain HTTP — perfect on a trusted LAN.

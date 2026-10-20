@@ -1,0 +1,41 @@
+[
+ {
+  "id": "vercel@claude-plugins-official",
+  "version": "0.50.0",
+  "scope": "user",
+  "enabled": true,
+  "installPath": "{{CLAUDE}}/plugins/cache/claude-plugins-official/vercel/0.50.0",
+  "installedAt": "2026-08-19T11:17:35.051Z",
+  "lastUpdated": "2026-09-22T18:49:25.698Z",
+  "mcpServers": {
+   "vercel": {
+    "type": "http",
+    "url": "https://mcp.vercel.com"
+   },
+   "secret": {
+    "type": "http",
+    "url": "https://mcp.example.com/x?api_key=SECRET-URL-KEY",
+    "headers": {
+     "Authorization": "Bearer SECRET-PLUGIN-HDR"
+    }
+   }
+  },
+  "projectEnabled": false
+ },
+ {
+  "id": "cowork-plugin-management@synced",
+  "version": "0.2.2",
+  "scope": "synced",
+  "enabled": true,
+  "installPath": "{{CLAUDE}}/plugins/synced/bucket-1/cowork-plugin-management"
+ },
+ {
+  "id": "ghost@claude-plugins-official",
+  "version": "1.0.0",
+  "scope": "project",
+  "enabled": false,
+  "installPath": "{{CLAUDE}}/plugins/cache/claude-plugins-official/ghost/1.0.0",
+  "projectPath": "{{PROJECT}}",
+  "projectEnabled": false
+ }
+]

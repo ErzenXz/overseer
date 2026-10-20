@@ -376,6 +376,10 @@ func (c *claudeAdapter) onLine(line []byte) {
 		}
 	case "result":
 		c.onResult(m)
+	case "rate_limit_event":
+		if l, ok := claudeLimitsEvent(m); ok {
+			reportLimits(c.sink, l)
+		}
 	case "control_request":
 		go c.onControlRequest(line)
 	case "control_response":

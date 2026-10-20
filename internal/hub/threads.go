@@ -28,24 +28,18 @@ type agentKind struct {
 	Models   []string `json:"models,omitempty"`
 }
 
-var agentKinds = []agentKind{
-	{Id: "claude", Name: "Claude Code", Protocol: "native", Models: []string{"sonnet", "opus", "haiku"}},
-	{Id: "codex", Name: "Codex", Protocol: "native"},
-	{Id: "gemini", Name: "Gemini CLI", Protocol: "acp"},
-	{Id: "opencode", Name: "OpenCode", Protocol: "acp"},
-	{Id: "goose", Name: "Goose", Protocol: "acp"},
-	{Id: "copilot", Name: "GitHub Copilot", Protocol: "acp"},
-	{Id: "cursor", Name: "Cursor Agent", Protocol: "acp"},
-	{Id: "acp", Name: "Custom ACP agent", Protocol: "acp"},
-}
-
-func validAgentKind(id string) bool {
-	for _, k := range agentKinds {
-		if k.Id == id {
-			return true
+// agentKinds is the catalog in the older /api/agent-kinds shape.
+func (s *Server) agentKinds() []agentKind {
+	list := s.agents.list()
+	out := make([]agentKind, 0, len(list)+1)
+	for _, a := range list {
+		k := agentKind{Id: a.Id, Name: a.Name, Protocol: a.Protocol}
+		if a.Id == "claude" {
+			k.Models = []string{"sonnet", "opus", "haiku"}
 		}
+		out = append(out, k)
 	}
-	return false
+	return append(out, agentKind{Id: "acp", Name: "Custom ACP agent", Protocol: "acp"})
 }
 
 func validAccess(a string) bool {
@@ -406,10 +400,14 @@ func (ts *threadService) startOn(t *Thread, c *agentConn) error {
 	ctx, cancel := contextWithTimeout(threadStartWait)
 	defer cancel()
 	var res protocol.ThreadStartResult
+	command := t.Command
+	if launch := ts.s.agents.launchCommand(t.Agent); launch != "" {
+		command = launch // registry and custom agents
+	}
 	err := c.requestInto(ctx, protocol.TypeThreadStart, protocol.ThreadStart{
 		ThreadId:   t.Id,
 		Agent:      t.Agent,
-		Command:    t.Command,
+		Command:    command,
 		Cwd:        t.Cwd,
 		Model:      t.Model,
 		Access:     t.Access,
@@ -654,8 +652,9 @@ func validImages(images []string) string {
 	return ""
 }
 
-// validate normalises in and returns a user-facing problem, if any.
-func (in *threadInput) validate() string {
+// validate normalises in and returns a user-facing problem, if any. The
+// agent must be in the catalog (or "acp" with a command).
+func (in *threadInput) validate(agents *agentCatalog) string {
 	in.DeviceId = strings.TrimSpace(in.DeviceId)
 	in.Agent = strings.TrimSpace(in.Agent)
 	in.Command = strings.TrimSpace(in.Command)
@@ -670,7 +669,7 @@ func (in *threadInput) validate() string {
 	switch {
 	case in.DeviceId == "":
 		return "deviceId is required"
-	case !validAgentKind(in.Agent):
+	case !agents.valid(in.Agent):
 		return "unknown agent"
 	case in.Agent == "acp" && in.Command == "":
 		return "command is required for a custom ACP agent"
@@ -759,7 +758,7 @@ func (s *Server) handleCreateThread(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid thread")
 		return
 	}
-	if msg := in.validate(); msg != "" {
+	if msg := in.validate(s.agents); msg != "" {
 		httpError(w, http.StatusBadRequest, msg)
 		return
 	}
@@ -1006,7 +1005,7 @@ func (s *Server) handleThreadApproval(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAgentKinds(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, agentKinds)
+	writeJSON(w, s.agentKinds())
 }
 
 func (s *Server) handleDeviceAgents(w http.ResponseWriter, r *http.Request) {
@@ -1014,17 +1013,13 @@ func (s *Server) handleDeviceAgents(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	ctx, cancel := contextWithTimeout(20 * time.Second)
-	defer cancel()
-	var res protocol.AgentsDetectResult
-	if err := c.requestInto(ctx, protocol.TypeAgentsDetect, struct{}{}, &res); err != nil {
+	refresh := r.URL.Query().Get("refresh") == "1" || r.URL.Query().Get("refresh") == "true"
+	agents, err := s.deviceAgents(c, refresh)
+	if err != nil {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	if res.Agents == nil {
-		res.Agents = []protocol.AgentInfo{}
-	}
-	writeJSON(w, res.Agents)
+	writeJSON(w, agents)
 }
 
 // handleThreadWS streams one thread: a snapshot, then every changed message

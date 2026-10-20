@@ -116,6 +116,12 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 	enabled    INTEGER NOT NULL DEFAULT 1,
 	created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS custom_agents (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	command    TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS automations (
 	id             TEXT PRIMARY KEY,
 	name           TEXT NOT NULL,
@@ -171,6 +177,9 @@ var addedColumns = []struct{ table, column, def string }{
 	{"threads", "fork_at", "TEXT NOT NULL DEFAULT ''"},
 	{"threads", "fork_context", "TEXT NOT NULL DEFAULT ''"},
 	{"threads", "agent_meta", "TEXT NOT NULL DEFAULT ''"},
+	{"automations", "effort", "TEXT NOT NULL DEFAULT ''"},
+	{"automations", "fast", "INTEGER NOT NULL DEFAULT 0"},
+	{"automations", "mode", "TEXT NOT NULL DEFAULT ''"},
 }
 
 func (s *Store) migrate() error {

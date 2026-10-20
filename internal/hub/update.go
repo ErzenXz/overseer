@@ -14,18 +14,19 @@ import (
 const autoUpdateSetting = "auto_updates"
 
 type updateStatus struct {
-	CurrentVersion  string `json:"currentVersion"`
-	LatestVersion   string `json:"latestVersion,omitempty"`
-	RollbackVersion string `json:"rollbackVersion,omitempty"`
-	UpdateAvailable bool   `json:"updateAvailable"`
-	AutoUpdate      bool   `json:"autoUpdate"`
-	Managed         bool   `json:"managed"`
-	Checking        bool   `json:"checking"`
-	Applying        bool   `json:"applying"`
-	LastChecked     int64  `json:"lastChecked,omitempty"`
-	Error           string `json:"error,omitempty"`
-	FleetTotal      int    `json:"fleetTotal"`
-	FleetOutdated   int    `json:"fleetOutdated"`
+	CurrentVersion  string      `json:"currentVersion"`
+	LatestVersion   string      `json:"latestVersion,omitempty"`
+	RollbackVersion string      `json:"rollbackVersion,omitempty"`
+	UpdateAvailable bool        `json:"updateAvailable"`
+	AutoUpdate      bool        `json:"autoUpdate"`
+	Managed         bool        `json:"managed"`
+	Checking        bool        `json:"checking"`
+	Applying        bool        `json:"applying"`
+	LastChecked     int64       `json:"lastChecked,omitempty"`
+	Error           string      `json:"error,omitempty"`
+	FleetTotal      int         `json:"fleetTotal"`
+	FleetOutdated   int         `json:"fleetOutdated"`
+	Service         serviceInfo `json:"service"`
 }
 
 type updateManager struct {
@@ -46,13 +47,15 @@ func newUpdateManager(store *Store, version, repo string) *updateManager {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	rollbackVersion := updater.PreviousVersion(ctx)
 	cancel()
+	managed := os.Getenv("OVERSEER_MANAGED") != ""
 	return &updateManager{
 		store: store, version: version, repo: repo,
 		status: updateStatus{
 			CurrentVersion:  version,
 			RollbackVersion: rollbackVersion,
 			AutoUpdate:      auto,
-			Managed:         os.Getenv("OVERSEER_MANAGED") != "",
+			Managed:         managed,
+			Service:         diagnoseService(managed),
 		},
 	}
 }
@@ -147,7 +150,7 @@ func (m *updateManager) install(ctx context.Context) error {
 	}
 	if !m.status.Managed {
 		m.mu.Unlock()
-		return errors.New("automatic replacement requires an installed background service; use `overseer update` for this standalone binary")
+		return errors.New("this hub isn't configured for managed updates; see Settings → General, or run `overseer update` and restart it")
 	}
 	release := m.latest
 	m.status.Applying = true
@@ -205,7 +208,7 @@ func (m *updateManager) rollback() error {
 	}
 	if !m.status.Managed {
 		m.mu.Unlock()
-		return errors.New("rollback requires an installed background service; use `overseer rollback` for this standalone binary")
+		return errors.New("this hub isn't configured for managed updates; run `overseer rollback` and restart it")
 	}
 	m.status.Applying = true
 	m.status.Error = ""

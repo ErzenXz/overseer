@@ -10,6 +10,7 @@ import AutomationsPage from './pages/AutomationsPage'
 import MachinesPage from './pages/MachinesPage'
 import MachinePage from './pages/MachinePage'
 import ReviewPage from './pages/ReviewPage'
+import SkillsPage from './pages/SkillsPage'
 import CustomizePage from './pages/CustomizePage'
 import SettingsPage from './pages/SettingsPage'
 import CodingPage from './pages/CodingPage'
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="/projects" element={<CodingPage />} />
         <Route path="/projects/:projectId" element={<CodingPage />} />
         <Route path="/customize" element={<CustomizePage />} />
+        <Route path="/skills" element={<SkillsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/:section" element={<SettingsPage />} />
         {/* Old links keep working. */}

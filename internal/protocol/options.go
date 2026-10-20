@@ -34,7 +34,7 @@ const (
 // AgentOptionsRequest asks the device which options an agent supports.
 type AgentOptionsRequest struct {
 	Agent   string `json:"agent"`
-	Command string `json:"command,omitempty"` // only for agent "acp"
+	Command string `json:"command,omitempty"` // "acp" and catalog ACP agents (registry, custom)
 }
 
 // AgentOptions is the reply to agent.options and the body of

@@ -720,6 +720,9 @@ type Automation struct {
 	Agent        string `json:"agent"`
 	Command      string `json:"command,omitempty"`
 	Model        string `json:"model,omitempty"`
+	Effort       string `json:"effort,omitempty"`
+	Fast         bool   `json:"fast,omitempty"`
+	Mode         string `json:"mode,omitempty"`
 	Cwd          string `json:"cwd"`
 	Access       string `json:"access"`
 	Schedule     string `json:"schedule"`
@@ -731,17 +734,18 @@ type Automation struct {
 }
 
 const automationColumns = `id, name, prompt, device_id, agent, command, model, cwd, access, schedule, enabled,
-	created_at, last_run_at, last_thread_id, next_run_at`
+	created_at, last_run_at, last_thread_id, next_run_at, effort, fast, mode`
 
 func scanAutomation(row rowScanner) (*Automation, error) {
 	var a Automation
-	var enabled int
+	var enabled, fast int
 	err := row.Scan(&a.Id, &a.Name, &a.Prompt, &a.DeviceId, &a.Agent, &a.Command, &a.Model, &a.Cwd, &a.Access,
-		&a.Schedule, &enabled, &a.CreatedAt, &a.LastRunAt, &a.LastThreadId, &a.NextRunAt)
+		&a.Schedule, &enabled, &a.CreatedAt, &a.LastRunAt, &a.LastThreadId, &a.NextRunAt, &a.Effort, &fast, &a.Mode)
 	if err != nil {
 		return nil, err
 	}
 	a.Enabled = enabled == 1
+	a.Fast = fast == 1
 	return &a, nil
 }
 
@@ -773,13 +777,14 @@ func (s *Store) AutomationById(id string) (*Automation, error) {
 // SaveAutomation inserts or replaces an automation.
 func (s *Store) SaveAutomation(a Automation) error {
 	_, err := s.db.Exec(`INSERT INTO automations (`+automationColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, prompt = excluded.prompt, device_id = excluded.device_id,
 			agent = excluded.agent, command = excluded.command, model = excluded.model, cwd = excluded.cwd,
 			access = excluded.access, schedule = excluded.schedule, enabled = excluded.enabled,
-			last_run_at = excluded.last_run_at, last_thread_id = excluded.last_thread_id, next_run_at = excluded.next_run_at`,
+			last_run_at = excluded.last_run_at, last_thread_id = excluded.last_thread_id, next_run_at = excluded.next_run_at,
+			effort = excluded.effort, fast = excluded.fast, mode = excluded.mode`,
 		a.Id, a.Name, a.Prompt, a.DeviceId, a.Agent, a.Command, a.Model, a.Cwd, a.Access, a.Schedule,
-		boolInt(a.Enabled), a.CreatedAt, a.LastRunAt, a.LastThreadId, a.NextRunAt)
+		boolInt(a.Enabled), a.CreatedAt, a.LastRunAt, a.LastThreadId, a.NextRunAt, a.Effort, boolInt(a.Fast), a.Mode)
 	return err
 }
 

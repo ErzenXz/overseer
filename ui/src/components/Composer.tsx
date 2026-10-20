@@ -1,5 +1,7 @@
 import { ClipboardEvent, FormEvent, KeyboardEvent, ReactNode, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
+import { limitTone, limitsFor, resetsIn, usePlanLimits } from '../usageLimits'
 import { useAgentOptions } from '../agentOptions'
 import type { AgentCommand, Device, FsListing, Thread } from '../types'
 import { AgentPicker, ModePicker, nextMode } from './AgentPicker'
@@ -262,7 +264,7 @@ export default function Composer({
             </>
           )}
           <span className="grow" />
-          {usage?.contextWindow && usage.contextTokens ? <ContextMeter used={usage.contextTokens} total={usage.contextWindow} onCompact={onCompact} /> : null}
+          {!agentOptional && <UsageMeter usage={usage} deviceId={settings.deviceId} agent={settings.agent} onCompact={onCompact} />}
           {speechSupported && (
             <button type="button" className={`ctl ctl-icon ${listening ? 'recording' : ''}`} aria-label={listening ? 'Stop dictation' : 'Dictate'} title={listening ? 'Stop dictation' : 'Dictate'} onClick={toggleDictation}>
               <Icon name={listening ? 'wave' : 'mic'} size={16} />
@@ -285,19 +287,73 @@ export default function Composer({
 
 // ContextMeter shows how full the agent's context window is; clicking it
 // compacts the conversation when the agent supports that.
-function ContextMeter({ used, total, onCompact }: { used: number; total: number; onCompact?: () => void }) {
-  const ratio = Math.min(1, used / total)
+// UsageMeter is the ring by the send button. It opens a popover with how
+// full the context window is, this session's tokens, and the plan's rolling
+// limits for this agent on this machine. Compacting is an explicit button
+// inside, never a side effect of clicking the ring.
+function UsageMeter({ usage, deviceId, agent, onCompact }: { usage?: Thread['usage']; deviceId: string; agent: string; onCompact?: () => void }) {
+  const { accounts } = usePlanLimits()
+  const plan = limitsFor(accounts, deviceId, agent)
+  const windows = plan?.windows ?? []
+  const context = usage?.contextWindow && usage.contextTokens ? { used: usage.contextTokens, total: usage.contextWindow } : null
+  if (!context && !windows.length) return null
+  // The ring shows context when known, else the tightest plan window.
+  const ratio = context ? Math.min(1, context.used / context.total) : Math.min(1, Math.max(...windows.map((item) => item.usedPercent)) / 100)
   const r = 7
   const circumference = 2 * Math.PI * r
-  const label = `${Math.round(used / 1000)}k of ${Math.round(total / 1000)}k tokens of context used${onCompact ? '. Click to compact' : ''}`
+  const k = (n: number) => `${n >= 10_000 ? Math.round(n / 1000) : (n / 1000).toFixed(1)}k`
+  const label = context ? `${Math.round(ratio * 100)}% of context used` : `${Math.round(ratio * 100)}% of plan limit used`
   return (
-    <button type="button" className={`ctl ctl-icon context-meter ${ratio > 0.8 ? 'is-full' : ''}`} title={label} aria-label={label} onClick={onCompact} disabled={!onCompact}>
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeOpacity=".2" strokeWidth="2" />
-        <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={`${circumference * ratio} ${circumference}`} strokeLinecap="round" transform="rotate(-90 9 9)" />
-      </svg>
-    </button>
+    <Menu
+      placement="top-end"
+      width={300}
+      trigger={
+        <button type="button" className={`ctl ctl-icon context-meter ${ratio > 0.8 ? 'is-full' : ''}`} title={label} aria-label={`Usage: ${label}`}>
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeOpacity=".2" strokeWidth="2" />
+            <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={`${circumference * ratio} ${circumference}`} strokeLinecap="round" transform="rotate(-90 9 9)" />
+          </svg>
+        </button>
+      }
+    >
+      {(close) => (
+        <div className="usage-pop">
+          {context && (
+            <section>
+              <div className="usage-pop-row"><span className="usage-pop-title">Context</span><span>{k(context.used)} / {k(context.total)}</span></div>
+              <Meter percent={(context.used / context.total) * 100} />
+              <p className="usage-pop-note">{Math.round((context.used / context.total) * 100)}% of the context window is in use.</p>
+            </section>
+          )}
+          {usage && (usage.inputTokens || usage.outputTokens) ? (
+            <section>
+              <div className="usage-pop-row"><span className="usage-pop-title">This session</span><span>{k(usage.inputTokens + usage.outputTokens)} tokens{usage.costUsd ? ` · $${usage.costUsd.toFixed(2)}` : ''}</span></div>
+            </section>
+          ) : null}
+          {windows.length > 0 && (
+            <section>
+              <div className="usage-pop-row"><span className="usage-pop-title">Plan limits</span><span>{plan?.plan || ''}</span></div>
+              {windows.map((item) => (
+                <div key={item.id} className="usage-pop-limit">
+                  <div className="usage-pop-row"><span>{item.label}</span><span>{Math.round(item.usedPercent)}%{item.resetsAt ? ` · resets ${resetsIn(item.resetsAt)}` : ''}</span></div>
+                  <Meter percent={item.usedPercent} />
+                </div>
+              ))}
+            </section>
+          )}
+          <div className="usage-pop-foot">
+            {onCompact && context && <button type="button" className="btn btn-outline btn-sm" onClick={() => { close(); onCompact() }}><Icon name="compress" size={14} />Compact</button>}
+            <Link to="/settings/usage" className="usage-pop-link" onClick={close}>All usage<Icon name="arrow-up-right" size={13} /></Link>
+          </div>
+        </div>
+      )}
+    </Menu>
   )
+}
+
+export function Meter({ percent }: { percent: number }) {
+  const value = Math.max(0, Math.min(100, percent))
+  return <div className={`meter ${limitTone(percent)}`} role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${value}%` }} /></div>
 }
 
 interface SpeechLike {

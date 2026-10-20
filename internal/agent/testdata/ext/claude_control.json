@@ -1,0 +1,267 @@
+{
+ "initialize": {
+  "commands": [
+   {
+    "name": "vercel-doctor",
+    "description": "Find ways to cut your Vercel bill. Run after making changes to catch cost-heavy patterns early in Next.js projects. (user)",
+    "argumentHint": ""
+   },
+   {
+    "name": "deep-research",
+    "description": "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)",
+    "argumentHint": "",
+    "builtin": true
+   },
+   {
+    "name": "vercel:deploy",
+    "description": "(vercel) Deploy the current project to Vercel. Pass \"prod\" or \"production\" as argument to deploy to production. Default is preview deployment.",
+    "argumentHint": ""
+   },
+   {
+    "name": "vercel:ai-sdk",
+    "description": "(vercel) Vercel AI SDK expert guidance. Use when building AI-powered features — chat interfaces, text generation, structured output, tool calling, agents, MCP integration, streaming, embeddings, reranking, image generation, or working with any LLM provider.",
+    "argumentHint": "",
+    "aliases": [
+     "ai-sdk"
+    ]
+   },
+   {
+    "name": "vercel:nextjs",
+    "description": "(vercel) Next.js App Router expert guidance. Use when building, debugging, or architecting Next.js applications — routing, Server Components, Server Actions, Cache Components, layouts, middleware/proxy, data fetching, rendering strategies, and deployment on Vercel.",
+    "argumentHint": "",
+    "aliases": [
+     "nextjs"
+    ]
+   },
+   {
+    "name": "init",
+    "description": "Initialize a new CLAUDE.md file with codebase documentation",
+    "argumentHint": "",
+    "builtin": true
+   },
+   {
+    "name": "pdf",
+    "description": "Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill. (claude.ai sync)",
+    "argumentHint": "",
+    "aliases": [
+     "anthropic-skills:pdf"
+    ]
+   }
+  ],
+  "agents": [
+   {
+    "name": "Explore",
+    "description": "Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"), grep for symbols or keywords (eg. \"API endpoints\"), or answer \"where is X defined / which files reference Y.\" Do NOT use it for code review, design-doc auditing, cross-file consistency checks, or open-ended analysis — it reads excerpts rather than whole files and will miss content past its read window. When calling, specify search breadth: \"quick\" for a single targeted lookup, \"medium\" for moderate exploration, or \"very thorough\" to search across multiple locations and naming conventions.",
+    "model": "inherit"
+   },
+   {
+    "name": "Plan",
+    "description": "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
+    "model": "inherit"
+   },
+   {
+    "name": "vercel:ai-architect",
+    "description": "Specializes in architecting AI-powered applications on Vercel — choosing between AI SDK patterns, configuring providers, building agents, setting up durable workflows, and integrating MCP servers. Use when designing AI features, building chatbots, or creating agentic applications."
+   }
+  ],
+  "output_style": "default",
+  "available_output_styles": [
+   "default",
+   "Proactive",
+   "Concise",
+   "Explanatory",
+   "Learning"
+  ],
+  "user_output_styles_dir": "{{CLAUDE}}/output-styles",
+  "pid": 4242,
+  "account": {
+   "email": "SECRET-you@example.com",
+   "organization": "SECRET-ORG"
+  }
+ },
+ "get_skills_dialog": {
+  "skills": [
+   {
+    "name": "anthropic-skills:pdf",
+    "display_name": "pdf",
+    "description": "Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill.",
+    "source": "claude.ai sync",
+    "tokens": 153,
+    "state": "on",
+    "advertised": true,
+    "handles": {
+     "unqualified_name": "pdf",
+     "aliases": [
+      "pdf"
+     ]
+    }
+   },
+   {
+    "name": "cowork-plugin-management:create-cowork-plugin",
+    "display_name": "cowork-plugin-management:create-cowork-plugin",
+    "description": "Guide users through creating a new plugin from scratch in a cowork session. Use when users want to create a plugin, build a plugin, make a new plugin, develop a plugin, scaffold a plugin, start a plugin from scratch, or design a plugin. This skill requires Cowork mode with access to the outputs directory for delivering the final .plugin file.",
+    "source": "plugin",
+    "tokens": 130,
+    "state": "on",
+    "locked_by": "plugin",
+    "advertised": true,
+    "handles": {
+     "aliases": [
+      "create-cowork-plugin"
+     ]
+    }
+   },
+   {
+    "name": "vercel:ai-sdk",
+    "display_name": "vercel:ai-sdk",
+    "description": "Vercel AI SDK expert guidance. Use when building AI-powered features — chat interfaces, text generation, structured output, tool calling, agents, MCP integration, streaming, embeddings, reranking, image generation, or working with any LLM provider.",
+    "source": "plugin",
+    "tokens": 87,
+    "state": "name-only",
+    "locked_by": "plugin",
+    "advertised": true,
+    "handles": {
+     "aliases": [
+      "ai-sdk"
+     ]
+    }
+   },
+   {
+    "name": "vercel:nextjs",
+    "display_name": "vercel:nextjs",
+    "description": "Next.js App Router expert guidance. Use when building, debugging, or architecting Next.js applications — routing, Server Components, Server Actions, Cache Components, layouts, middleware/proxy, data fetching, rendering strategies, and deployment on Vercel.",
+    "source": "plugin",
+    "tokens": 90,
+    "state": "on",
+    "locked_by": "plugin",
+    "advertised": true,
+    "handles": {
+     "aliases": [
+      "nextjs"
+     ]
+    }
+   },
+   {
+    "name": "vercel-doctor",
+    "display_name": "vercel-doctor",
+    "description": "Find ways to cut your Vercel bill. Run after making changes to catch cost-heavy patterns early in Next.js projects.",
+    "source": "user",
+    "tokens": 43,
+    "state": "on",
+    "advertised": true,
+    "handles": {}
+   },
+   {
+    "name": "pskill",
+    "display_name": "pskill",
+    "description": "P skill",
+    "source": "project",
+    "tokens": 5,
+    "state": "on",
+    "advertised": true,
+    "handles": {}
+   }
+  ]
+ },
+ "get_hooks_listing": {
+  "events": [
+   {
+    "name": "PostToolUse",
+    "summary": "After tool execution",
+    "supportsMatcher": true,
+    "hookCount": 1
+   },
+   {
+    "name": "SessionStart",
+    "summary": "When a new session is started",
+    "supportsMatcher": true,
+    "hookCount": 3
+   }
+  ],
+  "hooks": [
+   {
+    "event": "PostToolUse",
+    "matcher": "Skill",
+    "source": "pluginHook",
+    "sourceLabel": "Plugin hooks (~/.claude/plugins/*/hooks/hooks.json)",
+    "pluginName": "vercel@claude-plugins-official",
+    "type": "command",
+    "displayText": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/posttooluse-skill-telemetry.mjs\"",
+    "commandText": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/posttooluse-skill-telemetry.mjs\"",
+    "contentLabel": "Command",
+    "timeout": 5,
+    "disabled": true
+   },
+   {
+    "event": "SessionStart",
+    "matcher": "startup|resume|clear|compact",
+    "source": "pluginHook",
+    "sourceLabel": "Plugin hooks (~/.claude/plugins/*/hooks/hooks.json)",
+    "pluginName": "vercel@claude-plugins-official",
+    "type": "command",
+    "displayText": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-seen-skills.mjs\"",
+    "commandText": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-seen-skills.mjs\"",
+    "contentLabel": "Command",
+    "disabled": true
+   },
+   {
+    "event": "PreToolUse",
+    "matcher": "Bash",
+    "source": "userSettings",
+    "sourceLabel": "User settings",
+    "type": "command",
+    "displayText": "curl -s -H 'Authorization: Bearer SECRET-HOOK-TOKEN' https://hooks.example.com/x?token=SECRET-HOOK-Q",
+    "commandText": "curl -s -H 'Authorization: Bearer SECRET-HOOK-TOKEN' https://hooks.example.com/x?token=SECRET-HOOK-Q",
+    "contentLabel": "Command",
+    "disabled": true
+   }
+  ],
+  "eventCatalog": [],
+  "policy": {
+   "disabledByPolicy": false,
+   "managedOnly": false,
+   "pluginOnly": false,
+   "allDisabled": true,
+   "policyHookCount": 0
+  }
+ },
+ "get_memory_dialog": {
+  "files": [
+   {
+    "kind": "user",
+    "path": "{{CLAUDE}}/CLAUDE.md",
+    "label": "User instructions",
+    "description": "",
+    "exists": true
+   },
+   {
+    "kind": "project",
+    "path": "{{PROJECT}}/CLAUDE.md",
+    "label": "Project instructions",
+    "description": "",
+    "exists": true
+   },
+   {
+    "kind": "local",
+    "path": "{{PROJECT}}/CLAUDE.local.md",
+    "label": "Local",
+    "description": "",
+    "exists": false
+   }
+  ],
+  "folders": [
+   {
+    "kind": "auto",
+    "path": "{{CLAUDE}}/projects/-home-you-project/memory/",
+    "label": "Open auto-memory folder",
+    "description": ""
+   }
+  ],
+  "memories": [],
+  "auto_memory": {
+   "enabled": true,
+   "toggleable": true,
+   "status": "on"
+  }
+ }
+}

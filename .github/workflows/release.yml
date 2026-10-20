@@ -61,9 +61,15 @@ jobs:
       # Raw binaries (overseer_<os>_<arch>) are uploaded alongside archives so
       # the hub's installer can fetch them directly from
       # /releases/latest/download/overseer_<os>_<arch>.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          sh scripts/release-notes.sh "${{ github.ref_name }}" > dist/RELEASE_NOTES.md
+          printf '\n---\n\n[Full changelog](https://overseer.sh/changelog/) · install or update: https://overseer.sh\n' >> dist/RELEASE_NOTES.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: dist/RELEASE_NOTES.md
           generate_release_notes: true
           # Tags like v1.2.0-rc.1 are previews; the updater only follows stable vX.Y.Z.
           prerelease: ${{ contains(github.ref_name, '-') }}

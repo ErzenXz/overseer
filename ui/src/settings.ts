@@ -16,7 +16,7 @@ export const settingsSections: SettingsSection[] = [
   { id: 'connections', title: 'Connections', description: 'Git providers and API tokens for tools and agents', icon: 'plug', group: 'hub' },
   { id: 'machines', title: 'Machines', description: 'Add machines and see what is connected', icon: 'monitor', group: 'hub' },
   { id: 'previews', title: 'Previews', description: 'See dev servers on your machines live, from anywhere', icon: 'globe', group: 'hub' },
-  { id: 'usage', title: 'Usage & Limits', description: 'Tokens and cost across agent sessions', icon: 'gauge', group: 'hub' },
+  { id: 'usage', title: 'Usage & Limits', description: 'Plan limits, tokens and cost across your agents', icon: 'gauge', group: 'hub' },
   { id: 'agents', title: 'Agents', description: 'Coding agent CLIs installed on each machine', icon: 'bot', group: 'products' },
   { id: 'automations', title: 'Schedules', description: 'Recurring and event-driven agent runs', icon: 'automation', group: 'products' },
   { id: 'mcp', title: 'MCP servers', description: 'Tools every agent gets on every machine', icon: 'layers', group: 'products' },

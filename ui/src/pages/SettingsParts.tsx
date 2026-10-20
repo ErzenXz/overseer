@@ -84,11 +84,7 @@ export function SoftwareUpdates() {
         <div className="bg-canvas/70 p-4"><p className="eyebrow">Device fleet</p><p className="mt-2 text-sm text-ink">{status ? `${status.fleetTotal - status.fleetOutdated}/${status.fleetTotal} current` : 'Loading…'}</p></div>
       </div>
 
-      {!status?.managed && status && (
-        <p className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-warning">
-          This is a standalone/debug run. It can check releases, but automatic replacement is enabled after installing Overseer as a background service. You can also run <code className="font-mono">overseer update</code> manually.
-        </p>
-      )}
+      {status && <ServiceNotice status={status} />}
       {(message || status?.error) && <p className="mt-4 text-xs leading-5 text-muted">{message || status?.error}</p>}
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -359,6 +355,41 @@ export function PreviewSettings() {
         <p className="mb-2 text-[13.5px] text-secondary">No domain needed. With the Overseer CLI signed in, this serves a machine’s port on your localhost:</p>
         <pre className="preview-command"><code>overseer forward erzen-dev 5173</code></pre>
       </section>
+    </div>
+  )
+}
+
+// ServiceNotice explains why this hub can't update itself and what to change.
+// A custom service (systemd/launchd) gets a checklist; a hub started by hand
+// gets the manual commands.
+function ServiceNotice({ status }: { status: UpdateStatus }) {
+  const [copied, setCopied] = useState(false)
+  const service = status.service
+  const issues = service?.issues ?? []
+  if (status.managed && issues.length === 0) return null
+  const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
+  const supervised = !!service?.supervisor
+  return (
+    <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-warning">
+      <p className="font-medium">
+        {status.managed ? 'Automatic updates may fail on this hub.'
+          : supervised ? `Running under ${service!.supervisor}${service?.unit ? ` (${service.unit})` : ''}, but not configured for managed updates.`
+            : 'This hub isn’t configured for managed updates.'}
+      </p>
+      {issues.length > 0 ? (
+        <ul className="mt-2 list-disc space-y-1 pl-4">
+          {issues.map((issue) => <li key={issue.id}>{issue.text} <span className="text-secondary">Fix: <code className="font-mono">{issue.fix}</code></span></li>)}
+        </ul>
+      ) : (
+        <p className="mt-1">It can check for releases but won’t replace itself. Run <code className="font-mono">overseer update</code> and restart it, or install it as a service with the installer to update automatically.</p>
+      )}
+      {service?.snippet && (
+        <div className="mt-3">
+          <div className="mb-1 flex items-center justify-between text-secondary"><span>Fix the unit, keeping its user and data:</span><button type="button" className="underline" onClick={() => copy(service.snippet!)}>{copied ? 'Copied' : 'Copy'}</button></div>
+          <pre className="overflow-x-auto rounded-md bg-canvas p-2 font-mono text-[11.5px] text-ink">{service.snippet}</pre>
+        </div>
+      )}
+      {supervised && <p className="mt-2 text-secondary">Your data directory and service user stay as they are. <a className="underline" href="https://github.com/ErzenXz/overseer/blob/main/docs/guide.md#custom-services" target="_blank" rel="noreferrer">Guide</a></p>}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { agentInfo } from '../agents'
 // Stroke icons on a 24px grid, drawn to sit with Inter at 14–16px.
 const paths = {
   plus: <path d="M12 5v14M5 12h14" />,
@@ -172,7 +173,12 @@ export function AgentMark({ agent, size = 16 }: { agent: string; size?: number }
     case 'shell':
     case 'terminal':
       return <Icon name="terminal" size={size} />
-    default:
+    default: {
+      // Registry agents bring a one-colour SVG; drawn as a mask so it takes
+      // the text colour in light and dark themes.
+      const icon = agentInfo(agent).icon
+      if (icon) return <span className="agent-mark-img" aria-hidden="true" style={{ width: size, height: size, WebkitMaskImage: `url("${icon}")`, maskImage: `url("${icon}")` }} />
       return <Icon name="bot" size={size} />
+    }
   }
 }

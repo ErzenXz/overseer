@@ -1,0 +1,66 @@
+[
+ {
+  "name": "vercel-doctor",
+  "description": "Find ways to cut your Vercel bill. Run after making changes to catch cost-heavy patterns early in Next.js projects.",
+  "triggers": [
+   "user",
+   "model"
+  ],
+  "provider": "Claude",
+  "base_dir": "{{CLAUDE}}/skills/vercel-doctor",
+  "display_name": "vercel-doctor",
+  "warnings": [],
+  "errors": []
+ },
+ {
+  "name": "devin-cli",
+  "description": "Look up Devin CLI documentation (skills, extensibility, configuration, commands, models, troubleshooting)",
+  "triggers": [
+   "model"
+  ],
+  "provider": "Builtin",
+  "base_dir": "{{HOME}}/.local/share/devin/cli/_versions/3000.11.3/share/devin",
+  "display_name": "devin-cli",
+  "warnings": [],
+  "errors": []
+ },
+ {
+  "name": "declarative-repo-setup",
+  "description": "Generate and verify a working environment.yaml (Devin snapshot-setup blueprint) for a repo",
+  "triggers": [
+   "model",
+   "user"
+  ],
+  "provider": "Builtin",
+  "base_dir": "",
+  "display_name": "declarative-repo-setup",
+  "warnings": [],
+  "errors": []
+ },
+ {
+  "name": "upload-secrets",
+  "description": "Securely upload local secrets (dotenv files, env vars, API keys) to the Devin Cloud secrets manager \u2014 values never enter the conversation",
+  "triggers": [
+   "model",
+   "user"
+  ],
+  "provider": "Builtin",
+  "base_dir": "",
+  "display_name": "upload-secrets",
+  "warnings": [],
+  "errors": []
+ },
+ {
+  "name": "shared-skill",
+  "description": "Shared .agents skill",
+  "triggers": [
+   "user",
+   "model"
+  ],
+  "provider": "Devin",
+  "base_dir": "{{HOME}}/.agents/skills/shared-skill",
+  "display_name": "shared-skill",
+  "warnings": [],
+  "errors": []
+ }
+]

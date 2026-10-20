@@ -9,10 +9,11 @@ const COLUMNS: {
   {
     title: "Product",
     links: [
-      { label: "Features", href: "#features" },
-      { label: "How it works", href: "#how" },
-      { label: "Security", href: "#security" },
-      { label: "Install", href: "#install" },
+      { label: "Features", href: "/#features" },
+      { label: "How it works", href: "/#how" },
+      { label: "Security", href: "/#security" },
+      { label: "Install", href: "/#install" },
+      { label: "Changelog", href: "/changelog/" },
     ],
   },
   {
@@ -38,7 +39,7 @@ export function ClosingCTA() {
           One hub, one command per machine, one tab for all of it.
         </p>
         <div className="mt-9 flex flex-wrap justify-center gap-2.5">
-          <a href="#install" className="btn btn-dark">
+          <a href="/#install" className="btn btn-dark">
             Install Overseer <ArrowRight size={15} />
           </a>
           <a

@@ -252,6 +252,11 @@ func (s *Server) handleAgentMsg(c *agentConn, m protocol.Msg) {
 		s.threads.onAgentState(c, m.Data)
 	case m.Type == protocol.TypePortsChanged:
 		s.events.publish(event{Type: "ports.changed", DeviceId: c.deviceId})
+	case m.Type == protocol.TypeUsageLimitsUpdate:
+		var l protocol.PlanLimits
+		if err := json.Unmarshal(m.Data, &l); err == nil {
+			s.onUsageLimitsUpdate(c.deviceId, l)
+		}
 	case m.Type == protocol.TypeStats:
 		var st protocol.Stats
 		if err := json.Unmarshal(m.Data, &st); err == nil {
@@ -276,6 +281,7 @@ type event struct {
 	Type     string          `json:"type"`
 	DeviceId string          `json:"deviceId,omitempty"`
 	ThreadId string          `json:"threadId,omitempty"`
+	Agent    string          `json:"agent,omitempty"`
 	Stats    *protocol.Stats `json:"stats,omitempty"`
 }
 

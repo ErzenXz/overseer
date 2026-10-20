@@ -27,6 +27,13 @@ func TestMain(m *testing.M) {
 		runFakeACPAgent()
 		os.Exit(0)
 	}
+	if cli := os.Getenv(fakeLimitsEnv); cli != "" {
+		runFakeLimitsCLI(cli)
+		os.Exit(0)
+	}
+	if os.Getenv(fakeExtEnv) == "1" {
+		os.Exit(runFakeExtCLI())
+	}
 	os.Exit(m.Run())
 }
 

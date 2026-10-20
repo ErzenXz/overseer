@@ -25,6 +25,7 @@ import (
 const fakeACPEnv = "OVERSEER_HUB_FAKE_ACP"
 
 func TestMain(m *testing.M) {
+	agentRegistryURL = "" // tests never fetch the ACP registry
 	if os.Getenv(fakeACPEnv) == "1" {
 		fakeACPAgent()
 		os.Exit(0)
@@ -203,7 +204,7 @@ func TestThreadsEndToEnd(t *testing.T) {
 
 	var kinds []agentKind
 	api.do("GET", "/api/agent-kinds", nil, &kinds)
-	if len(kinds) != len(agentKinds) || kinds[0].Id != "claude" {
+	if len(kinds) != len(srv.agentKinds()) || kinds[0].Id != "claude" || kinds[len(kinds)-1].Id != "acp" {
 		t.Errorf("agent kinds = %+v", kinds)
 	}
 
@@ -399,15 +400,21 @@ func TestMcpAndAutomationsAPI(t *testing.T) {
 	var auto Automation
 	api.do("POST", "/api/automations", map[string]any{
 		"name": "Nightly", "prompt": "say hi", "deviceId": deviceId, "agent": "acp", "command": "overseer-test-missing-agent", "cwd": t.TempDir(),
-		"schedule": "0 3 * * *", "enabled": false,
+		"schedule": "0 3 * * *", "enabled": false, "model": "opus", "effort": "high", "fast": true,
 	}, &auto)
 	if auto.Id == "" || auto.Enabled || auto.NextRunAt <= time.Now().Unix() || auto.Access != "edits" {
 		t.Errorf("automation = %+v", auto)
+	}
+	if auto.Model != "opus" || auto.Effort != "high" || !auto.Fast {
+		t.Errorf("automation lost its model options: %+v", auto)
 	}
 	var run Thread
 	api.do("POST", "/api/automations/"+auto.Id+"/run", nil, &run)
 	if run.AutomationId != auto.Id || run.Title != "Nightly" {
 		t.Errorf("run thread = %+v", run)
+	}
+	if run.Model != "opus" || run.Effort != "high" || !run.Fast {
+		t.Errorf("run didn't carry the automation's model options: model=%q effort=%q fast=%v", run.Model, run.Effort, run.Fast)
 	}
 	var autos []Automation
 	api.do("GET", "/api/automations", nil, &autos)

@@ -197,6 +197,7 @@ const nav: { to: string; label: string; icon: IconName }[] = [
   { to: '/machines', label: 'Machines', icon: 'monitor' },
   { to: '/review', label: 'Review', icon: 'pull-request' },
   { to: '/projects', label: 'Projects', icon: 'book' },
+  { to: '/skills', label: 'Skills & plugins', icon: 'sparkles' },
   { to: '/customize', label: 'Customize', icon: 'customize' },
 ]
 

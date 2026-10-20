@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useId, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
 
 export default function Modal({
@@ -35,7 +36,9 @@ export default function Modal({
     return () => { window.removeEventListener('keydown', onKey); if (previous?.isConnected) previous.focus() }
   }, [])
 
-  return (
+  // On <body>, so the scrim covers the sidebar and no page stacking context
+  // can sit above the dialog.
+  return createPortal(
     <div className="modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={`modal ${wide ? 'modal-wide' : ''}`}>
         <div className="modal-head">
@@ -45,6 +48,7 @@ export default function Modal({
         {children}
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

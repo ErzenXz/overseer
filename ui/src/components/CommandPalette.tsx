@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { agentInfo, relativeTime } from '../agents'
@@ -79,7 +80,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     if (last?.name === item.group) last.items.push({ item, index })
     else groups.push({ name: item.group, items: [{ item, index }] })
   })
-  return (
+  return createPortal(
     <div className="palette-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="palette" role="dialog" aria-modal="true" aria-label="Search">
         <div className="palette-search">
@@ -107,6 +108,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

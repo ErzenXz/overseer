@@ -596,3 +596,359 @@ Closing either side closes the other. The hub refuses ports outside 1–65535
 notices listeners appear or disappear (it re-scans every 3 s only while a client
 has asked for that device's ports in the last 30 s). The UI also polls
 `GET /api/devices/{id}/ports` every 4 s while a Ports or Preview view is open.
+
+## Plan usage limits
+
+Subscription agents (Claude Code on Pro/Max, Codex on ChatGPT plans) have
+rolling usage limits: a short window (Claude "5-hour", Codex "primary") and a
+long one (weekly; Claude also reports a separate weekly Opus limit on some
+plans). Overseer shows them in Settings → Usage & Limits and in the composer's
+context popover. Values come only from each CLI's own reporting on the machine;
+credentials never leave the device.
+
+```
+GET /api/usage/limits[?refresh=1][&all=1]
+  → { "accounts": [ PlanLimits ] }
+
+PlanLimits = {
+  "deviceId": "...", "deviceName": "erzen-dev",
+  "agent": "claude" | "codex" | ...,
+  "plan": "Max 20x" | "Pro" | "Plus" | "Team" | "",   // when the CLI reports it
+  "account": "you@example.com" | "",                    // when the CLI reports it
+  "windows": [
+    { "id": "five_hour" | "seven_day" | "seven_day_opus" | "primary" | "secondary" | string,
+      "label": "5-hour" | "Weekly" | "Weekly (Opus)" | ...,
+      "usedPercent": 0-100,            // may exceed 100 when over the limit
+      "resetsAt": 1792500000,          // unix seconds, omitted when unknown
+      "windowMinutes": 300 }           // omitted when unknown
+  ],
+  "status": "ok" | "warning" | "limited",   // limited = currently blocked
+  "fetchedAt": 1792496000,                  // unix seconds of the reading
+  "source": "live" | "session",             // asked the CLI now / seen in a session event
+  "error": "not signed in" | ...            // set instead of windows when unavailable
+}
+```
+
+- One entry per (device, agent) where the agent is installed and signed in
+  with a subscription. API-key-only setups (and 3P providers such as Bedrock)
+  report `error: "api key (no plan limits)"`, signed-out CLIs
+  `error: "not signed in"`; both are omitted unless `?all=1`. Other errors
+  (`"timed out"`, a CLI too old to report limits, ...) are listed. `windows`
+  is always an array (`[]` with an error). Sorted by device name, then agent.
+- The hub caches readings for 5 minutes per (device, agent) and only asks a
+  device about its stale agents; `?refresh=1` re-asks every online device
+  (bounded: 4 s per device, devices in parallel; concurrent requests share one
+  read per device). A device that fails to answer is not asked again until
+  the 5 minutes pass. A failed read keeps the previous reading (numbers, or a
+  definite api-key / not-signed-in answer) instead of replacing it with the
+  error. Offline devices keep listing their last reading for 24 h after its
+  `fetchedAt`.
+- `status`: `limited` when a window is at or above 100 %, or the CLI says
+  usage is blocked (Claude `locked_reason` / `rate_limit_event` status
+  `rejected`; Codex `rateLimitReachedType` set or `ordinaryUsageAllowed:
+  false`); `warning` at or above 80 % (or Claude `allowed_warning`).
+- Rate-limit events seen during sessions (Codex `account/rateLimits/updated`,
+  Claude's rate-limit messages in stream-json) update the cache immediately and
+  are pushed as `{ "type": "usage.limits", "deviceId", "agent" }` on
+  `/api/ws/events`. The cache already holds the new numbers, so clients
+  re-read **without** `?refresh=1` (which would start CLI probes on every
+  device). Session readings are partial: they are merged into the cached
+  reading by window id (other windows, plan and account are kept).
+- Thread `usage` gains nothing new; the composer reads limits for the thread's
+  `(deviceId, agent)` from this endpoint.
+
+Window ids and labels:
+
+- Claude: `five_hour` "5-hour" (300 min), `seven_day` "Weekly",
+  `seven_day_opus` "Weekly (Opus)", `seven_day_sonnet` "Weekly (Sonnet)",
+  `seven_day_oauth_apps` "Weekly (apps)" (10080 min each, only those the
+  account has), plus per-model weekly buckets the CLI lists under
+  `model_scoped` as `seven_day_<name>` "Weekly (<Name>)". `plan` is the CLI's
+  subscription name without "Claude " (e.g. "Team", "Max").
+- Codex: `primary` / `secondary` as the CLI reports them; the label comes from
+  `windowDurationMins` ("5-hour", "Weekly", "Daily", "N-day", ...), because
+  the slots are not fixed (a Pro account reports a single weekly window as
+  `primary`). Extra metered buckets (`rateLimitsByLimitId` other than `codex`)
+  use ids `<limitId>.primary` / `<limitId>.secondary` and labels like
+  "5-hour (<limitName>)". `plan` from `planType` ("Plus", "Pro", "Team",
+  "Business", ...).
+
+### Device side
+
+```
+hub → device  usage.limits         { "agents": ["claude","codex"] }   // omitted = all
+              → { "accounts": [ PlanLimits ] }   // not installed = left out; no deviceId/deviceName
+device → hub  usage.limits.update  PlanLimits (source "session", only the windows the event carried)
+```
+
+The device reads limits without sending a prompt (no model usage), both CLIs
+in parallel within 3.5 s, and kills the probe process afterwards:
+
+- Claude Code: `claude --print --input-format stream-json --output-format
+  stream-json --verbose --settings {"disableAllHooks":true}
+  --no-session-persistence --strict-mcp-config --mcp-config {"mcpServers":{}}`
+  in an empty temp dir, then the control requests `initialize` (for
+  `account.subscriptionType` / `account.email`) and
+  `{"subtype":"get_usage","skip_behaviors":true}` (the data behind `/usage`:
+  `rate_limits.{five_hour,seven_day,...}.{utilization 0-100, resets_at ISO}`).
+  In sessions: `{"type":"rate_limit_event","rate_limit_info":{status,
+  rateLimitType, utilization 0-1, resetsAt, unifiedWindows}}`.
+- Codex: `codex app-server`, `initialize`, then `account/read` (type, email,
+  planType) and `account/rateLimits/read` (`{"excludeResetCreditDetails":true}`).
+  In sessions: the `account/rateLimits/updated` notification (a sparse
+  `rateLimits` snapshot).
+- ACP agents report nothing (the protocol has no limits).
+
+Only the fields above are sent to the hub. Overseer never reads the CLIs'
+credential files or calls usage endpoints itself; account ids, credit
+balances and organisation names in the CLI answers are dropped on the device.
+
+## Agent catalog (auto-detected agents)
+
+The agents Overseer knows are no longer a fixed list. The hub builds one
+catalog from three sources and every machine reports which of them it has:
+
+1. **Built-in**: claude and codex (native adapters), and the ACP agents that
+   existed before (gemini, opencode, goose, copilot, cursor) with their ids
+   unchanged.
+2. **The ACP registry** (`https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`):
+   fetched by the hub at start and every 24 h (hourly retry after a failure;
+   20 s timeout, 2 MB cap), cached in the data dir (`agent-registry.json`,
+   loaded first) so it works offline. Malformed entries are skipped; a
+   download with no usable entry never replaces the cache. Registry entries
+   whose id duplicates a built-in agent update its name/icon/description only (registry `github-copilot-cli` → `copilot`,
+   `cursor` → `cursor`, `gemini` → `gemini`, `goose`, `opencode`). The
+   registry's `claude-acp` and `codex-acp` adapters are skipped: Overseer drives
+   those CLIs natively.
+3. **Custom agents** the user adds (name + command line), stored on the hub.
+
+Order: built-ins, then registry agents by name, then custom agents by
+creation. `acp` is not a catalog entry.
+
+```
+GET /api/agents/catalog
+  → [ CatalogAgent ]
+
+CatalogAgent = {
+  "id": "devin",                       // stable; registry id unless built-in
+  "name": "Devin",
+  "vendor": "Cognition",               // registry authors[0], when present
+  "description": "Devin CLI coding agent by Cognition",
+  "icon": "https://…/devin.svg",       // registry icon; built-ins only when the registry lists them
+  "website": "https://docs.devin.ai/cli",
+  "protocol": "native" | "acp",
+  "source": "builtin" | "registry" | "custom",
+  "bins": ["devin"],                   // executables that mean "installed"
+  "args": ["acp"],                     // ACP launch arguments for bins[0]
+  "install": "npm install -g @scope/pkg" | "",   // npx dists → npm -g hint; binary dists → website
+  "login": "devin auth login" | ""     // when known
+}
+
+POST   /api/agents/custom   { "name": "My agent", "command": "my-agent --acp" }  → CatalogAgent (id "custom-<slug>")
+DELETE /api/agents/custom/{id}                                                   → { "ok": true } | 404
+```
+
+Custom agents: `name` 1–80 characters; `command` must split into at least
+one word with the same quoting rules the device uses (single/double quotes,
+backslash escapes), else 400. The slug is the lower-cased name with runs of
+other characters as `-` (`-2`, `-3`… when taken). `bins` is the command's
+first word, `args` the rest, `description` the command line.
+
+Detection of `bins` (and `args`) comes from the first distribution present,
+in the order binary, npx, uvx:
+- binary distributions: the basename of the registry `cmd` (`/` or `\`
+  separated) without extension or platform suffix (`./bin/devin` → `devin`,
+  `./bin\devin.exe` → `devin`, `./dist-package\cursor-agent.cmd` →
+  `cursor-agent`, `./pool-darwin-arm64` → `pool`), unique across platforms;
+  `args` are those of the first platform in the order darwin-aarch64,
+  darwin-x86_64, linux-x86_64, linux-aarch64, windows-x86_64, windows-aarch64.
+- npx distributions: the package's last path segment without version
+  (`@compass-ai/nova@1.1.59` → `nova`) plus a small override table for
+  packages whose command differs (`@google/gemini-cli` → `gemini`,
+  `@github/copilot` → `copilot`, `@qwen-code/qwen-code` → `qwen`,
+  `@augmentcode/auggie` → `auggie`, `@xai-official/grok` → `grok`,
+  `droid` → `droid`, `@qoder-ai/qodercli` → `qodercli`, `cline` → `cline`,
+  `@minimax-ai/code` → `mcode`, `dirac-cli` → `dirac`, `@kilocode/cli` →
+  `kilo`; checked against each package's npm `bin`).
+- uvx distributions: the package name without version.
+
+`install` is `npm install -g <package>` when the agent has an npx
+distribution, else `uv tool install <package>` for uvx, else empty (binary
+distributions: the UI links `website`). `login` is known for `devin`
+(`devin auth login`) and the built-ins.
+
+`GET /api/devices/{id}/agents` (existing) now returns one entry per catalog
+agent (`{id, installed, version?}`, in catalog order) plus `acp` last. The
+hub sends the catalog's `(id, bins)` list with `agents.detect`
+(`{"agents": [{"id", "bins"}]}`); older devices ignore it and report the
+built-ins, and the hub fills the rest in as not installed. An agent is
+installed when any of its `bins` is in PATH; version is the first found
+bin's `<bin> --version` (2 s budget each, at most 8 at once, only for
+installed agents). The hub caches the answer per device for 30 s (reset when
+the catalog changes; `?refresh=1` skips it).
+
+Starting a thread with a catalog ACP agent: the hub resolves the id to
+`command = bins[0] + args` (or the custom command) and sends
+`thread.start {agent: id, command}`; the device runs it with the ACP adapter
+whenever `agent` isn't a native adapter and `command` is set. Built-in ACP
+agents are sent without a command and keep the device's own launch rules
+(e.g. gemini's `--acp` / `--experimental-acp` fallback). The command is
+resolved at every start, not stored on the thread. Validation (threads and
+automations): `agent` must be a catalog id (or `acp` with a command).
+
+Agent options (`/agents/{agent}/options`) work for every ACP catalog agent via
+the existing ACP discovery.
+
+## Skills & plugins
+
+One page shows what extends each agent on each machine: skills, plugins and
+their marketplaces, slash commands, subagents, rules/memory files, hooks,
+MCP servers and output styles. Research behind this (exact CLI commands,
+control-protocol and app-server methods, file locations) lives in
+`docs/research/skills-plugins.md`.
+
+### Item
+
+```ts
+type ExtKind = 'skill' | 'plugin' | 'marketplace' | 'command' | 'subagent' | 'rule' | 'hook' | 'extension' | 'mcp_server' | 'output_style'
+type ExtScope = 'user' | 'project' | 'local' | 'plugin' | 'managed' | 'system' | 'builtin' | 'synced' | 'session'
+
+interface ExtItem {
+  key: string            // stable, opaque: identifies the item for item/toggle/uninstall/share calls
+  agent: string          // catalog id: claude, codex, devin, opencode, gemini, …
+  kind: ExtKind
+  name: string           // "nextjs"
+  qualifiedName: string  // as the agent invokes it: "vercel:nextjs"
+  displayName?: string
+  description?: string
+  scope: ExtScope
+  projectPath?: string   // project/local scope
+  path?: string          // the file that defines it (SKILL.md, agent .md, manifest, settings file)
+  parentId?: string      // plugin id for plugin-provided items; marketplace for plugins
+  version?: string
+  enabled: boolean | null          // null: no on/off concept
+  state?: 'on' | 'off' | 'name-only' | 'user-invocable-only' | 'needs-auth' | 'error' | 'untrusted' | 'disabled_by_admin'
+  lockedBy?: 'plugin' | 'policy' | 'managed'   // read-only, with the reason
+  invocation?: { user: boolean; model: boolean; argumentHint?: string }
+  source?: { type: string; repo?: string; url?: string; path?: string; ref?: string; package?: string }
+  mcp?: { transport: string; command?: string; url?: string; authStatus?: string; toolCount?: number }  // never env or header values
+  hook?: { event: string; matcher?: string; handlerType: string; command?: string; trust?: string }
+  sharedWith?: string[]  // other agents that read the same real path (computed on the device)
+  cost?: { alwaysOnTokens?: number; onInvokeTokens?: number }
+  usage?: { count?: number; lastUsedAt?: string }
+  errors?: string[]
+}
+```
+
+### HTTP
+
+```
+GET  /api/devices/{id}/extensions[?cwd=/project][&refresh=1]
+  → { items: ExtItem[], agents: [{ agent, ok, version?, error? }], fetchedAt }
+     One entry per installed agent that has anything to report. Hub caches
+     60 s per (device, cwd); writes below invalidate it. ~8 s budget.
+
+GET  /api/devices/{id}/extensions/item?key=…
+  → { item: ExtItem, content?: string, frontmatter?: Record<string, unknown> }
+     content: the defining file (SKILL.md, agent/command .md, rule file),
+     ≤ 64 KB, only for files the inventory itself reported.
+
+POST /api/devices/{id}/extensions/toggle     { key, enabled }      → { item, note? }
+POST /api/devices/{id}/extensions/uninstall  { key }               → { ok, note? }
+POST /api/devices/{id}/extensions/install    { agent, id, scope: 'user'|'project'|'local', cwd?, acceptCommand? }
+  → { item?, note?, needsApproval?: { command: string, sha: string } }
+     Claude plugins (`plugin@marketplace`) and Codex plugins. A marketplace
+     entry that runs a command returns needsApproval first; the UI shows the
+     command and repeats the call with acceptCommand: sha after the user agrees.
+GET  /api/devices/{id}/extensions/catalog?agent=claude|codex[&q=]
+  → { entries: [{ id, name, description?, category?, marketplace?, installCount?, installed: boolean,
+                  hasSkills?, hasMcp?, hasHooks?, source? }] }
+
+POST /api/devices/{id}/skills  { name, description, body?, scope: 'user'|'project', cwd?, agents: string[] }
+  → { item }   writes <root>/.agents/skills/<name>/SKILL.md (user: ~/.agents/skills)
+               and links it into each chosen agent's own skill dir when that
+               agent doesn't read .agents/skills (claude: ~/.claude/skills or
+               .claude/skills). name: [a-z0-9-]{1,64}; description ≤ 1024.
+POST /api/devices/{id}/skills/share  { key, agents: string[] }  → { item }
+     Same linking for an existing skill; copies when symlinks fail (Windows).
+```
+
+`note` is a short message for the UI such as "Takes effect in new sessions".
+
+### Rules
+
+- Read-only for `managed`, `system`, `builtin`, `synced` and `lockedBy` items;
+  plugin-provided Claude skills toggle through their plugin.
+- Never return env values, headers, tokens, `auth.json`, credential files or
+  `oauthAccount`. MCP items carry transport, command/url and tool count only.
+- Never auto-accept marketplace commands (`-y`/`--accept-command`) without the
+  UI's `acceptCommand`.
+- Removing a user-authored skill moves its folder to a `.trash/` folder next
+  to it (`~/.agents/skills/.trash/`, `~/.claude/skills/.trash/`, …), together
+  with any links other agents had to it; nothing is deleted. Removing a link
+  (Claude's view of a shared skill) keeps the shared copy.
+- Don't run `claude mcp list/get` (spawns servers) or anything that sends a
+  prompt.
+
+### Implementation notes
+
+- **Device messages.** The hub forwards each call as one request:
+  `extensions.list {cwd?, detect}`, `extensions.item {key}`,
+  `extensions.toggle {key, enabled}`, `extensions.uninstall {key}`,
+  `extensions.install`, `extensions.catalog {agent, q?}`, `skills.create`,
+  `skills.share` (bodies as above; `detect` is the hub's agent catalog).
+- **Keys** are `agent:kind:scope:qualifiedName[:projectPath]` with each part
+  query-escaped; the UI treats them as opaque. The device resolves every
+  key against a fresh (≤ 2 min) inventory, re-taking one when needed, so
+  item/toggle/uninstall/share only ever reach files and settings the
+  inventory reported. Unknown keys answer 404.
+- **Sources.** Claude: a headless `claude` with hooks off, no MCP servers and
+  no session saved, asked `initialize`, `get_skills_dialog`,
+  `get_hooks_listing` and `get_memory_dialog` (no prompt), plus
+  `claude plugin list --json`, `claude plugin marketplace list --json` and the
+  settings / `.mcp.json` / `~/.claude.json` (`mcpServers`, `projects`,
+  `skillUsage`, `pluginUsage` only) files. Codex: a short-lived
+  `codex app-server` (`skills/list`, `plugin/list` local marketplaces,
+  `hooks/list`, `config/read`; MCP servers come from config only, since
+  `mcpServerStatus/list` would start every server to count its tools).
+  Devin: `devin skills list --json` and its `mcp_config*.json` files. Every
+  installed agent's skill, command, subagent and rule folders are scanned
+  (frontmatter only). Agents run in parallel with ~6 s each; a failing
+  source sets `agents[].ok: false` with `error` and the other items stay.
+- **Sharing and duplicates.** `sharedWith` lists the other installed agents
+  that read the same real path (symlinks resolved). Claude, Codex and Devin
+  each report their own items; agents that are only scanned on disk
+  (OpenCode, Gemini, Cursor, Copilot, Goose, Amp, Kimi, Qwen) add an item
+  only when no other agent already reports that real path.
+- **Claude MCP servers** come from config files only (user, local
+  `projects[cwd]`, project `.mcp.json`, plugins), so claude.ai connectors are
+  not listed. A `.mcp.json` server that was never approved is
+  `enabled: false, state: 'untrusted'`. Claude's own on/off states for skills
+  are `state` (`on`, `off`, `name-only`, `user-invocable-only`); `enabled` is
+  false only for `off`.
+- **Toggle** works for Claude plugins (`claude plugin enable|disable -s`),
+  Claude user skills (`skillOverrides` in `~/.claude/settings.json`) and
+  project skills (the project's `.claude/settings.local.json`, as `/skills`
+  does), Codex skills (`skills/config/write`), Codex plugins and MCP servers
+  (`config/value/write`) and Devin MCP servers (`devin mcp enable|disable
+  -s`). Turning a Claude skill on removes its override (or writes `on` when
+  another settings layer turns it off). Everything else answers 400.
+- **Install approval.** The device passes `--accept-command <sha>` only when
+  `acceptCommand` equals the sha the CLI itself showed for the same plugin,
+  scope and cwd in the last 30 minutes; otherwise the CLI runs without it and
+  any command comes back as `needsApproval` again. `-y` is never passed.
+  Codex installs are user scope only and take no `acceptCommand`.
+- **Catalog.** Claude: `claude plugin list --json --available` plus the
+  installed plugins (the CLI leaves them out of `available`). Codex: the
+  local marketplaces of `plugin/list` (the remote ChatGPT app directory is
+  left out). `q` filters on id, name, description and category.
+- **Skills.** `POST /skills` returns the Claude item when Claude is among
+  `agents`, else the first agent's. Share skips agents that already read the
+  skill's real path, refuses (409) when a target already has a different
+  skill of that name, and refuses folders that resolve outside the known
+  skill folders. A project's skill folder must resolve inside the project.
+- **Errors.** 400 invalid or refused (read-only, locked, CLI failure), 404
+  unknown device or item, 409 name conflict, 502 device too old or
+  disconnected, 503 device offline, 504 the device did not answer in time.
+  Writes drop the hub's cached inventories for that device (a
+  `needsApproval` answer does not).

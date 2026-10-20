@@ -90,9 +90,7 @@ func normaliseOptions(o protocol.AgentOptions, agent string) protocol.AgentOptio
 // unless refresh is set. An offline device or a failed request yields the
 // builtin table (never an error).
 func (s *Server) agentOptions(deviceId, agent, command string, refresh bool) protocol.AgentOptions {
-	if agent != "acp" {
-		command = ""
-	}
+	command = s.optionsCommand(agent, command)
 	key := agentOptionsKey(deviceId, agent, command)
 	if !refresh {
 		if o, ok := s.agentOpts.get(key); ok {
@@ -118,13 +116,20 @@ func (s *Server) agentOptions(deviceId, agent, command string, refresh bool) pro
 
 // cachedModes returns the cached modes for a device+agent, if any.
 func (s *Server) cachedModes(deviceId, agent, command string) []protocol.AgentMode {
-	if agent != "acp" {
-		command = ""
-	}
+	command = s.optionsCommand(agent, command)
 	if o, ok := s.agentOpts.get(agentOptionsKey(deviceId, agent, command)); ok {
 		return o.Modes
 	}
 	return nil
+}
+
+// optionsCommand is the command discovery runs for agent: the request's for
+// "acp", the catalog's for registry and custom agents, else none.
+func (s *Server) optionsCommand(agent, command string) string {
+	if agent == "acp" {
+		return command
+	}
+	return s.agents.launchCommand(agent)
 }
 
 // accessForMode derives the legacy access level from a mode's kind.
@@ -135,7 +140,7 @@ func (s *Server) accessForMode(deviceId, agent, command, mode string) string {
 // handleAgentOptions serves GET /api/devices/{id}/agents/{agent}/options.
 func (s *Server) handleAgentOptions(w http.ResponseWriter, r *http.Request) {
 	deviceId, agent := r.PathValue("id"), r.PathValue("agent")
-	if !validAgentKind(agent) {
+	if !s.agents.valid(agent) {
 		httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}

@@ -1,0 +1,452 @@
+{
+ "skills/list": {
+  "data": [
+   {
+    "cwd": "{{PROJECT}}",
+    "skills": [
+     {
+      "name": "pdf:pdf",
+      "description": "Read, create, inspect, render, and verify PDF files where visual layout matters, including fillable AcroForms. Use Poppler rendering plus Python tools such as reportlab, pdfplumber, and pypdf for generation and extraction.",
+      "interface": {
+       "displayName": "PDF",
+       "shortDescription": "Read, create, render, and verify PDF files"
+      },
+      "path": "{{CODEX}}/plugins/cache/openai-primary-runtime/pdf/26.1017.22136/skills/pdf/SKILL.md",
+      "scope": "user",
+      "enabled": true,
+      "pluginId": "pdf@openai-primary-runtime"
+     },
+     {
+      "name": "imagegen",
+      "description": "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas.",
+      "interface": {
+       "displayName": "Image Gen",
+       "shortDescription": "Generate or edit images for websites, games, and more"
+      },
+      "path": "{{CODEX}}/skills/.system/imagegen/SKILL.md",
+      "scope": "system",
+      "enabled": true,
+      "pluginId": null
+     },
+     {
+      "name": "shared-skill",
+      "description": "Shared .agents skill",
+      "path": "{{HOME}}/.agents/skills/shared-skill/SKILL.md",
+      "scope": "user",
+      "enabled": true,
+      "pluginId": null
+     },
+     {
+      "name": "repo-skill",
+      "description": "Repo skill",
+      "path": "{{PROJECT}}/.agents/skills/repo-skill/SKILL.md",
+      "scope": "repo",
+      "enabled": false,
+      "pluginId": null
+     }
+    ],
+    "errors": []
+   }
+  ]
+ },
+ "plugin/list": {
+  "marketplaces": [
+   {
+    "name": "openai-primary-runtime",
+    "path": "{{HOME}}/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/.agents/plugins/marketplace.json",
+    "interface": null,
+    "plugins": [
+     {
+      "id": "pdf@openai-primary-runtime",
+      "remotePluginId": null,
+      "version": null,
+      "localVersion": "26.1017.22136",
+      "name": "pdf",
+      "shareContext": null,
+      "source": {
+       "type": "local",
+       "path": "{{HOME}}/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/pdf"
+      },
+      "installed": true,
+      "installedAt": null,
+      "enabled": true,
+      "installPolicy": "AVAILABLE",
+      "installPolicySource": null,
+      "mustShowInstallationInterstitial": null,
+      "authPolicy": "ON_USE",
+      "availability": "AVAILABLE",
+      "disabledReason": null,
+      "eligiblePlanTypes": null,
+      "interface": {
+       "displayName": "PDF",
+       "shortDescription": "Read, create, and verify PDFs",
+       "category": "Productivity",
+       "developerName": "OpenAI"
+      },
+      "keywords": [
+       "pdf",
+       "pdfs",
+       "document",
+       "documents",
+       "report",
+       "render",
+       "review",
+       "extract",
+       "extraction",
+       "pypdf",
+       "pdfplumber",
+       "reportlab"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "openai-bundled",
+    "path": "{{CODEX}}/.tmp/bundled-marketplaces/openai-bundled/.agents/plugins/marketplace.json",
+    "interface": {
+     "displayName": "OpenAI Bundled"
+    },
+    "plugins": [
+     {
+      "id": "browser@openai-bundled",
+      "remotePluginId": null,
+      "version": null,
+      "localVersion": "26.1013.40934",
+      "name": "browser",
+      "shareContext": null,
+      "source": {
+       "type": "local",
+       "path": "{{CODEX}}/.tmp/bundled-marketplaces/openai-bundled/plugins/browser"
+      },
+      "installed": true,
+      "installedAt": null,
+      "enabled": true,
+      "installPolicy": "AVAILABLE",
+      "installPolicySource": null,
+      "mustShowInstallationInterstitial": null,
+      "authPolicy": "ON_INSTALL",
+      "availability": "AVAILABLE",
+      "disabledReason": null,
+      "eligiblePlanTypes": null,
+      "interface": {
+       "displayName": "Browser",
+       "shortDescription": "Control the in-app browser",
+       "category": "Engineering",
+       "developerName": "OpenAI"
+      },
+      "keywords": [
+       "browser",
+       "automation",
+       "chrome",
+       "iab",
+       "node-repl",
+       "browser-client"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "openai-curated",
+    "path": "{{CODEX}}/.tmp/plugins/.agents/plugins/marketplace.json",
+    "interface": {
+     "displayName": "Codex official"
+    },
+    "plugins": [
+     {
+      "id": "linear@openai-curated",
+      "remotePluginId": null,
+      "version": null,
+      "localVersion": "0.0.0",
+      "name": "linear",
+      "shareContext": null,
+      "source": {
+       "type": "local",
+       "path": "{{CODEX}}/.tmp/plugins/plugins/linear"
+      },
+      "installed": false,
+      "installedAt": null,
+      "enabled": false,
+      "installPolicy": "AVAILABLE",
+      "installPolicySource": null,
+      "mustShowInstallationInterstitial": null,
+      "authPolicy": "ON_INSTALL",
+      "availability": "AVAILABLE",
+      "disabledReason": null,
+      "eligiblePlanTypes": null,
+      "interface": {
+       "displayName": "Linear",
+       "shortDescription": "Find and reference issues and projects.",
+       "category": "Productivity",
+       "developerName": "OpenAI"
+      },
+      "keywords": []
+     }
+    ]
+   }
+  ],
+  "marketplaceLoadErrors": [],
+  "featuredPluginIds": [
+   "teams@openai-curated-remote",
+   "outlook-calendar@openai-curated-remote",
+   "google-calendar@openai-curated-remote",
+   "atlassian-rovo@openai-curated-remote",
+   "notion@openai-curated-remote",
+   "canva@openai-curated-remote",
+   "figma@openai-curated-remote",
+   "linear@openai-curated-remote",
+   "data-analytics@openai-curated-remote",
+   "superpowers@openai-curated-remote",
+   "hubspot@openai-curated-remote",
+   "asana@openai-curated-remote",
+   "product-design@openai-curated-remote",
+   "box@openai-curated-remote",
+   "vercel@openai-curated-remote",
+   "granola@openai-curated-remote",
+   "supabase@openai-curated-remote",
+   "monday-com@openai-curated-remote",
+   "airtable@openai-curated-remote",
+   "zoom@openai-curated-remote",
+   "sales@openai-curated-remote",
+   "codex-security@openai-curated-remote",
+   "lovable@openai-curated-remote"
+  ]
+ },
+ "hooks/list": {
+  "data": [
+   {
+    "cwd": "{{PROJECT}}",
+    "hooks": [
+     {
+      "key": "user:pre_tool_use:0",
+      "eventName": "preToolUse",
+      "handlerType": "command",
+      "command": "/usr/local/bin/guard --api-key SECRET-CODEX-HOOK",
+      "matcher": "shell",
+      "source": "user",
+      "sourcePath": "{{CODEX}}/hooks.json",
+      "pluginId": null,
+      "enabled": true,
+      "isManaged": false,
+      "trustStatus": "untrusted",
+      "currentHash": "abc",
+      "timeoutSec": 30,
+      "displayOrder": 0
+     }
+    ],
+    "warnings": [],
+    "errors": []
+   }
+  ]
+ },
+ "mcpServerStatus/list": {
+  "data": [
+   {
+    "name": "codex_apps",
+    "runtimeStatus": null,
+    "pluginId": null,
+    "httpOrigin": "https://chatgpt.com",
+    "serverInfo": {
+     "name": "plugin-runtime",
+     "title": null,
+     "version": "0.1.0",
+     "description": null,
+     "icons": null,
+     "websiteUrl": null
+    },
+    "serverCapabilities": {
+     "extensions": {
+      "io.modelcontextprotocol/ui": {}
+     },
+     "resources": {
+      "subscribe": false,
+      "listChanged": false
+     },
+     "tools": {
+      "listChanged": false
+     }
+    },
+    "tools": {
+     "vercel.list_project_domains": {
+      "name": "vercel.list_project_domains"
+     },
+     "slack.slack_read_user_profile": {
+      "name": "slack.slack_read_user_profile"
+     },
+     "vercel.get_custom_environment": {
+      "name": "vercel.get_custom_environment"
+     },
+     "github.label_pr": {
+      "name": "github.label_pr"
+     },
+     "figma.get_shader": {
+      "name": "figma.get_shader"
+     }
+    },
+    "toolsError": null,
+    "resources": [],
+    "resourceTemplates": [],
+    "authStatus": "bearerToken"
+   },
+   {
+    "name": "cua_repl",
+    "runtimeStatus": null,
+    "pluginId": "unified-computer-use@openai-bundled",
+    "httpOrigin": null,
+    "serverInfo": {
+     "name": "rmcp",
+     "title": null,
+     "version": "1.5.0",
+     "description": null,
+     "icons": null,
+     "websiteUrl": null
+    },
+    "serverCapabilities": {
+     "experimental": {
+      "codex/sandbox-state-meta": {}
+     },
+     "tools": {
+      "listChanged": true
+     }
+    },
+    "tools": {
+     "turn_ended": {
+      "name": "turn_ended"
+     },
+     "js_reset": {
+      "name": "js_reset"
+     },
+     "js": {
+      "name": "js"
+     }
+    },
+    "toolsError": null,
+    "resources": [],
+    "resourceTemplates": [],
+    "authStatus": "unsupported"
+   },
+   {
+    "name": "node_repl",
+    "runtimeStatus": null,
+    "pluginId": null,
+    "httpOrigin": null,
+    "serverInfo": {
+     "name": "rmcp",
+     "title": null,
+     "version": "1.5.0",
+     "description": null,
+     "icons": null,
+     "websiteUrl": null
+    },
+    "serverCapabilities": {
+     "experimental": {
+      "codex/sandbox-state-meta": {}
+     },
+     "tools": {
+      "listChanged": true
+     }
+    },
+    "tools": {
+     "turn_ended": {
+      "name": "turn_ended"
+     },
+     "js": {
+      "name": "js"
+     },
+     "js_reset": {
+      "name": "js_reset"
+     },
+     "js_add_node_module_dir": {
+      "name": "js_add_node_module_dir"
+     }
+    },
+    "toolsError": null,
+    "resources": [],
+    "resourceTemplates": [],
+    "authStatus": "unsupported"
+   }
+  ],
+  "nextCursor": null
+ },
+ "config/read": {
+  "config": {
+   "model": "gpt-x",
+   "mcp_servers": {
+    "node_repl": {
+     "command": "/opt/node_repl/bin/node_repl",
+     "args": [
+      "--token",
+      "SECRET-ARG"
+     ],
+     "env": {
+      "API_TOKEN": "SECRET-CODEX-ENV"
+     },
+     "enabled": true
+    },
+    "remote": {
+     "url": "https://mcp.example.com/mcp?key=SECRET-CODEX-URL",
+     "bearer_token_env_var": "REMOTE_TOKEN",
+     "http_headers": {
+      "X-Api-Key": "SECRET-CODEX-HDR"
+     },
+     "enabled": false
+    }
+   },
+   "plugins": {
+    "computer-use@openai-bundled": {
+     "enabled": true
+    },
+    "codex-app-tools@openai-bundled": {
+     "enabled": true
+    },
+    "spreadsheets@openai-primary-runtime": {
+     "enabled": true
+    },
+    "documents@openai-primary-runtime": {
+     "enabled": true
+    },
+    "chrome@openai-bundled": {
+     "enabled": true
+    },
+    "template-creator@openai-primary-runtime": {
+     "enabled": true
+    },
+    "pdf@openai-primary-runtime": {
+     "enabled": true
+    },
+    "presentations@openai-primary-runtime": {
+     "enabled": true
+    },
+    "visualize@openai-bundled": {
+     "enabled": true
+    },
+    "unified-computer-use@openai-bundled": {
+     "enabled": true
+    },
+    "browser@openai-bundled": {
+     "enabled": true
+    },
+    "code-review@openai-bundled": {
+     "enabled": true
+    }
+   }
+  },
+  "origins": {
+   "mcp_servers.node_repl.command": {
+    "name": {
+     "type": "user",
+     "file": "{{CODEX}}/config.toml",
+     "profile": null
+    },
+    "version": "sha256:x"
+   },
+   "mcp_servers.remote.url": {
+    "name": {
+     "type": "user",
+     "file": "{{CODEX}}/config.toml",
+     "profile": null
+    },
+    "version": "sha256:x"
+   }
+  }
+ }
+}

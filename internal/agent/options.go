@@ -38,21 +38,12 @@ func discover(ctx context.Context, req protocol.AgentOptionsRequest) (protocol.A
 		return discoverClaude(ctx)
 	case "codex":
 		return discoverCodex(ctx)
-	case "acp":
-		words, err := splitCommandLine(req.Command)
-		if err != nil {
-			return protocol.AgentOptions{}, err
-		}
-		if len(words) == 0 {
-			return protocol.AgentOptions{}, errors.New("command required for a custom ACP agent")
-		}
-		return discoverACP(ctx, req.Agent, words[0], [][]string{words[1:]})
 	}
-	spec, ok := acpAgents[req.Agent]
-	if !ok {
-		return protocol.AgentOptions{}, fmt.Errorf("unknown agent %q", req.Agent)
+	bin, candidates, err := acpLaunch(req.Agent, req.Command)
+	if err != nil {
+		return protocol.AgentOptions{}, err
 	}
-	return discoverACP(ctx, req.Agent, spec.bin, spec.args)
+	return discoverACP(ctx, req.Agent, bin, candidates)
 }
 
 // probeDir is an empty working directory for a probe process.

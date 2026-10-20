@@ -113,6 +113,13 @@ export interface UpdateStatus {
   error?: string
   fleetTotal: number
   fleetOutdated: number
+  service?: {
+    supervisor?: 'systemd' | 'launchd'
+    unit?: string
+    binary?: string
+    issues?: { id: string; text: string; fix: string }[]
+    snippet?: string
+  }
 }
 
 export interface FsEntry {
@@ -271,6 +278,10 @@ export interface Automation {
   prompt: string
   deviceId: string
   agent: string
+  model?: string
+  effort?: string
+  fast?: boolean
+  mode?: string
   cwd: string
   access: Access
   schedule: string
@@ -317,4 +328,78 @@ export interface PreviewConfig {
   source: 'flag' | 'setting' | 'derived' | 'none'
   hubHost: string
   secure: boolean
+}
+
+// Subscription usage limits each agent CLI reports (Claude 5-hour/weekly,
+// Codex primary/secondary windows). See "Plan usage limits" in the API doc.
+export interface LimitWindow {
+  id: string
+  label: string
+  usedPercent: number
+  resetsAt?: number
+  windowMinutes?: number
+}
+
+export interface PlanLimits {
+  deviceId: string
+  deviceName: string
+  agent: string
+  plan?: string
+  account?: string
+  windows?: LimitWindow[]
+  status?: 'ok' | 'warning' | 'limited'
+  fetchedAt?: number
+  source?: 'live' | 'session'
+  error?: string
+}
+
+// Skills & plugins: what extends each agent on a machine
+// (docs/agent-sessions-api.md, "Skills & plugins").
+export type ExtKind = 'skill' | 'plugin' | 'marketplace' | 'command' | 'subagent' | 'rule' | 'hook' | 'extension' | 'mcp_server' | 'output_style'
+export type ExtScope = 'user' | 'project' | 'local' | 'plugin' | 'managed' | 'system' | 'builtin' | 'synced' | 'session'
+
+export interface ExtItem {
+  key: string
+  agent: string
+  kind: ExtKind
+  name: string
+  qualifiedName: string
+  displayName?: string
+  description?: string
+  scope: ExtScope
+  projectPath?: string
+  path?: string
+  parentId?: string
+  version?: string
+  enabled: boolean | null
+  state?: string
+  lockedBy?: 'plugin' | 'policy' | 'managed'
+  invocation?: { user: boolean; model: boolean; argumentHint?: string }
+  source?: { type: string; repo?: string; url?: string; path?: string; ref?: string; package?: string }
+  mcp?: { transport: string; command?: string; url?: string; authStatus?: string; toolCount?: number }
+  hook?: { event: string; matcher?: string; handlerType: string; command?: string; trust?: string }
+  sharedWith?: string[]
+  cost?: { alwaysOnTokens?: number; onInvokeTokens?: number }
+  usage?: { count?: number; lastUsedAt?: string }
+  errors?: string[]
+}
+
+export interface ExtInventory {
+  items: ExtItem[]
+  agents: { agent: string; ok: boolean; version?: string; error?: string }[]
+  fetchedAt: number
+}
+
+export interface CatalogPlugin {
+  id: string
+  name: string
+  description?: string
+  category?: string
+  marketplace?: string
+  installCount?: number
+  installed: boolean
+  hasSkills?: boolean
+  hasMcp?: boolean
+  hasHooks?: boolean
+  source?: ExtItem['source']
 }

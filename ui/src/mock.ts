@@ -4,6 +4,7 @@
 
 import { mockExec, mockThreadStream, setThreadsChangedHandler, threadRoute } from './mockThreads'
 import { previewRoute } from './mockPreview'
+import { skillsRoute } from './mockSkills'
 import type { Device, FleetSession, FsListing, Preset, Project, Session, SetupOverview, Stats, UpdateStatus } from './types'
 
 const STORAGE_KEY = 'overseer:mock'
@@ -206,6 +207,23 @@ async function route(method: string, path: string, search: URLSearchParams, body
   }
   if (!authed) return json({ error: 'unauthorized' }, 401)
 
+  if (method === 'GET' && path === '/api/usage/limits') {
+    const at = now()
+    const claude = (deviceId: string, deviceName: string, five: number, week: number) => ({ deviceId, deviceName, agent: 'claude', plan: 'Max 20x', account: 'you@example.com', status: week > 90 ? 'warning' : 'ok', source: 'live', fetchedAt: at - 40,
+      windows: [
+        { id: 'five_hour', label: '5-hour', usedPercent: five, resetsAt: at + 2 * 3600 + 14 * 60, windowMinutes: 300 },
+        { id: 'seven_day', label: 'Weekly', usedPercent: week, resetsAt: at + 3 * 86400 + 5 * 3600, windowMinutes: 10080 },
+        { id: 'seven_day_opus', label: 'Weekly (Opus)', usedPercent: Math.round(week * 0.45), resetsAt: at + 3 * 86400 + 5 * 3600, windowMinutes: 10080 },
+      ] })
+    const codex = (deviceId: string, deviceName: string, primary: number, secondary: number) => ({ deviceId, deviceName, agent: 'codex', plan: 'Pro', status: 'ok', source: 'session', fetchedAt: at - 300,
+      windows: [
+        { id: 'primary', label: '5-hour', usedPercent: primary, resetsAt: at + 3 * 3600 + 40 * 60, windowMinutes: 300 },
+        { id: 'secondary', label: 'Weekly', usedPercent: secondary, resetsAt: at + 5 * 86400, windowMinutes: 10080 },
+      ] })
+    return json({ accounts: [claude('macbook', 'MacBook Pro', 42, 68), codex('macbook', 'MacBook Pro', 18, 54), claude('studio', 'Studio', 77, 93), codex('studio', 'Studio', 9, 31), { deviceId: 'homelab', deviceName: 'Homelab', agent: 'claude', error: 'not signed in' }] })
+  }
+  const skillsResponse = skillsRoute(method, path, search, body)
+  if (skillsResponse) return skillsResponse
   const previewResponse = previewRoute(method, path, body)
   if (previewResponse) return previewResponse
   const threadResponse = await threadRoute(method, path, body)
