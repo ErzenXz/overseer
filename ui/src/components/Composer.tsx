@@ -1,15 +1,19 @@
 import { ClipboardEvent, FormEvent, KeyboardEvent, ReactNode, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { accessLevels, agentCatalog, agentInfo } from '../agents'
-import type { Access, Device, DeviceAgent, FsListing } from '../types'
-import Icon, { AgentMark } from './Icon'
-import { Menu, MenuItem, MenuLabel, MenuSeparator, Submenu } from './Menu'
+import { useAgentOptions } from '../agentOptions'
+import type { AgentCommand, Device, FsListing, Thread } from '../types'
+import { AgentPicker, ModePicker, nextMode } from './AgentPicker'
+import Icon from './Icon'
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from './Menu'
 
 export interface ComposerSettings {
   deviceId: string
   agent: string
   model: string
-  access: Access
+  effort: string
+  fast: boolean
+  // mode is the agent's own mode id (see AgentOptions.modes); '' = its default.
+  mode: string
   cwd: string
 }
 
@@ -22,22 +26,7 @@ export const slashCommands: { id: string; label: string; text: string; descripti
   { id: 'fixci', label: '/fix-ci', text: 'Find the failing CI checks on the current branch, reproduce them locally, and fix them.', description: 'Fix failing CI' },
 ]
 
-// useAgentsOn caches which agent CLIs exist on a machine.
-const agentCache = new Map<string, DeviceAgent[]>()
-export function useAgentsOn(deviceId: string) {
-  const [agents, setAgents] = useState<DeviceAgent[] | null>(() => agentCache.get(deviceId) ?? null)
-  useEffect(() => {
-    if (!deviceId) return
-    let alive = true
-    setAgents(agentCache.get(deviceId) ?? null)
-    api.get<DeviceAgent[]>(`/api/devices/${deviceId}/agents`).then((items) => {
-      agentCache.set(deviceId, items)
-      if (alive) setAgents(items)
-    }).catch(() => { if (alive) setAgents([]) })
-    return () => { alive = false }
-  }, [deviceId])
-  return agents
-}
+export { useAgentsOn } from '../agentOptions'
 
 export default function Composer({
   placeholder,
@@ -52,23 +41,37 @@ export default function Composer({
   context,
   initialText = '',
   agentOptional,
+  draft,
+  commands,
+  usage,
+  onCompact,
+  imageSupport,
 }: {
   placeholder: string
   devices: Device[]
   settings: ComposerSettings
   onSettings: (next: ComposerSettings) => void
-  onSubmit: (text: string) => Promise<void> | void
+  onSubmit: (text: string, images?: { path: string }[]) => Promise<void> | void
   busy?: boolean
   onStop?: () => void
   lockAgent?: boolean
   autoFocus?: boolean
-  // context renders a strip attached above the box (machine, folder…).
+  // context renders a strip attached under the box (machine, folder…).
   context?: ReactNode
   initialText?: string
   // agentOptional hides the agent, model and access controls (terminal mode).
   agentOptional?: boolean
+  // draft replaces the text (Edit on a message); id changes for every request.
+  draft?: { text: string; id: number }
+  // commands are the agent's own slash commands, shown before the built-ins.
+  commands?: AgentCommand[]
+  usage?: Thread['usage']
+  onCompact?: () => void
+  // imageSupport sends pasted or attached images to the agent natively.
+  imageSupport?: boolean
 }) {
   const [text, setText] = useState(initialText)
+  const [images, setImages] = useState<{ path: string; name: string }[]>([])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [listening, setListening] = useState(false)
@@ -77,16 +80,23 @@ export default function Composer({
   const area = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const recognition = useRef<{ stop: () => void } | null>(null)
-  const agents = useAgentsOn(settings.deviceId)
+  const options = useAgentOptions(settings.deviceId, settings.agent)
   const device = devices.find((item) => item.id === settings.deviceId)
-  const agent = agentInfo(settings.agent)
-  const model = agent.models.find((item) => item.id === settings.model)?.label ?? (settings.model || 'Default')
-  const access = accessLevels.find((item) => item.id === settings.access) ?? accessLevels[2]
   const speechSupported = typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)
-  const slashQuery = /^\/[\w-]*$/.test(text) ? text.slice(1).toLowerCase() : null
-  const slashMatches = slashQuery === null ? [] : slashCommands.filter((command) => command.id.startsWith(slashQuery) || command.label.slice(1).startsWith(slashQuery))
+  const slashQuery = /^\/[\w:-]*$/.test(text) ? text.slice(1).toLowerCase() : null
+  // The agent's own commands run natively ("/review"); built-ins expand to prompts.
+  const allCommands = [
+    ...(commands ?? []).map((command) => ({ id: command.name, label: `/${command.name}`, text: `/${command.name} `, description: command.description, native: true })),
+    ...slashCommands.filter((command) => !(commands ?? []).some((native) => native.name === command.id)).map((command) => ({ ...command, native: false })),
+  ]
+  const slashMatches = slashQuery === null ? [] : allCommands.filter((command) => command.id.toLowerCase().startsWith(slashQuery))
 
   useEffect(() => { setText(initialText) }, [initialText])
+  useEffect(() => {
+    if (!draft) return
+    setText(draft.text)
+    window.setTimeout(() => { area.current?.focus(); const end = draft.text.length; area.current?.setSelectionRange(end, end) }, 0)
+  }, [draft?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setSlashIndex(0) }, [slashQuery])
   useEffect(() => {
     const node = area.current
@@ -102,8 +112,9 @@ export default function Composer({
     setSending(true)
     setError('')
     try {
-      await onSubmit(value)
+      await onSubmit(value, images.length ? images.map(({ path }) => ({ path })) : undefined)
       setText('')
+      setImages([])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not send')
     } finally {
@@ -116,7 +127,18 @@ export default function Composer({
     window.setTimeout(() => { area.current?.focus(); const end = area.current?.value.length ?? 0; area.current?.setSelectionRange(end, end) }, 0)
   }
 
+  // /compact is a real action on agents that support it, not prompt text.
+  const pick = (command: { id: string; text: string }) => {
+    if (command.id === 'compact' && onCompact) { setText(''); onCompact(); return }
+    insert(command.text, true)
+  }
+
   const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Tab' && event.shiftKey && !agentOptional) {
+      event.preventDefault()
+      onSettings({ ...settings, mode: nextMode(options, settings.mode) })
+      return
+    }
     if (slashMatches.length) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
@@ -125,7 +147,7 @@ export default function Composer({
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault()
-        insert(slashMatches[slashIndex].text, true)
+        pick(slashMatches[slashIndex])
         return
       }
       if (event.key === 'Escape') { setText(''); return }
@@ -147,7 +169,9 @@ export default function Composer({
       form.append('file', file, file.name || `pasted-${Date.now()}.png`)
       const res = await fetch(`/api/devices/${device.id}/fs/upload?dir=${encodeURIComponent(dir)}`, { method: 'POST', body: form })
       if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error)
-      insert(`@${dir}/${file.name || 'pasted.png'}`)
+      const path = `${dir}/${file.name || 'pasted.png'}`
+      if (imageSupport && (file.type.startsWith('image/') || !file.name)) setImages((current) => [...current, { path, name: file.name || 'pasted.png' }])
+      else insert(`@${path}`)
     } catch (cause) {
       setError(cause instanceof Error ? `Upload failed: ${cause.message}` : 'Upload failed')
     } finally {
@@ -179,19 +203,27 @@ export default function Composer({
   }
 
   const canSend = (agentOptional || !!text.trim()) && !sending && !!settings.deviceId
-  const installed = (id: string) => agents?.find((item) => item.id === id)
   const stopping = busy && onStop && !text.trim()
 
   return (
     <div className={`composer-wrap ${context ? 'has-context' : ''}`}>
-      {context && <div className="composer-context">{context}</div>}
       <form className="composer" onSubmit={(event: FormEvent) => { event.preventDefault(); submit() }}>
         {slashMatches.length > 0 && (
           <div className="composer-suggest" role="listbox" aria-label="Commands">
             {slashMatches.map((command, index) => (
-              <button key={command.id} type="button" role="option" aria-selected={index === slashIndex} className="composer-suggest-item" onMouseEnter={() => setSlashIndex(index)} onClick={() => insert(command.text, true)}>
-                <span className="font-mono">{command.label}</span><span className="text-muted">{command.description}</span>
+              <button key={command.id} type="button" role="option" aria-selected={index === slashIndex} className="composer-suggest-item" onMouseEnter={() => setSlashIndex(index)} onClick={() => pick(command)}>
+                <span className="font-mono">{command.label}</span><span className="min-w-0 flex-1 truncate text-muted">{command.description}</span>{command.native && <span className="composer-suggest-tag">agent</span>}
               </button>
+            ))}
+          </div>
+        )}
+        {images.length > 0 && (
+          <div className="composer-attachments">
+            {images.map((image) => (
+              <span key={image.path} className="attachment-chip">
+                <Icon name="image" size={14} />{image.name}
+                <button type="button" aria-label={`Remove ${image.name}`} onClick={() => setImages((current) => current.filter((item) => item.path !== image.path))}><Icon name="close" size={12} /></button>
+              </span>
             ))}
           </div>
         )}
@@ -225,50 +257,12 @@ export default function Composer({
           <input ref={fileInput} type="file" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) upload(file); event.target.value = '' }} />
           {!agentOptional && (
             <>
-              <Menu
-                placement="top-start"
-                width={250}
-                trigger={<button type="button" className="ctl" disabled={lockAgent} title={lockAgent ? 'The agent is fixed for this session' : 'Choose agent'}><AgentMark agent={settings.agent} size={15} /><span>{agent.name}</span>{!lockAgent && <Icon name="chevron-down" size={12} className="ctl-chev" />}</button>}
-              >
-                {(close) => {
-                  const ready = agentCatalog.filter((item) => agents === null || installed(item.id)?.installed)
-                  const missing = agents === null ? [] : agentCatalog.filter((item) => !installed(item.id)?.installed)
-                  const pick = (id: string) => { onSettings({ ...settings, agent: id, model: '' }); close() }
-                  return (
-                    <>
-                      {ready.map((item) => <MenuItem key={item.id} icon={<AgentMark agent={item.id} size={16} />} label={item.name} end={installed(item.id)?.version} checked={settings.agent === item.id} onClick={() => pick(item.id)} />)}
-                      {missing.length > 0 && (
-                        <Submenu icon="more" label="Not installed" width={240}>
-                          {missing.map((item) => <MenuItem key={item.id} icon={<AgentMark agent={item.id} size={16} />} label={item.name} checked={settings.agent === item.id} onClick={() => pick(item.id)} />)}
-                        </Submenu>
-                      )}
-                    </>
-                  )
-                }}
-              </Menu>
-              {agent.models.length > 1 && (
-                <Menu
-                  placement="top-start"
-                  width={220}
-                  trigger={<button type="button" className="ctl" title="Choose model"><span>{model}</span><Icon name="chevron-down" size={12} className="ctl-chev" /></button>}
-                >
-                  {(close) => agent.models.map((item) => (
-                    <MenuItem key={item.id || 'default'} label={item.label} end={item.id ? undefined : 'CLI default'} checked={settings.model === item.id} onClick={() => { onSettings({ ...settings, model: item.id }); close() }} />
-                  ))}
-                </Menu>
-              )}
-              <Menu
-                placement="top-start"
-                width={290}
-                trigger={<button type="button" className="ctl" title="Access level"><Icon name={settings.access === 'ask' ? 'eye' : settings.access === 'full' ? 'zap' : 'shield'} size={14} /><span>{access.label}</span><Icon name="chevron-down" size={12} className="ctl-chev" /></button>}
-              >
-                {(close) => accessLevels.map((item) => (
-                  <MenuItem key={item.id} label={item.label} description={item.description} checked={item.id === settings.access} onClick={() => { onSettings({ ...settings, access: item.id }); close() }} />
-                ))}
-              </Menu>
+              <AgentPicker settings={settings} onSettings={onSettings} lockAgent={lockAgent} />
+              <ModePicker settings={settings} onSettings={onSettings} />
             </>
           )}
           <span className="grow" />
+          {usage?.contextWindow && usage.contextTokens ? <ContextMeter used={usage.contextTokens} total={usage.contextWindow} onCompact={onCompact} /> : null}
           {speechSupported && (
             <button type="button" className={`ctl ctl-icon ${listening ? 'recording' : ''}`} aria-label={listening ? 'Stop dictation' : 'Dictate'} title={listening ? 'Stop dictation' : 'Dictate'} onClick={toggleDictation}>
               <Icon name={listening ? 'wave' : 'mic'} size={16} />
@@ -283,8 +277,26 @@ export default function Composer({
           )}
         </div>
       </form>
+      {context && <div className="composer-context">{context}</div>}
       {error && <p className="px-4 pt-2 text-[13px] text-danger" role="alert">{error}</p>}
     </div>
+  )
+}
+
+// ContextMeter shows how full the agent's context window is; clicking it
+// compacts the conversation when the agent supports that.
+function ContextMeter({ used, total, onCompact }: { used: number; total: number; onCompact?: () => void }) {
+  const ratio = Math.min(1, used / total)
+  const r = 7
+  const circumference = 2 * Math.PI * r
+  const label = `${Math.round(used / 1000)}k of ${Math.round(total / 1000)}k tokens of context used${onCompact ? '. Click to compact' : ''}`
+  return (
+    <button type="button" className={`ctl ctl-icon context-meter ${ratio > 0.8 ? 'is-full' : ''}`} title={label} aria-label={label} onClick={onCompact} disabled={!onCompact}>
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeOpacity=".2" strokeWidth="2" />
+        <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={`${circumference * ratio} ${circumference}`} strokeLinecap="round" transform="rotate(-90 9 9)" />
+      </svg>
+    </button>
   )
 }
 

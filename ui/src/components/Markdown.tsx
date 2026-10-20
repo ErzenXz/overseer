@@ -1,88 +1,111 @@
-import { Fragment, ReactNode } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
+import { Streamdown, type PluginConfig } from 'streamdown'
+import 'streamdown/styles.css'
+import { localTarget, usePreviewLink } from '../previews'
 
-// A small, safe Markdown renderer for agent replies: paragraphs, headings,
-// lists, block quotes, fenced code, inline code, bold, italic and links.
-// It never injects HTML.
-export default function Markdown({ text }: { text: string }) {
-  const blocks: ReactNode[] = []
-  const lines = text.replace(/\r\n/g, '\n').split('\n')
-  let i = 0
-  let key = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    const fence = line.match(/^\s*```(\S*)/)
-    if (fence) {
-      const body: string[] = []
-      i++
-      while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++])
-      i++
-      blocks.push(<pre key={key++}><code>{body.join('\n')}</code></pre>)
-      continue
+// Agent replies render with Streamdown: GitHub-flavoured Markdown (tables,
+// task lists, strikethrough, footnotes), unfinished syntax repaired while the
+// reply streams, and links hardened. Raw HTML is never rendered.
+//
+// The heavy extras load only when a reply needs them: Shiki for fenced code,
+// KaTeX for $$ math, Mermaid for diagrams.
+type PluginName = 'code' | 'math' | 'mermaid'
+
+const loaded: PluginConfig = {}
+const loading = new Map<PluginName, Promise<void>>()
+const listeners = new Set<() => void>()
+
+function load(name: PluginName) {
+  if (loaded[name] || loading.has(name)) return
+  const task = (async () => {
+    if (name === 'code') loaded.code = (await import('../codeHighlight')).code
+    if (name === 'math') {
+      await import('katex/dist/katex.min.css')
+      loaded.math = (await import('@streamdown/math')).math
     }
-    if (!line.trim()) { i++; continue }
-    const heading = line.match(/^(#{1,3})\s+(.*)/)
-    if (heading) {
-      const Tag = (`h${heading[1].length}`) as 'h1' | 'h2' | 'h3'
-      blocks.push(<Tag key={key++}>{inline(heading[2])}</Tag>)
-      i++
-      continue
-    }
-    if (/^\s*>/.test(line)) {
-      const body: string[] = []
-      while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''))
-      blocks.push(<blockquote key={key++}>{inline(body.join(' '))}</blockquote>)
-      continue
-    }
-    const bullet = /^\s*[-*+]\s+/
-    const numbered = /^\s*\d+[.)]\s+/
-    if (bullet.test(line) || numbered.test(line)) {
-      const ordered = numbered.test(line)
-      const pattern = ordered ? numbered : bullet
-      const items: string[] = []
-      while (i < lines.length && (pattern.test(lines[i]) || (/^\s{2,}\S/.test(lines[i]) && items.length))) {
-        if (pattern.test(lines[i])) items.push(lines[i].replace(pattern, ''))
-        else items[items.length - 1] += ` ${lines[i].trim()}`
-        i++
-      }
-      const List = ordered ? 'ol' : 'ul'
-      blocks.push(<List key={key++}>{items.map((item, index) => <li key={index}>{inline(item)}</li>)}</List>)
-      continue
-    }
-    const para: string[] = []
-    while (i < lines.length && lines[i].trim() && !/^\s*(```|#{1,3}\s|>|[-*+]\s|\d+[.)]\s)/.test(lines[i])) para.push(lines[i++])
-    blocks.push(<p key={key++}>{inline(para.join('\n'))}</p>)
-  }
-  return <>{blocks}</>
+    if (name === 'mermaid') loaded.mermaid = (await import('@streamdown/mermaid')).mermaid
+  })()
+    .catch(() => { /* render without it; plain code blocks still work */ })
+    .finally(() => listeners.forEach((listener) => listener()))
+  loading.set(name, task)
 }
 
-const tokenPattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s)]+)/g
-
-function inline(text: string): ReactNode {
-  const out: ReactNode[] = []
-  let last = 0
-  let index = 0
-  for (const match of text.matchAll(tokenPattern)) {
-    const start = match.index ?? 0
-    if (start > last) out.push(withBreaks(text.slice(last, start), index++))
-    const token = match[0]
-    if (token.startsWith('`')) out.push(<code key={index++}>{token.slice(1, -1)}</code>)
-    else if (token.startsWith('**') || token.startsWith('__')) out.push(<strong key={index++}>{inline(token.slice(2, -2))}</strong>)
-    else if (token.startsWith('*')) out.push(<em key={index++}>{token.slice(1, -1)}</em>)
-    else if (token.startsWith('[')) {
-      const [, label, href] = token.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/) ?? []
-      out.push(safeHref(href) ? <a key={index++} href={href} target="_blank" rel="noreferrer">{label}</a> : <Fragment key={index++}>{label}</Fragment>)
-    } else out.push(<a key={index++} href={token} target="_blank" rel="noreferrer">{token}</a>)
-    last = start + token.length
-  }
-  if (last < text.length) out.push(withBreaks(text.slice(last), index++))
+function needs(text: string): PluginName[] {
+  const out: PluginName[] = []
+  if (/```|~~~/.test(text)) out.push('code')
+  if (/\$\$|\\\(|\\\[/.test(text)) out.push('math')
+  if (/```\s*mermaid/i.test(text)) out.push('mermaid')
   return out
 }
 
-function withBreaks(text: string, key: number) {
-  const parts = text.split('\n')
-  return <Fragment key={key}>{parts.map((part, index) => <Fragment key={index}>{index > 0 && <br />}{part}</Fragment>)}</Fragment>
+function usePlugins(text: string): PluginConfig {
+  const [, bump] = useState(0)
+  const wanted = needs(text)
+  useEffect(() => {
+    const listener = () => bump((value) => value + 1)
+    listeners.add(listener)
+    return () => { listeners.delete(listener) }
+  }, [])
+  useEffect(() => { wanted.forEach(load) }, [wanted.join()]) // eslint-disable-line react-hooks/exhaustive-deps
+  const ready = wanted.filter((name) => loaded[name]).join()
+  return useMemo(() => {
+    const config: PluginConfig = {}
+    for (const name of ready.split(',').filter(Boolean) as PluginName[]) (config as Record<string, unknown>)[name] = loaded[name]
+    return config
+  }, [ready])
 }
 
-function safeHref(href = '') {
-  return /^(https?:|mailto:|\/|#)/.test(href)
+// Stable props, so streaming updates only re-render the blocks that changed.
+const animation = { animation: 'fadeIn', duration: 160, sep: 'word' } as const
+const themes: ['github-light', 'github-dark'] = ['github-light', 'github-dark']
+const linkSafety = { enabled: false }
+// Inline diagrams must not swallow the wheel; fullscreen still zooms.
+const controls = { mermaid: { panZoom: false } }
+const lightDiagrams = { config: { theme: 'neutral' as const } }
+const darkDiagrams = { config: { theme: 'dark' as const } }
+const isDark = () => {
+  const forced = document.documentElement.dataset.theme
+  return forced ? forced === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
 }
+
+// Links to a dev server on the agent's machine open in the Preview panel
+// (localhost there is not localhost here).
+function LocalLink({ href, children, node: _node, ...rest }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) {
+  const open = usePreviewLink()
+  const target = localTarget(href)
+  if (open && target) {
+    return (
+      <a {...rest} href={href} data-streamdown="link" title={`Open port ${target.port} in the preview`} onClick={(event) => { event.preventDefault(); open(target.port, target.path) }}>
+        {children}
+      </a>
+    )
+  }
+  return <a {...rest} href={href} data-streamdown="link" target="_blank" rel="noreferrer">{children}</a>
+}
+const components = { a: LocalLink }
+
+function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const plugins = usePlugins(text)
+  return (
+    <Streamdown
+      className="md"
+      mode={streaming ? 'streaming' : 'static'}
+      isAnimating={streaming}
+      animated={streaming ? animation : false}
+      caret={streaming ? 'block' : undefined}
+      plugins={plugins}
+      shikiTheme={themes}
+      lineNumbers={false}
+      linkSafety={linkSafety}
+      controls={controls}
+      mermaid={isDark() ? darkDiagrams : lightDiagrams}
+      components={components}
+      codeBlockMaxHeight={480}
+      tableMaxHeight={420}
+    >
+      {text}
+    </Streamdown>
+  )
+}
+
+export default memo(Markdown)

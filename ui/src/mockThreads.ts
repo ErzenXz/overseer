@@ -26,10 +26,10 @@ function thread(partial: Partial<Thread> & Pick<Thread, 'id' | 'title' | 'device
 }
 
 const threads: Thread[] = [
-  thread({ id: 'th_rust', title: 'Build Rust OpenAI harness', deviceId: 'studio', agent: 'codex', cwd: '~/Projects/codex-harness', updatedAt: nowSec() - 120, lastReadAt: nowSec() - 900, pr: { url: 'https://github.com/ErzenXz/codex-harness/pull/1', number: 1, state: 'open', checks: 'passing' }, usage: { inputTokens: 412_000, outputTokens: 38_400, costUsd: 3.12 } }),
+  thread({ id: 'th_rust', title: 'Build Rust OpenAI harness', deviceId: 'studio', agent: 'codex', cwd: '~/Projects/codex-harness', updatedAt: nowSec() - 120, lastReadAt: nowSec() - 900, pinned: true, folder: 'Harness', pr: { url: 'https://github.com/ErzenXz/codex-harness/pull/1', number: 1, state: 'open', checks: 'passing' }, usage: { inputTokens: 412_000, outputTokens: 38_400, costUsd: 3.12, contextTokens: 161_000, contextWindow: 272_000 } }),
   thread({ id: 'th_ui', title: 'Improve dashboard UI and features', deviceId: 'macbook', agent: 'claude', model: 'opus', cwd: '~/Projects/LiveAgent', updatedAt: nowSec() - 3600 * 5, pr: { url: 'https://github.com/ErzenXz/overseer/pull/3', number: 3, state: 'open', checks: 'passing' } }),
   thread({ id: 'th_auth', title: 'Fix flaky auth integration tests', deviceId: 'homelab', agent: 'claude', cwd: '/srv/api-gateway', status: 'waiting', updatedAt: nowSec() - 60 * 14, lastReadAt: nowSec() - 3600 }),
-  thread({ id: 'th_archive', title: 'Update archive homepage design', deviceId: 'studio', agent: 'gemini', cwd: '~/Projects/archive', updatedAt: nowSec() - 86400 * 6, pr: { url: 'https://github.com/ErzenXz/archive/pull/1', number: 1, state: 'open', checks: 'passing' } }),
+  thread({ id: 'th_archive', title: 'Update archive homepage design', deviceId: 'studio', agent: 'claude', cwd: '~/Projects/archive', status: 'waiting', folder: 'Websites', updatedAt: nowSec() - 120, pr: { url: 'https://github.com/ErzenXz/archive/pull/1', number: 1, state: 'open', checks: 'passing' } }),
   thread({ id: 'th_deps', title: 'Weekly dependency update', deviceId: 'homelab', agent: 'codex', cwd: '/srv/api-gateway', updatedAt: nowSec() - 86400 * 9, automationId: 'au_deps', pr: { url: 'https://github.com/ErzenXz/api-gateway/pull/88', number: 88, state: 'merged' } }),
   thread({ id: 'th_map', title: 'Redesign calendar UI with map', deviceId: 'macbook', agent: 'claude', cwd: '~/Projects/takvimi', updatedAt: nowSec() - 86400 * 61, pr: { url: 'https://github.com/ErzenXz/takvimi/pull/3', number: 3, state: 'merged' } }),
   thread({ id: 'th_leak', title: 'Investigate memory leak on homelab', deviceId: 'homelab', agent: 'opencode', cwd: '/srv/worker', status: 'error', error: 'opencode exited with status 1: provider not configured', updatedAt: nowSec() - 86400 * 70 }),
@@ -121,6 +121,12 @@ function seed() {
     msg(id, { role: 'tool', turn: user.id, text: '', tool: { name: 'bash', title: 'Install dependencies', status: 'completed', input: 'pnpm install', output: 'Done in 4.2s' } }, step(8000))
     msg(id, { role: 'assistant', turn: user.id, durationMs: 340_000, text: `Done. Opened ${threads.find((item) => item.id === id)!.pr?.url ?? 'a branch'} with the changes.` }, step(330_000))
   }
+  const q1 = msg('th_archive', { role: 'user', text: 'Add a newsletter signup to the homepage.' }, nowMs() - 60_000 * 3)
+  msg('th_archive', { role: 'question', turn: q1.id, text: '', question: { id: 'q_1', text: 'Which provider should the signup form use?', options: [
+    { id: 'buttondown', label: 'Buttondown', description: 'Simple API, no tracking by default' },
+    { id: 'resend', label: 'Resend', description: 'You already use it for transactional email' },
+    { id: 'none', label: 'Just store emails', description: 'Save to a local JSON file for now' },
+  ], allowText: true } }, nowMs() - 60_000 * 2)
 }
 seed()
 
@@ -167,6 +173,51 @@ function cancelTimers(threadId: string) {
   timers[threadId] = []
 }
 
+// A long, formatted reply for checking Markdown rendering while it streams.
+function richAnswer(machine: string) {
+  return [
+    `Here’s what I can see for \`${machine}\`. It’s a **KVM virtual machine**, so these are its assigned resources.`,
+    '',
+    '| Component | Details |',
+    '|---|---|',
+    '| **CPU** | AMD EPYC 7K62, **4 virtual CPUs** assigned |',
+    '| **GPU** | Emulated Cirrus Logic GD 5446; no dedicated GPU |',
+    '| **RAM** | **11.7 GiB** total, 2.9 GiB used, **8.8 GiB** available |',
+    '| **Storage** | **80 GiB** virtual disk; 12 GiB used, 62 GiB available |',
+    '| **OS** | Ubuntu 24.04.5 LTS, 64-bit |',
+    '| **Kernel** | `6.8.0-147-generic` |',
+    '',
+    '## How I checked',
+    '',
+    '1. Read `/proc/cpuinfo` and `lscpu` for the processor',
+    '2. Listed PCI devices for the GPU',
+    '3. Compared `free -h` with `df -h /`',
+    '',
+    '```bash',
+    'lscpu | grep -E "Model name|^CPU\\(s\\)"',
+    'free -h && df -h /',
+    'lspci | grep -i vga',
+    '```',
+    '',
+    '- [x] CPU and memory',
+    '- [x] Disk usage',
+    '- [ ] GPU passthrough (not configured)',
+    '',
+    '> The “48-Core” in the model name describes the *host* CPU. This VM can use ~~48~~ **4** of them.',
+    '',
+    'Memory headroom is roughly $$\\frac{8.8}{11.7} \\approx 75\\%$$ of the total.',
+    '',
+    '```mermaid',
+    'flowchart LR',
+    '  Host[EPYC host] --> VM[erzen-dev VM]',
+    '  VM --> CPU[4 vCPU]',
+    '  VM --> RAM[11.7 GiB]',
+    '```',
+    '',
+    'More detail is in the [Ubuntu server docs](https://ubuntu.com/server/docs).',
+  ].join('\n')
+}
+
 function simulateTurn(item: Thread, text: string) {
   const started = nowMs()
   const user = push(item.id, { role: 'user', text })
@@ -188,20 +239,27 @@ function simulateTurn(item: Thread, text: string) {
       later(item.id, 1400, () => update(item.id, tool, { tool: { ...tool.tool!, status: 'completed', files: [{ path: 'src/app.tsx', additions: 6, deletions: 2, diff: '@@ -12,7 +12,11 @@ export function App() {\n-  const title = "Overseer"\n-  return <Shell title={title} />\n+  const title = useTitle()\n+  return (\n+    <Shell title={title}>\n+      <Sessions />\n+    </Shell>\n+  )\n }' }] } }))
     })
   }
+  const serve = /dev server|preview|serve|run (it|the site)|start/.test(lower)
   later(item.id, 5600, () => {
+    if (serve) {
+      const tool = push(item.id, { role: 'tool', turn: user.id, text: '', tool: { name: 'bash', title: 'Start the dev server', status: 'running', input: 'npm run dev -- --port 5173' } })
+      later(item.id, 1400, () => update(item.id, tool, { tool: { ...tool.tool!, status: 'completed', output: '\n  VITE v6.0.3  ready in 412 ms\n\n  ➜  Local:   http://localhost:5173/\n  ➜  Network: use --host to expose' } }))
+      return
+    }
     const tool = push(item.id, { role: 'tool', turn: user.id, text: '', tool: { name: 'bash', title: 'Run tests', status: 'running', input: 'npm test -- --run' } })
     later(item.id, 1600, () => update(item.id, tool, { tool: { ...tool.tool!, status: 'completed', output: ' ✓ src/app.test.tsx (6 tests) 41ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)' } }))
   })
   later(item.id, 7600, () => {
-    const answer = askOnly
+    const answer = serve ? `The school site is running at http://localhost:5173/ on **${item.deviceName}**. It hot-reloads as I edit, so keep the preview open while I work.` : /spec|markdown|hardware/.test(lower) ? richAnswer(item.deviceName) : askOnly
       ? `Here’s what I found in \`${item.cwd}\`. The entry point is \`src/app.tsx\`; the change you asked about would touch it and the tests in \`src/app.test.tsx\`. Switch to **Agent** mode and I’ll make it.`
       : lower.includes('pr') || lower.includes('push')
         ? `Done. I committed the change and opened a pull request. **All 6 tests pass.**`
         : `Done — updated \`src/app.tsx\` and verified with the test suite (**6 passed**). Nothing is committed yet; say “push” and I’ll open a PR.`
     const message = push(item.id, { role: 'assistant', turn: user.id, text: '' })
     const parts = answer.split(/(\s+)/)
-    parts.forEach((part, index) => later(item.id, 18 * index, () => update(item.id, message, { text: message.text + part })))
-    later(item.id, 18 * parts.length + 50, () => {
+    const step = answer.length > 400 ? 40 : 18
+    parts.forEach((part, index) => later(item.id, step * index, () => update(item.id, message, { text: message.text + part })))
+    later(item.id, step * parts.length + 50, () => {
       update(item.id, message, { durationMs: nowMs() - started })
       touch(item, { status: 'idle' })
     })
@@ -265,6 +323,9 @@ export async function threadRoute(method: string, path: string, body: Record<str
       agent: String(body.agent ?? 'claude'),
       cwd: String(body.cwd || '~'),
       model: body.model ? String(body.model) : undefined,
+      effort: body.effort ? String(body.effort) : undefined,
+      fast: body.fast ? true : undefined,
+      mode: body.mode ? String(body.mode) : undefined,
       access: (body.access as Thread['access']) ?? 'auto',
       status: 'starting',
       updatedAt: nowSec(),
@@ -276,17 +337,24 @@ export async function threadRoute(method: string, path: string, body: Record<str
     onThreadsChanged()
     return json(item)
   }
-  const match = path.match(/^\/api\/threads\/([^/]+)(?:\/(prompt|cancel|approval))?$/)
+  const match = path.match(/^\/api\/threads\/([^/]+)(?:\/(prompt|cancel|approval|fork|compact|undo|answer|commands|capabilities))?$/)
   if (match) {
     const item = threads.find((entry) => entry.id === decodeURIComponent(match[1]))
     if (!item) return json({ error: 'thread not found' }, 404)
     const action = match[2]
     if (!action && method === 'GET') return json({ thread: item, messages: messages[item.id] ?? [] })
     if (!action && method === 'PATCH') {
-      if (body.read) item.lastReadAt = nowSec() + 1
+      if (body.read === true) item.lastReadAt = nowSec() + 1
+      if (body.read === false) item.lastReadAt = 0
+      if (typeof body.pinned === 'boolean') item.pinned = body.pinned
+      if (typeof body.archived === 'boolean') item.archived = body.archived
+      if (typeof body.folder === 'string') item.folder = body.folder || undefined
       if (typeof body.title === 'string') item.title = body.title
       if (typeof body.access === 'string') item.access = body.access as Thread['access']
       if (typeof body.model === 'string') item.model = body.model
+      if (typeof body.effort === 'string') item.effort = body.effort
+      if (typeof body.fast === 'boolean') item.fast = body.fast
+      if (typeof body.mode === 'string') item.mode = body.mode
       emit(item.id, { type: 'thread', thread: { ...item } })
       return json({ ...item })
     }
@@ -296,7 +364,55 @@ export async function threadRoute(method: string, path: string, body: Record<str
       onThreadsChanged()
       return json({ ok: true })
     }
-    if (action === 'prompt') { simulateTurn(item, String(body.text ?? '')); return json({ ok: true }) }
+    if (action === 'prompt') {
+      // While a turn runs, a new prompt steers it (demo: shown as queued, then sent).
+      if (item.status === 'working') {
+        const queued = push(item.id, { role: 'user', text: String(body.text ?? ''), queued: true })
+        later(item.id, 2500, () => update(item.id, queued, { queued: false }))
+        return json({ ok: true })
+      }
+      simulateTurn(item, String(body.text ?? ''))
+      return json({ ok: true })
+    }
+    if (action === 'capabilities') {
+      const native = item.agent === 'codex'
+      return json({ fork: true, compact: item.agent !== 'opencode', undo: native, steer: native || item.agent === 'claude', images: true, commands: true, review: native })
+    }
+    if (action === 'commands') return json(demoCommands(item.agent))
+    if (action === 'fork') {
+      const child = thread({ id: uid('th'), title: `${item.title} (continued)`, deviceId: item.deviceId, agent: item.agent, cwd: item.cwd, model: item.model, effort: item.effort, mode: item.mode, parentId: item.id, updatedAt: nowSec(), lastReadAt: nowSec() })
+      threads.unshift(child)
+      messages[child.id] = []
+      push(child.id, { role: 'status', text: `Continued from “${item.title}”. The agent keeps that conversation’s context.` })
+      onThreadsChanged()
+      return json(child)
+    }
+    if (action === 'compact') {
+      push(item.id, { role: 'status', text: 'Conversation compacted: older turns summarised to free up context.' })
+      if (item.usage) item.usage = { ...item.usage, contextTokens: Math.round((item.usage.contextTokens ?? 120_000) * 0.25) }
+      touch(item, {})
+      return json({ ok: true })
+    }
+    if (action === 'undo') {
+      if (item.agent !== 'codex') return json({ error: `undo is not supported by ${item.agent}` }, 409)
+      const list = messages[item.id] ?? []
+      const lastUser = [...list].reverse().find((message) => message.role === 'user')
+      if (lastUser) messages[item.id] = list.filter((message) => message.id !== lastUser.id && message.turn !== lastUser.id)
+      emit(item.id, { type: 'snapshot', thread: { ...item }, messages: (messages[item.id] ?? []).map((message) => ({ ...message })) })
+      touch(item, {})
+      return json({ ok: true })
+    }
+    if (action === 'answer') {
+      const question = (messages[item.id] ?? []).find((message) => message.question?.id === body.questionId)
+      if (question?.question) {
+        const answers = (body.answers as string[]) ?? []
+        update(item.id, question, { question: { ...question.question, answered: body.text ? [...answers, String(body.text)] : answers } })
+        const picked = question.question.options.filter((option) => answers.includes(option.id)).map((option) => option.label).join(', ') || String(body.text ?? '')
+        touch(item, { status: 'working' })
+        later(item.id, 900, () => { push(item.id, { role: 'assistant', turn: question.turn, text: `Going with **${picked}**. I’ll set it up and run the tests.` }); touch(item, { status: 'idle' }) })
+      }
+      return json({ ok: true })
+    }
     if (action === 'cancel') {
       cancelTimers(item.id)
       push(item.id, { role: 'status', text: 'Stopped by you' })
@@ -329,6 +445,8 @@ export async function threadRoute(method: string, path: string, body: Record<str
     { id: 'claude', name: 'Claude Code', protocol: 'native' }, { id: 'codex', name: 'Codex', protocol: 'native' }, { id: 'gemini', name: 'Gemini CLI', protocol: 'acp' },
     { id: 'opencode', name: 'OpenCode', protocol: 'acp' }, { id: 'goose', name: 'Goose', protocol: 'acp' }, { id: 'copilot', name: 'Copilot CLI', protocol: 'acp' }, { id: 'cursor', name: 'Cursor Agent', protocol: 'acp' },
   ])
+  const optionsMatch = path.match(/^\/api\/devices\/([^/]+)\/agents\/([^/]+)\/options$/)
+  if (optionsMatch) return json(demoOptions(decodeURIComponent(optionsMatch[2])))
   const agentsMatch = path.match(/^\/api\/devices\/([^/]+)\/(agents|desktop)$/)
   if (agentsMatch && agentsMatch[2] === 'agents') {
     const id = agentsMatch[1]
@@ -380,4 +498,81 @@ export async function threadRoute(method: string, path: string, body: Record<str
     if (method === 'DELETE') { automations = automations.filter((item) => item.id !== id); return json({ ok: true }) }
   }
   return null
+}
+
+// What a hub might discover from each CLI; shows how agents differ.
+function demoOptions(agent: string) {
+  const efforts = (ids: string[]) => ids.map((id) => ({ id, label: id === 'xhigh' ? 'Extra high' : id[0].toUpperCase() + id.slice(1) }))
+  if (agent === 'claude') return {
+    agent, source: 'discovered', defaultMode: 'default',
+    models: [
+      { id: '', label: 'Default', description: 'Opus for planning, Sonnet for the rest', default: true },
+      { id: 'opus', label: 'Opus', description: 'Most capable for complex work', efforts: ['low', 'medium', 'high', 'max'] },
+      { id: 'sonnet', label: 'Sonnet', description: 'Fast and capable for everyday work', efforts: ['low', 'medium', 'high'] },
+      { id: 'haiku', label: 'Haiku', description: 'Fastest for quick tasks', efforts: [] },
+    ],
+    efforts: efforts(['low', 'medium', 'high', 'max']),
+    fast: { label: 'Fast mode', description: 'Faster output on Opus; uses more of your plan' },
+    modes: [
+      { id: 'default', label: 'Ask before edits', description: 'Asks before changing files or running commands', kind: 'ask' },
+      { id: 'acceptEdits', label: 'Accept edits', description: 'Edits files freely, asks before commands', kind: 'edits' },
+      { id: 'plan', label: 'Plan', description: 'Explores and proposes a plan, changes nothing', kind: 'plan' },
+      { id: 'auto', label: 'Auto', description: 'Claude decides what is safe to run', kind: 'auto' },
+      { id: 'bypassPermissions', label: 'Bypass permissions', description: 'Never asks. Only on machines you trust', kind: 'full' },
+    ],
+  }
+  if (agent === 'codex') return {
+    agent, source: 'discovered', defaultMode: 'on-request',
+    models: [
+      { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex', description: 'Optimized for agentic coding', default: true, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' },
+      { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini', description: 'Cheaper and faster', efforts: ['medium', 'high'] },
+      { id: 'gpt-5.1', label: 'GPT-5.1', description: 'Broad knowledge and reasoning', efforts: ['minimal', 'low', 'medium', 'high'] },
+    ],
+    efforts: efforts(['minimal', 'low', 'medium', 'high', 'xhigh']),
+    fast: { label: 'Fast', description: 'Priority processing; uses more of your plan' },
+    modes: [
+      { id: 'read-only', label: 'Read only', description: 'Reads and answers, never writes', kind: 'readonly' },
+      { id: 'plan', label: 'Plan', description: 'Proposes a plan before doing anything', kind: 'plan' },
+      { id: 'on-request', label: 'Ask for approval', description: 'Works in the folder, asks before anything else', kind: 'ask' },
+      { id: 'auto', label: 'Auto', description: 'Works in the folder; reviews risky steps itself', kind: 'auto' },
+      { id: 'full-access', label: 'Full access', description: 'No sandbox, never asks', kind: 'full' },
+    ],
+  }
+  if (agent === 'gemini') return {
+    agent, source: 'discovered', defaultMode: 'default',
+    models: [
+      { id: '', label: 'Auto', description: 'Gemini picks per task', default: true },
+      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', description: 'Most capable' },
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
+    ],
+    efforts: [],
+    modes: [
+      { id: 'default', label: 'Default', description: 'Asks before edits and commands', kind: 'ask' },
+      { id: 'autoEdit', label: 'Auto edit', description: 'Edits files without asking', kind: 'edits' },
+      { id: 'plan', label: 'Plan', description: 'Read-only planning', kind: 'plan' },
+      { id: 'yolo', label: 'YOLO', description: 'Approves everything', kind: 'full' },
+    ],
+  }
+  return { agent, source: 'builtin', defaultMode: 'build', models: [{ id: '', label: 'Default', default: true }], efforts: [], modes: [
+    { id: 'build', label: 'Build', description: 'Full tool access', kind: 'auto' },
+    { id: 'plan', label: 'Plan', description: 'Read-only analysis', kind: 'plan' },
+  ] }
+}
+
+function demoCommands(agent: string) {
+  if (agent === 'codex') return [
+    { name: 'review', description: 'Review the current changes and find issues' },
+    { name: 'compact', description: 'Summarise the conversation to free context' },
+    { name: 'diff', description: 'Show the git diff, including untracked files' },
+    { name: 'init', description: 'Create an AGENTS.md with instructions for Codex' },
+    { name: 'mention', description: 'Mention a file', hint: 'path' },
+  ]
+  if (agent === 'claude') return [
+    { name: 'compact', description: 'Clear history but keep a summary in context', hint: 'instructions' },
+    { name: 'review', description: 'Review a pull request', hint: 'PR number' },
+    { name: 'init', description: 'Create a CLAUDE.md for this project' },
+    { name: 'security-review', description: 'Security review of the pending changes' },
+    { name: 'cost', description: 'Show token usage and cost for this session' },
+  ]
+  return [{ name: 'compact', description: 'Summarise the conversation' }]
 }

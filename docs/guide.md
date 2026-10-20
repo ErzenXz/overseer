@@ -1,0 +1,389 @@
+# Overseer guide
+
+Everything the [README](../README.md) leaves out: install options, joining machines, remote access, updates, MCP and development.
+
+
+Overseer is a small, self-hosted tool for people who run more than one machine:
+a desktop, a laptop, a homelab box, a cloud VM. You install the **hub** on one
+of them, then join every other device with a single pasted command. From then
+on you drive them all from one web UI: live terminals, coding agents (Claude
+Code, Codex, or any CLI), a fleet dashboard, and a file browser.
+
+It's also built so your **agents can drive the fleet**: point Claude Code or
+Codex at Overseer's MCP server and it becomes a "senior" that launches and
+supervises worker agents on every machine.
+
+The **Code** workspace embeds [fx](https://github.com/vercel-labs/fx) through
+its official `libfx` WebAssembly SDK. Add a project, bind it to a directory on
+one connected machine, and work in a Codex-style browser view. fx runs in the
+authenticated browser control plane while its typed terminal actions are
+routed to that project's machine, so one fx login can work across the fleet
+without copying provider credentials onto every node.
+
+## Why it's easy
+
+- **One paste to join a device.** No SSH keys, no port forwarding, no config
+  files. Devices dial *out* to the hub over a single WebSocket, so it works
+  behind NAT and firewalls untouched.
+- **One binary.** The hub, the device agent, the CLI, and the MCP server are
+  all the same static `overseer` binary. The web UI is baked into it.
+- **Sessions survive.** Terminals run in tmux on each device — close your
+  laptop, reopen on your phone, your agent is still running right where it was.
+
+## Quick start
+
+### 1. Run the hub
+
+On a fresh Linux VM with systemd:
+
+```sh
+curl -fsSL https://overseer.sh/install.sh | sh
+```
+
+On macOS (Intel or Apple Silicon):
+
+```sh
+curl -fsSL https://overseer.sh/install-macos.sh | sh
+```
+
+On Windows 10/11 or Windows Server 2016+ (x64 or ARM64), from PowerShell:
+
+```powershell
+irm https://overseer.sh/install.ps1 | iex
+```
+
+When it finishes, the installer prints a link like
+`http://192.168.1.20:4200/?setup=ABCDE-23456`. Open it and choose your admin
+password. The one-time **setup code** in that link stops anyone else on your
+network from claiming a fresh hub before you do. It is also in the hub's log
+and in `<data dir>/setup-code`, and it stops working once a password is set.
+
+The Linux installer uses systemd and is the best choice for an always-on
+server. The macOS and Windows installers run the hub in your user session and
+start it again at login; on Windows the task runs hidden, so no console window
+stays open.
+
+**What the installers check.** Each script only defines functions until its
+last line, so a download that is cut short never runs half an installer. The
+release binary for your CPU (`amd64` or `arm64`) is checked against the
+release's `checksums.txt` before it is installed. If no release exists yet,
+the installers build from source with temporary Go 1.25 and Node 20
+toolchains. Those toolchains are checked against pinned or officially
+published SHA-256 sums, and your system toolchains are left alone.
+
+Set `OVERSEER_INSTALL_SOURCE=binary` to require a published release or
+`OVERSEER_INSTALL_SOURCE=source` to force a source build. `OVERSEER_VERSION`
+pins a release tag, and `OVERSEER_REF` picks the branch or commit for source
+builds.
+
+**Uninstall** (keeps your data unless you add `OVERSEER_PURGE=1`):
+
+```sh
+curl -fsSL https://overseer.sh/install.sh | sh -s -- uninstall        # Linux
+curl -fsSL https://overseer.sh/install-macos.sh | sh -s -- uninstall  # macOS
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://overseer.sh/install.ps1))) uninstall
+```
+
+For HTTPS with Let's Encrypt, point DNS at the VM, open ports 80/443, then run:
+
+```sh
+curl -fsSL https://overseer.sh/install.sh \
+  | env OVERSEER_TLS_DOMAIN=overseer.example.com OVERSEER_TLS_EMAIL=you@example.com sh
+```
+
+For local development from source:
+
+```sh
+git clone https://github.com/ErzenXz/overseer
+cd overseer
+make            # builds the UI + the ./overseer binary (needs Go 1.25 + Node 20)
+./overseer serve
+```
+
+Open the setup link the hub prints in its log, choose an admin password, and
+you're in. The hub machine shows up as your first device automatically.
+
+The Vercel deployment is the public static product site. The authenticated hub
+remains a durable install on Linux, macOS, or Windows because it owns the local
+SQLite database and the persistent device/terminal connections.
+
+> **Prebuilt binaries:** once a release is tagged, grab one from the
+> [releases page](https://github.com/ErzenXz/overseer/releases) instead of
+> building — download `overseer_<os>_<arch>`, `chmod +x`, and `./overseer serve`.
+
+### 2. Add a device
+
+Click **Add device** in the UI, choose the target platform, and paste the
+command it gives you on any other Linux, macOS, or Windows machine:
+
+```sh
+curl -fsSL http://YOUR-HUB:4200/install/TOKEN.sh | sh
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm http://YOUR-HUB:4200/install/TOKEN.ps1 | iex"
+```
+
+It downloads the agent, checks it against the SHA-256 the hub publishes,
+enrolls the device, installs a background service, and connects. The device
+appears in Machines within seconds. Links work once and expire after 15
+minutes. The service records your `PATH`, so agents find Claude Code, Codex
+and your other CLIs. Remove a device with `~/.overseer/bin/overseer agent
+uninstall`.
+
+Use the hub's HTTPS address (Tailscale Serve or `--tls-domain`) when joining
+machines over networks you don't control: over plain HTTP, the checksum
+catches corrupted downloads but not someone deliberately rewriting traffic. If the joining
+device runs the same OS/arch as your hub, the binary comes straight from the
+hub (works on air-gapped LANs); otherwise the hub redirects the installer to
+the matching GitHub release build. For fully offline cross-platform setups,
+drop a cross-compiled `overseer_<os>_<arch>` into
+`~/.overseer/binaries/` on the hub and it's served from there.
+
+Linux agents install with systemd, macOS agents install as a launchd user
+agent, and Windows agents install as a user logon Scheduled Task. Persistent
+terminal sessions use `tmux`, so Linux/macOS devices with `tmux` installed get
+reattachable sessions. Windows uses the native ConPTY API for fully interactive
+PowerShell and coding-agent terminals; those sessions are live but not yet
+reattachable after a disconnect.
+
+### 3. Start a session
+
+Click **New session**, type what you want, pick the machine, folder and agent,
+and press Enter. You get a chat with the agent: its steps fold into
+“Worked for 2m 10s”, edits show as diffs, and when it wants to run something
+you approve or reject it right there. Sessions keep running when you close the
+tab.
+
+- **Claude Code** and **Codex** are driven through their own machine
+  protocols (`claude --print` stream-json and `codex app-server`).
+- **Gemini CLI, OpenCode, Goose, Copilot CLI, Cursor Agent** — or any other
+  agent — run over the [Agent Client Protocol](https://agentclientprotocol.com).
+- Open the panel on the right of a session for its **Shell**, the machine's
+  **Desktop**, **Files**, **Changes** and **Plan**.
+
+**Remote desktop.** Every machine has a **Desktop** tab. Overseer tunnels the
+machine's own VNC server through the agent connection, so it is never exposed
+to the network. Turn it on with *System Settings → General → Sharing → Screen
+Sharing* on macOS, `x11vnc -localhost -forever` or `wayvnc` on Linux, or a VNC
+server such as TightVNC on Windows.
+
+**Automations** run a prompt on a schedule (cron), and **Customize** holds MCP
+servers that every agent gets on every machine. **Review** lists your open pull
+requests using the GitHub CLI on one of your machines.
+
+The **Projects** page still embeds fx: add a project, choose the machine and
+folder, then sign in from the embedded fx terminal (Chrome or Edge 137+).
+
+### 4. Prepare coding tools and private access
+
+Open **Setup** in the web UI, choose any online machine, and Overseer will show
+which tools are installed and signed in. You can install or repair Codex,
+Claude Code, and Gemini CLI together, then open each provider's official login
+flow in a managed terminal. Credentials remain in each provider's protected
+local storage; Overseer never saves copied login tokens in its database.
+
+The same page can install and connect Tailscale on Linux, macOS, and Windows,
+then configure Tailscale Serve to give the hub a private HTTPS address. This is
+the recommended way to reach a hub remotely: the web port stays private to your
+tailnet, so there is no router port-forwarding or public HTTP exposure.
+
+## Let an agent run your fleet
+
+Create an API token in **Settings**, then on any machine with the `overseer`
+binary:
+
+```sh
+overseer fleet login --hub http://YOUR-HUB:4200 --token YOUR_API_TOKEN
+claude mcp add overseer -- overseer mcp     # for Claude Code
+```
+
+Now your agent has these tools: `list_devices`, `list_sessions`,
+`create_session`, `send_input`, `read_output`, `run_command`, `kill_session`,
+`list_files`, `read_file`, `write_file`. Ask it things like *"launch claude in
+~/projects/api on the homelab box and have it fix the failing tests, then report
+back."*
+
+`list_devices` includes CPU utilization and core count, RAM utilization and byte
+totals, 1/5/15-minute load averages, and live session counts split into working,
+idle, and other statuses. Counts include terminals and agents, excluding exited
+sessions. Metrics are reported at the snapshot level: a missing stats snapshot is
+unavailable, but present legacy snapshots do not include per-metric collection
+errors, so zero values cannot be distinguished from collector failures. Load
+averages are unavailable on Windows. Session queries share a five-second budget
+after the device list is fetched, with up to eight concurrent requests; failed or
+unfinished queries are marked unavailable (not zero). This is a best-effort
+snapshot for choosing a device before `create_session`, not a worker limit or
+reservation.
+
+The same operations are available as a CLI:
+
+```sh
+overseer fleet devices
+overseer fleet new homelab build --cwd ~/app --cmd "claude"
+overseer fleet read homelab build
+overseer fleet run homelab -- git status
+```
+
+### Use it from ChatGPT, Claude, or any MCP client (remote MCP)
+
+The hub also serves the MCP tools over HTTP at `/mcp`, so any client that
+supports **remote MCP connectors** — ChatGPT, Claude, Cursor — can drive your
+fleet directly. With `list_files` / `read_file` / `write_file` / `run_command`,
+that client becomes a full coding agent on your machines.
+
+1. Expose the hub over HTTPS (see below — `--tls-domain`, or a TLS proxy).
+2. Create an API token in **Settings**.
+3. In your client, add a connector pointing at `https://your-domain/mcp` and
+   supply the API token as a Bearer credential.
+
+> ⚠️ **This is a remote shell.** `run_command` and `write_file` execute
+> arbitrary commands and write files on your devices. The endpoint refuses
+> requests without a valid API token and must only be exposed over HTTPS —
+> anyone who gets the token owns the box, so treat it like an SSH key. Rotate it
+> in Settings if it leaks. There is no separate "read-only" mode yet.
+
+## Keeping devices up to date
+
+Open **Settings → Software updates** to see the installed release, the newest
+stable release, fleet rollout progress, and the version available for rollback.
+Installed hubs check every six hours and apply stable updates automatically by
+default. The setting can be disabled, or you can check and install immediately.
+
+Every release download is matched against `checksums.txt` and the staged binary
+must report the expected version before Overseer touches the running binary.
+Replacement is atomic on Linux/macOS; Windows uses a detached swap helper after
+the running `.exe` exits. The previous verified binary is retained beside the
+new one, so **Restore previous version** can roll the hub back with one click.
+Release CI also publishes signed GitHub build provenance for the raw binaries.
+
+If a new version can't stay up (it crashes three times before running for 90
+seconds), the next start restores the previous verified binary on its own, so
+a bad release never leaves a machine in a restart loop. Releases are only
+published after the test suite passes and the built binary reports the tag's
+version.
+
+Managed device agents follow the hub's stable version automatically. Failed
+downloads leave the current agent running and retry later, while successful
+updates restart through systemd, launchd, or the named Windows Scheduled Task.
+A foreground `overseer agent run` used for debugging is never replaced.
+
+For a standalone binary, the equivalent commands are:
+
+```sh
+overseer update --check
+overseer update
+overseer rollback
+```
+
+Automatic replacement requires an installation made by the Linux, macOS, or
+Windows background-service installer. Source/debug runs still show whether a
+new release exists without silently changing themselves.
+
+## Accessing it from anywhere
+
+Overseer binds to `0.0.0.0:4200` over plain HTTP — perfect on a trusted LAN.
+To reach it from the internet, **do not expose plain HTTP directly.** Three
+options:
+
+- **Built-in Let's Encrypt (easiest for a public domain):** point a domain's
+  DNS at the machine, open ports 80 and 443, and run:
+
+  ```sh
+  overseer serve --tls-domain overseer.example.com --tls-email you@example.com
+  ```
+
+  The hub obtains and auto-renews a real TLS certificate (ACME) — you just give
+  it the domain and an email, and it handles verification and renewal. This is
+  required if you want to connect a remote MCP client like ChatGPT.
+- **[Tailscale](https://tailscale.com):** put the hub and your phone/laptop on
+  the same tailnet and browse to the hub's Tailscale IP. Encrypted, zero config,
+  no open ports — great when you don't have a domain.
+- **A TLS reverse proxy** (Caddy, nginx, Traefik) in front of the single hub
+  port, if you already run one.
+
+## Live previews
+
+Start a dev server on any machine (say Vite on `localhost:5173`) and open the
+session's **Preview** tab: Overseer finds what is listening and shows it live,
+hot reload included. Links to `localhost` in an agent's reply open there too.
+
+Each preview gets its own address, `https://5173-erzen-dev.example.com`, and
+asks the hub who you are first, so it stays private. Nothing is opened on the
+machine: traffic goes through the agent's existing connection and can only
+reach that machine's `localhost`.
+
+One-time setup, if your hub is on `overseer.example.com` behind Cloudflare
+Tunnel: add a public hostname `*.example.com` pointing at the same service as
+Overseer (for example `http://localhost:4200`). The domain is taken from the
+hub's address; change it in **Settings → Previews** or with
+`overseer serve --preview-domain example.com`. On `localhost`, previews work
+with no setup at all.
+
+No domain? Forward the port to your own computer instead:
+
+```sh
+overseer forward erzen-dev 5173     # then open http://localhost:5173
+```
+
+## How it works
+
+```
+     Browser ─── HTTPS + WebSocket ───►  ┌─────────┐
+     (or phone)                          │   Hub   │  ← web UI, API, SQLite
+                                         └────┬────┘
+                          one outbound WS per device
+                    ┌───────────────┬─────────┴───────┐
+                 ┌──┴──┐         ┌───┴──┐          ┌────┴───┐
+                 │agent│         │agent │          │ agent  │   ← tmux, PTYs,
+                 │ mac │         │linux │          │  VM    │     stats, files
+                 └─────┘         └──────┘          └────────┘
+```
+
+Everything — terminal streams, stats, file transfers, control — is multiplexed
+over each device's single outbound WebSocket. Design details live in
+[`docs/superpowers/specs`](superpowers/specs/).
+
+## Development
+
+```sh
+# Terminal 1: hub API (Go)
+go run ./cmd/overseer serve
+
+# Terminal 2: UI with hot reload (proxies /api to :4200)
+cd ui && npm install && npm run dev
+# The dev UI starts on demo data. To use the real hub, run this in the
+# browser console and reload:  localStorage.setItem('overseer:mock', 'off')
+
+make test        # go vet + unit + integration tests (some need tmux)
+make cross       # cross-compile darwin/linux/windows × amd64/arm64 into dist/
+```
+
+Project layout: `cmd/overseer` (entrypoint + subcommands), `internal/protocol`
+(wire format), `internal/hub` (server), `internal/agent` (device side),
+`internal/fleet` (API client), `internal/mcp` (MCP server), `ui` (React app).
+The sessions, desktop, automations and MCP APIs are described in
+[`docs/agent-sessions-api.md`](agent-sessions-api.md).
+
+## Status & roadmap
+
+v1 is here: one-paste join, tmux terminals, smart agent sessions, fleet
+dashboard, file browser, CLI + MCP, and a responsive UI that works from a phone
+browser. Not yet: multi-user/teams, a native mobile app, fully persistent
+Windows terminals. Contributions welcome.
+
+### Cutting a release
+
+Tag a commit and CI does the rest (cross-compiles, builds the UI, uploads
+binaries + checksums to a GitHub release):
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+## License
+
+MIT — see [LICENSE](../LICENSE).

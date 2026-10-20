@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useState } from 'react'
 import { api, timeAgo } from '../api'
 import { usePoll } from '../hooks'
-import type { ApiTokenInfo, Preset, UpdateStatus } from '../types'
+import type { ApiTokenInfo, Preset, PreviewConfig, UpdateStatus } from '../types'
+import { setPreviewConfig, usePreviewConfig } from '../previews'
 import { Link } from 'react-router-dom'
 
 const cardClass =
@@ -300,5 +301,64 @@ claude mcp add overseer -- overseer mcp`}
         </div>
       </div>
     </section>
+  )
+}
+
+// Previews: the domain dev-server previews live under, with the one-time
+// Cloudflare Tunnel step that makes them reachable.
+export function PreviewSettings() {
+  const config = usePreviewConfig()
+  const [domain, setDomain] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const value = domain ?? (config?.source === 'setting' ? config.domain : '')
+  const effective = config?.domain || ''
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setMessage('')
+    try {
+      setPreviewConfig(await api.put<PreviewConfig>('/api/previews/config', { domain: value.trim() }))
+      setDomain(null)
+      setMessage('Saved')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not save')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const example = `5173-erzen-dev.${effective || 'example.com'}`
+  return (
+    <div className="space-y-5">
+      <section className={cardClass}>
+        <form onSubmit={save} className="space-y-3">
+          <label className="block text-sm font-medium text-ink" htmlFor="preview-domain">Preview domain</label>
+          <div className="flex gap-2">
+            <input id="preview-domain" className={`${inputClass} flex-1 font-mono`} placeholder={config?.source === 'derived' ? `${config.domain} (from the hub address)` : 'example.com'} value={value} onChange={(event) => setDomain(event.target.value)} spellCheck={false} disabled={config?.source === 'flag'} />
+            <button className="btn btn-primary" disabled={busy || config?.source === 'flag'}>{busy ? 'Saving…' : 'Save'}</button>
+          </div>
+          <p className="text-[13px] text-muted">
+            {config?.source === 'flag' ? <>Set by <code className="code-inline">--preview-domain</code> when the hub started.</>
+              : effective ? <>Previews open at <code className="code-inline">https://{example}</code>. Leave empty to use the hub’s own domain.</>
+                : <>No domain yet. Previews are off until you set one; <code className="code-inline">overseer forward</code> still works.</>}
+          </p>
+          {message && <p className="text-[13px] text-muted">{message}</p>}
+        </form>
+      </section>
+      <section className={cardClass}>
+        <h3 className="mb-2 text-sm font-medium text-ink">Cloudflare Tunnel</h3>
+        <ol className="list-decimal space-y-2 pl-5 text-[13.5px] text-secondary">
+          <li>Open Cloudflare Zero Trust → Networks → Tunnels → your Overseer tunnel → Public hostnames.</li>
+          <li>Add a hostname with subdomain <code className="code-inline">*</code> on <code className="code-inline">{effective || 'example.com'}</code>, pointing at the same service as Overseer (for example <code className="code-inline">http://localhost:4200</code>).</li>
+          <li>Start a dev server on any machine and open a session’s Preview tab.</li>
+        </ol>
+        <p className="mt-3 text-[13px] text-muted">Previews stay private: each one asks this hub who you are first. Other records on the domain keep working; the wildcard only catches names that don’t exist.</p>
+      </section>
+      <section className={cardClass}>
+        <h3 className="mb-2 text-sm font-medium text-ink">Open a port on your own computer</h3>
+        <p className="mb-2 text-[13.5px] text-secondary">No domain needed. With the Overseer CLI signed in, this serves a machine’s port on your localhost:</p>
+        <pre className="preview-command"><code>overseer forward erzen-dev 5173</code></pre>
+      </section>
+    </div>
   )
 }

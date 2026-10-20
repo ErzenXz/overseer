@@ -32,6 +32,12 @@ type codexAdapter struct {
 	cmdEmitted map[string]time.Time
 	planId     string
 	usage      protocol.Usage
+	turnActive bool                    // a turn is running (prompts steer it)
+	skills     map[string]bool         // skill names, for "/skill" -> "$skill"
+	commands   []protocol.AgentCommand // built-ins + skills
+	model      string                  // model the thread runs (from thread/start), for collaborationMode
+	tier       string                  // service tier id used for fast mode
+	planTurn   bool                    // the last turn ran in the plan collaboration mode
 }
 
 func newCodexAdapter(cfg protocol.ThreadStart, sink threadSink) *codexAdapter {
@@ -46,15 +52,90 @@ func newCodexAdapter(cfg protocol.ThreadStart, sink threadSink) *codexAdapter {
 	}
 }
 
-// codexPolicy maps the contract's access level to approvalPolicy + sandbox.
-func codexPolicy(access string) (string, string) {
-	switch access {
+// codexMode is the effective Codex mode id: the explicit mode, else the
+// legacy access level mapped onto the same presets.
+func codexMode(set threadSettings) string {
+	if set.Mode != "" {
+		return set.Mode
+	}
+	switch set.Access {
 	case "ask":
-		return "on-request", "read-only"
+		return "read-only"
 	case "full":
+		return "full-access"
+	}
+	return "on-request"
+}
+
+// codexModePolicy maps a mode id onto approvalPolicy + sandbox mode.
+func codexModePolicy(mode string) (approval, sandbox string) {
+	switch mode {
+	case "read-only", "plan":
+		return "on-request", "read-only"
+	case "full-access":
 		return "never", "danger-full-access"
 	}
 	return "on-request", "workspace-write"
+}
+
+// codexSandboxPolicy is the turn/start form of a sandbox mode.
+func codexSandboxPolicy(sandbox string) map[string]any {
+	switch sandbox {
+	case "read-only":
+		return map[string]any{"type": "readOnly"}
+	case "danger-full-access":
+		return map[string]any{"type": "dangerFullAccess"}
+	}
+	return map[string]any{"type": "workspaceWrite"}
+}
+
+const codexDefaultTier = "priority"
+
+// codexTurnOverrides are the per-turn settings sent with turn/start (they
+// also stick for later turns): model, effort, fast tier, approval policy,
+// sandbox, approvals reviewer and the plan collaboration mode. model is the
+// thread's model when none is set (collaborationMode requires one); wasPlan
+// says whether the previous turn was in plan mode, so leaving it is explicit.
+func codexTurnOverrides(set threadSettings, model, tier string, wasPlan bool) map[string]any {
+	p := map[string]any{}
+	if set.Model != "" {
+		p["model"] = set.Model
+		model = set.Model
+	}
+	if set.Effort != "" {
+		p["effort"] = set.Effort
+	}
+	if set.Fast {
+		if tier == "" {
+			tier = codexDefaultTier
+		}
+		p["serviceTierForTurn"] = tier
+	}
+	mode := codexMode(set)
+	approval, sandbox := codexModePolicy(mode)
+	p["approvalPolicy"] = approval
+	p["sandboxPolicy"] = codexSandboxPolicy(sandbox)
+	if set.Mode != "" {
+		if mode == "auto" {
+			p["approvalsReviewer"] = "auto_review"
+		} else {
+			p["approvalsReviewer"] = "user"
+		}
+	}
+	if (mode == "plan" || wasPlan) && model != "" {
+		kind := "default"
+		if mode == "plan" {
+			kind = "plan"
+		}
+		settings := map[string]any{"model": model, "developer_instructions": nil}
+		if set.Effort != "" {
+			settings["reasoning_effort"] = set.Effort
+		} else {
+			settings["reasoning_effort"] = nil
+		}
+		p["collaborationMode"] = map[string]any{"mode": kind, "settings": settings}
+	}
+	return p
 }
 
 // tomlString quotes s as a TOML basic string (JSON escapes are valid TOML).
@@ -143,13 +224,25 @@ func (c *codexAdapter) start(ctx context.Context) (string, error) {
 		return fail(err)
 	}
 
-	approval, sandbox := codexPolicy(c.cfg.Access)
+	set := c.settings()
+	approval, sandbox := codexModePolicy(codexMode(set))
 	params := map[string]any{"cwd": c.cfg.Cwd, "approvalPolicy": approval, "sandbox": sandbox}
-	if c.cfg.Model != "" {
-		params["model"] = c.cfg.Model
+	if set.Model != "" {
+		params["model"] = set.Model
+	}
+	if set.Mode == "auto" {
+		params["approvalsReviewer"] = "auto_review"
 	}
 	var res json.RawMessage
-	if c.cfg.ResumeId != "" {
+	switch {
+	case c.cfg.Fork && c.cfg.ResumeId != "":
+		res = c.fork(ctx, params)
+		if res == nil {
+			c.forkFallback = true
+		}
+	case c.cfg.Fork:
+		c.forkFallback = true
+	case c.cfg.ResumeId != "":
 		resume := map[string]any{"threadId": c.cfg.ResumeId}
 		for k, v := range params {
 			resume[k] = v
@@ -173,30 +266,288 @@ func (c *codexAdapter) start(ctx context.Context) (string, error) {
 	}
 	c.cmu.Lock()
 	c.threadId = id
+	c.model = jStr(r, "model")
 	c.cmu.Unlock()
 	c.mu.Lock()
 	c.resume = id
 	c.mu.Unlock()
+	if set.Fast {
+		c.lookupTier(ctx, set.Model)
+	}
 	c.started.Store(true)
+	c.loadCommands(ctx)
 	return id, nil
 }
 
-func (c *codexAdapter) prompt(text string) error {
-	c.beginTurn()
+// fork copies the stored thread (thread/fork) and, with ForkAt, cuts it
+// after the turn whose user message carries that client id
+// (thread/revert). It returns nil when that isn't possible.
+func (c *codexAdapter) fork(ctx context.Context, params map[string]any) json.RawMessage {
+	fp := map[string]any{"threadId": c.cfg.ResumeId}
+	for k, v := range params {
+		fp[k] = v
+	}
+	var res json.RawMessage
+	if err := c.rpc.call(ctx, "thread/fork", fp, &res); err != nil {
+		return nil
+	}
+	if c.cfg.ForkAt == "" {
+		return res
+	}
+	newId := jStr(jObj(decodeObj(res), "thread"), "id")
+	turns := codexTurnIds(ctx, c.rpc, newId)
+	cut := -1
+	for i, t := range turns {
+		if t.clientId == c.cfg.ForkAt {
+			cut = i
+		}
+	}
+	switch {
+	case cut < 0:
+		c.rpc.call(ctx, "thread/delete", map[string]string{"threadId": newId}, nil)
+		return nil
+	case cut+1 < len(turns):
+		var rev json.RawMessage
+		if err := c.rpc.call(ctx, "thread/revert", map[string]any{"threadId": newId, "beforeTurnId": turns[cut+1].id}, &rev); err != nil {
+			c.rpc.call(ctx, "thread/delete", map[string]string{"threadId": newId}, nil)
+			return nil
+		}
+	}
+	return res
+}
+
+type codexTurnRef struct{ id, clientId string }
+
+// codexTurnIds lists a thread's turns oldest first, with the client id of
+// each turn's user message.
+func codexTurnIds(ctx context.Context, rpc *rpcConn, threadId string) []codexTurnRef {
+	var out []codexTurnRef
+	cursor := ""
+	for page := 0; page < 50; page++ {
+		params := map[string]any{"threadId": threadId, "sortDirection": "asc", "itemsView": "summary", "limit": 100}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		var res json.RawMessage
+		if rpc.call(ctx, "thread/turns/list", params, &res) != nil {
+			return out
+		}
+		r := decodeObj(res)
+		for _, x := range jArr(r, "data") {
+			t, ok := x.(map[string]any)
+			if !ok {
+				continue
+			}
+			ref := codexTurnRef{id: jStr(t, "id")}
+			for _, it := range jArr(t, "items") {
+				if im, ok := it.(map[string]any); ok && jStr(im, "type") == "userMessage" && ref.clientId == "" {
+					ref.clientId = jStr(im, "clientId")
+				}
+			}
+			out = append(out, ref)
+		}
+		next, _ := r["nextCursor"].(string)
+		if next == "" || next == cursor {
+			break
+		}
+		cursor = next
+	}
+	return out
+}
+
+var codexBuiltinCommands = []protocol.AgentCommand{
+	{Name: "review", Description: "Review the uncommitted changes (or follow the given instructions)", Hint: "instructions"},
+	{Name: "compact", Description: "Summarise the conversation to free up context"},
+}
+
+// loadCommands publishes Codex's built-in commands plus its skills.
+func (c *codexAdapter) loadCommands(ctx context.Context) {
+	cmds := append([]protocol.AgentCommand{}, codexBuiltinCommands...)
+	skills := map[string]bool{}
+	sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var res json.RawMessage
+	if c.rpc.call(sctx, "skills/list", map[string]any{"cwds": []string{c.cfg.Cwd}}, &res) == nil {
+		for _, e := range jArr(decodeObj(res), "data") {
+			em, _ := e.(map[string]any)
+			for _, sk := range jArr(em, "skills") {
+				m, ok := sk.(map[string]any)
+				if !ok || jStr(m, "name") == "" || (m["enabled"] != nil && !jBool(m, "enabled")) || skills[jStr(m, "name")] {
+					continue
+				}
+				skills[jStr(m, "name")] = true
+				cmds = append(cmds, protocol.AgentCommand{Name: jStr(m, "name"), Description: jStr(m, "description", "shortDescription"), Hint: "skill"})
+			}
+		}
+	}
 	c.cmu.Lock()
-	threadId := c.threadId
-	c.planId = ""
+	c.skills, c.commands = skills, cmds
 	c.cmu.Unlock()
+	c.publishMeta(protocol.ThreadCapabilities{Fork: true, Compact: true, Undo: true, Steer: true, Images: true, Commands: true, Review: true}, cmds)
+}
+
+// codexInput builds turn input items: text plus local images.
+func codexInput(p promptInput) []map[string]any {
+	in := []map[string]any{}
+	if p.Text != "" || len(p.Images) == 0 {
+		in = append(in, map[string]any{"type": "text", "text": p.Text})
+	}
+	for _, img := range p.Images {
+		in = append(in, map[string]any{"type": "localImage", "path": img.Path})
+	}
+	return in
+}
+
+func (c *codexAdapter) compact() error {
+	c.cmu.Lock()
+	threadId, busy := c.threadId, c.turnActive
+	c.cmu.Unlock()
+	if busy {
+		return fmt.Errorf("the agent is working; compact after the turn ends")
+	}
+	c.beginTurn()
+	c.setStatus("working", "")
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+	defer cancel()
+	return c.rpc.call(ctx, "thread/compact/start", map[string]string{"threadId": threadId}, nil)
+}
+
+// undo reverts the thread to before its latest turn.
+func (c *codexAdapter) undo() error {
+	c.cmu.Lock()
+	threadId, busy := c.threadId, c.turnActive
+	c.cmu.Unlock()
+	if busy {
+		return fmt.Errorf("the agent is working; undo after the turn ends")
+	}
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
 	var res json.RawMessage
-	err := c.rpc.call(ctx, "turn/start", map[string]any{
-		"threadId": threadId,
-		"input":    []map[string]string{{"type": "text", "text": text}},
-	}, &res)
+	if err := c.rpc.call(ctx, "thread/turns/list", map[string]any{"threadId": threadId, "sortDirection": "desc", "limit": 1, "itemsView": "notLoaded"}, &res); err != nil {
+		return err
+	}
+	data := jArr(decodeObj(res), "data")
+	if len(data) == 0 {
+		return fmt.Errorf("nothing to undo")
+	}
+	last, _ := data[0].(map[string]any)
+	return c.rpc.call(ctx, "thread/revert", map[string]any{"threadId": threadId, "beforeTurnId": jStr(last, "id")}, nil)
+}
+
+// startReview runs review/start inline on the thread.
+func (c *codexAdapter) startReview(threadId, instructions string) error {
+	target := map[string]any{"type": "uncommittedChanges"}
+	if instructions != "" {
+		target = map[string]any{"type": "custom", "instructions": instructions}
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+	defer cancel()
+	var res json.RawMessage
+	if err := c.rpc.call(ctx, "review/start", map[string]any{"threadId": threadId, "target": target}, &res); err != nil {
+		return err
+	}
+	if id := jStr(jObj(decodeObj(res), "turn"), "id"); id != "" {
+		c.cmu.Lock()
+		c.turnId, c.turnActive = id, true
+		c.cmu.Unlock()
+	}
+	return nil
+}
+
+// lookupTier finds the fast service tier id for model in the catalog
+// (falls back to "priority").
+func (c *codexAdapter) lookupTier(ctx context.Context, model string) {
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	models, err := codexListModels(tctx, c.rpc)
+	if err != nil {
+		return
+	}
+	c.cmu.Lock()
+	defer c.cmu.Unlock()
+	if model == "" {
+		model = c.model
+	}
+	for _, m := range models {
+		if (m.model == model || m.id == model) && m.tier != "" {
+			c.tier = m.tier
+			return
+		}
+	}
+}
+
+// update stores new settings; Codex takes all of them per turn.
+func (c *codexAdapter) update(next threadSettings) bool {
+	cur := c.settings()
+	c.setSettings(next)
+	if next.Fast && !cur.Fast {
+		c.cmu.Lock()
+		known := c.tier != ""
+		c.cmu.Unlock()
+		if !known {
+			c.lookupTier(c.ctx, next.Model)
+		}
+	}
+	return false
+}
+
+func (c *codexAdapter) prompt(p promptInput) error {
+	c.cmu.Lock()
+	threadId, turnId, busy := c.threadId, c.turnId, c.turnActive
+	skills := c.skills
+	c.cmu.Unlock()
+
+	// Built-in slash commands map onto app-server methods; "/skill" becomes
+	// the "$skill" mention Codex understands.
+	if !busy && len(p.Images) == 0 && strings.HasPrefix(p.Text, "/") {
+		name, rest, _ := strings.Cut(strings.TrimPrefix(p.Text, "/"), " ")
+		switch {
+		case name == "compact":
+			return c.compact()
+		case name == "review":
+			c.beginTurn()
+			return c.startReview(threadId, strings.TrimSpace(rest))
+		case skills[name]:
+			p.Text = "$" + strings.TrimPrefix(p.Text, "/")
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+	defer cancel()
+	if busy && turnId != "" {
+		params := map[string]any{"threadId": threadId, "expectedTurnId": turnId, "input": codexInput(p)}
+		if p.MessageId != "" {
+			params["clientUserMessageId"] = p.MessageId
+		}
+		if err := c.rpc.call(ctx, "turn/steer", params, nil); err == nil {
+			return nil
+		}
+		// The turn ended in between: start a new one.
+	}
+
+	c.beginTurn()
+	set := c.settings()
+	c.cmu.Lock()
+	c.planId = ""
+	params := codexTurnOverrides(set, c.model, c.tier, c.planTurn)
+	c.cmu.Unlock()
+	params["threadId"] = threadId
+	params["input"] = codexInput(p)
+	if p.MessageId != "" {
+		params["clientUserMessageId"] = p.MessageId
+	}
+	var res json.RawMessage
+	err := c.rpc.call(ctx, "turn/start", params, &res)
 	if err != nil {
 		return err
 	}
+	c.cmu.Lock()
+	c.turnActive = true
+	c.planTurn = codexMode(set) == "plan"
+	if set.Model != "" {
+		c.model = set.Model
+	}
+	c.cmu.Unlock()
 	if id := jStr(jObj(decodeObj(res), "turn"), "id"); id != "" {
 		c.cmu.Lock()
 		c.turnId = id
@@ -238,9 +589,11 @@ func (c *codexAdapter) onNotify(method string, params json.RawMessage) {
 	case "turn/started":
 		if id := jStr(jObj(p, "turn"), "id"); id != "" {
 			c.cmu.Lock()
-			c.turnId = id
+			c.turnId, c.turnActive = id, true
 			c.cmu.Unlock()
 		}
+	case "thread/compacted":
+		c.emit(protocol.ThreadEvent{Id: c.newId("compact"), Role: "status", Text: "Conversation compacted"})
 	case "item/started":
 		c.onItem(jObj(p, "item"), false)
 	case "item/completed":
@@ -291,11 +644,20 @@ func (c *codexAdapter) onNotify(method string, params json.RawMessage) {
 		if ok1 || ok2 {
 			c.cmu.Lock()
 			c.usage.InputTokens, c.usage.OutputTokens = int64(in), int64(out)
+			if last, ok := jNum(jObj(tu, "last"), "totalTokens", "total_tokens"); ok {
+				c.usage.ContextTokens = int64(last)
+			}
+			if w, ok := jNum(tu, "modelContextWindow", "model_context_window"); ok {
+				c.usage.ContextWindow = int64(w)
+			}
 			usage := c.usage
 			c.cmu.Unlock()
 			c.sink.state(protocol.ThreadState{Usage: &usage})
 		}
 	case "turn/completed":
+		c.cmu.Lock()
+		c.turnActive = false
+		c.cmu.Unlock()
 		turn := jObj(p, "turn")
 		switch jStr(turn, "status") {
 		case "failed":
@@ -482,6 +844,9 @@ func (c *codexAdapter) onRequest(id json.RawMessage, method string, params json.
 	case "item/permissions/requestApproval":
 		c.requestPermissions(id, p)
 		return
+	case "item/tool/requestUserInput":
+		c.requestUserInput(id, p)
+		return
 	case "execCommandApproval":
 		legacy = true
 		title = "Run command?"
@@ -506,7 +871,7 @@ func (c *codexAdapter) onRequest(id json.RawMessage, method string, params json.
 			{Id: "decline", Label: "Decline", Kind: "reject_once"},
 		}
 	}
-	if c.cfg.Access == "full" {
+	if c.fullAccess() {
 		c.rpc.respond(id, map[string]string{"decision": options[0].Id})
 		return
 	}
@@ -519,6 +884,50 @@ func (c *codexAdapter) onRequest(id json.RawMessage, method string, params json.
 	c.rpc.respond(id, map[string]string{"decision": choice})
 }
 
+// codexQuestions maps requestUserInput questions onto question messages
+// (option ids are the labels Codex expects back).
+func codexQuestions(idPrefix string, p jsonObj) ([]protocol.ThreadQuestion, []string) {
+	var qs []protocol.ThreadQuestion
+	var ids []string
+	for i, x := range jArr(p, "questions") {
+		m, ok := x.(map[string]any)
+		if !ok {
+			continue
+		}
+		text := jStr(m, "question")
+		if h := jStr(m, "header"); h != "" && text == "" {
+			text = h
+		}
+		q := protocol.ThreadQuestion{Id: fmt.Sprintf("%s-%d", idPrefix, i), Text: text, Options: []protocol.QuestionOption{}}
+		for _, o := range jArr(m, "options") {
+			if om, ok := o.(map[string]any); ok && jStr(om, "label") != "" {
+				q.Options = append(q.Options, protocol.QuestionOption{Id: jStr(om, "label"), Label: jStr(om, "label"), Description: jStr(om, "description")})
+			}
+		}
+		q.AllowText = jBool(m, "isOther") || len(q.Options) == 0
+		qs = append(qs, q)
+		ids = append(ids, jStr(m, "id"))
+	}
+	return qs, ids
+}
+
+// requestUserInput asks the user the tool's questions, one message each.
+func (c *codexAdapter) requestUserInput(id json.RawMessage, p jsonObj) {
+	questions, ids := codexQuestions(c.newId("q"), p)
+	answers := map[string]any{}
+	for i, q := range questions {
+		chosen, text, ok := c.askQuestion(c.ctx, q)
+		if !ok {
+			break
+		}
+		if text != "" {
+			chosen = append(chosen, text)
+		}
+		answers[ids[i]] = map[string]any{"answers": chosen}
+	}
+	c.rpc.respond(id, map[string]any{"answers": answers})
+}
+
 // requestPermissions answers a request for extra sandbox permissions
 // (filesystem roots, network). Granting echoes the requested profile back;
 // declining grants nothing.
@@ -527,7 +936,7 @@ func (c *codexAdapter) requestPermissions(id json.RawMessage, p jsonObj) {
 	grant := func(scope string) {
 		c.rpc.respond(id, map[string]any{"permissions": requested, "scope": scope})
 	}
-	if c.cfg.Access == "full" {
+	if c.fullAccess() {
 		grant("session")
 		return
 	}

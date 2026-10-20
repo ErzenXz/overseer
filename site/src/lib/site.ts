@@ -4,7 +4,7 @@ export const DOCS = `${REPO}#readme`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const ISSUES = `${REPO}/issues`;
 
-export const SITE = "https://liveagent-lime.vercel.app";
+export const SITE = "https://overseer.sh";
 
 export type OS = "macos" | "linux" | "windows";
 

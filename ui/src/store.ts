@@ -123,6 +123,9 @@ export interface NewThread {
   prompt: string
   model?: string
   access?: Access
+  effort?: string
+  fast?: boolean
+  mode?: string
   title?: string
 }
 
@@ -132,7 +135,7 @@ export async function createThread(input: NewThread) {
   return thread
 }
 
-export async function patchThread(id: string, patch: Partial<Pick<Thread, 'title' | 'access' | 'model'>> & { read?: boolean }) {
+export async function patchThread(id: string, patch: Partial<Pick<Thread, 'title' | 'access' | 'model' | 'effort' | 'fast' | 'mode' | 'pinned' | 'archived' | 'folder'>> & { read?: boolean }) {
   const thread = await api.patch<Thread>(`/api/threads/${id}`, patch)
   threadsResource.set((threads) => threads?.map((item) => item.id === id ? thread : item) ?? threads)
   return thread
@@ -143,7 +146,16 @@ export async function deleteThread(id: string) {
   threadsResource.set((threads) => threads?.filter((item) => item.id !== id) ?? threads)
 }
 
-export const sendPrompt = (id: string, text: string) => api.post(`/api/threads/${id}/prompt`, { text })
+export const sendPrompt = (id: string, text: string, images?: { path: string }[]) => api.post(`/api/threads/${id}/prompt`, images?.length ? { text, images } : { text })
+
+export async function forkThread(id: string, messageId?: string) {
+  const thread = await api.post<Thread>(`/api/threads/${id}/fork`, messageId ? { messageId } : {})
+  threadsResource.set((threads) => [thread, ...(threads ?? []).filter((item) => item.id !== thread.id)])
+  return thread
+}
+export const compactThread = (id: string) => api.post(`/api/threads/${id}/compact`)
+export const undoTurn = (id: string) => api.post(`/api/threads/${id}/undo`)
+export const answerQuestion = (id: string, questionId: string, answers: string[], text?: string) => api.post(`/api/threads/${id}/answer`, { questionId, answers, text })
 export const cancelThread = (id: string) => api.post(`/api/threads/${id}/cancel`)
 export const answerApproval = (id: string, approvalId: string, optionId: string) => api.post(`/api/threads/${id}/approval`, { approvalId, optionId })
 

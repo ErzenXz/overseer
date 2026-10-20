@@ -1,8 +1,8 @@
 #!/bin/sh
 # Install the Overseer hub on a Linux host with systemd.
 #
-#   curl -fsSL https://liveagent-lime.vercel.app/install.sh | sh
-#   curl -fsSL https://liveagent-lime.vercel.app/install.sh | sh -s -- uninstall
+#   curl -fsSL https://overseer.sh/install.sh | sh
+#   curl -fsSL https://overseer.sh/install.sh | sh -s -- uninstall
 #
 # This file only defines functions until the last line, so a download that is
 # cut short never runs half an installer. Release binaries are checked against
@@ -31,7 +31,7 @@ PURGE="${OVERSEER_PURGE:-0}"
 LOCAL_BINARY="${OVERSEER_LOCAL_BINARY:-}"
 SERVICE_SHELL="${OVERSEER_SERVICE_SHELL:-/bin/sh}"
 WAIT_SECONDS="${OVERSEER_WAIT_SECONDS:-15}"
-INSTALLER_URL="https://liveagent-lime.vercel.app/install.sh"
+INSTALLER_URL="https://overseer.sh/install.sh"
 
 log() { printf '  %s\n' "$*"; }
 ok() { printf '  \342\234\223 %s\n' "$*"; }

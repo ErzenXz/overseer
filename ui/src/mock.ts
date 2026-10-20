@@ -3,10 +3,18 @@
 // 'overseer:mock' = 'off' and reload.
 
 import { mockExec, mockThreadStream, setThreadsChangedHandler, threadRoute } from './mockThreads'
+import { previewRoute } from './mockPreview'
 import type { Device, FleetSession, FsListing, Preset, Project, Session, SetupOverview, Stats, UpdateStatus } from './types'
 
 const STORAGE_KEY = 'overseer:mock'
 const AUTH_KEY = 'overseer:mock:auth'
+
+// ?demo=1 / ?demo=0 switches the dev UI between demo data and the real hub.
+if (import.meta.env.DEV) {
+  const demo = new URLSearchParams(location.search).get('demo')
+  if (demo === '1') { localStorage.removeItem(STORAGE_KEY); sessionStorage.setItem(AUTH_KEY, '1') }
+  if (demo === '0') localStorage.setItem(STORAGE_KEY, 'off')
+}
 
 export const mockEnabled = import.meta.env.DEV && localStorage.getItem(STORAGE_KEY) !== 'off'
 export { mockThreadStream }
@@ -137,7 +145,7 @@ let nextId = 5
 const setupTools = (device: Device): SetupOverview => ({
   os: device.os,
   arch: device.arch,
-  bundleCommand: 'curl -fsSL https://liveagent-lime.vercel.app/agent-pack.sh | sh',
+  bundleCommand: 'curl -fsSL https://overseer.sh/agent-pack.sh | sh',
   tools: [
     { id: 'node', name: 'Node.js', description: 'Runtime used by most coding agents and the fx command adapter.', installed: true, version: 'v22.11.0', auth: 'not-required', installCommand: 'nvm install 22', docsUrl: 'https://nodejs.org' },
     { id: 'codex', name: 'Codex', description: 'OpenAI’s terminal coding agent.', installed: true, version: '0.44.0', auth: 'connected', installCommand: 'npm install -g @openai/codex', authCommand: 'codex login', docsUrl: 'https://github.com/openai/codex' },
@@ -198,6 +206,8 @@ async function route(method: string, path: string, search: URLSearchParams, body
   }
   if (!authed) return json({ error: 'unauthorized' }, 401)
 
+  const previewResponse = previewRoute(method, path, body)
+  if (previewResponse) return previewResponse
   const threadResponse = await threadRoute(method, path, body)
   if (threadResponse) return threadResponse
   const execMatch = path.match(/^\/api\/devices\/([^/]+)\/exec$/)

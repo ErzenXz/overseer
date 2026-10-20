@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { agentInfo, formatDuration, statusText } from '../agents'
+import { accessForKind, builtinOptions, modeOf } from '../agentOptions'
 import Composer, { type ComposerSettings } from '../components/Composer'
 import FileBrowser from '../components/FileBrowser'
 import Icon, { AgentMark } from '../components/Icon'
@@ -10,10 +11,14 @@ import Terminal from '../components/Terminal'
 import Transcript, { Diff, PlanCard } from '../components/Transcript'
 import VncViewer from '../components/VncViewer'
 import { SidebarToggle, useOwnHeader, useShell } from '../shell'
-import { answerApproval, cancelThread, deleteThread, openThreadStream, patchThread, sendPrompt, threadsResource, useDevices, usePref } from '../store'
+import { answerApproval, answerQuestion, cancelThread, compactThread, deleteThread, forkThread, openThreadStream, patchThread, sendPrompt, threadsResource, undoTurn, useDevices, usePref } from '../store'
+import type { AgentCommand, ThreadCapabilities } from '../types'
+import type { MessageActions } from '../components/Transcript'
+import PreviewPanel, { type PreviewRequest } from '../components/PreviewPanel'
+import { PreviewLinkContext } from '../previews'
 import type { Thread, ThreadMessage } from '../types'
 
-type Tab = 'shell' | 'desktop' | 'files' | 'changes' | 'plan'
+type Tab = 'shell' | 'desktop' | 'preview' | 'files' | 'changes' | 'plan'
 
 export default function SessionPage() {
   useOwnHeader()
@@ -32,7 +37,16 @@ export default function SessionPage() {
   const panel = mobile ? mobilePanel : savedPanel
   const setPanel = mobile ? setMobilePanel : setSavedPanel
   const [panelWidth, setPanelWidth] = usePref('session.panelWidth', 46)
+  // localhost links in replies open here, on the session's machine.
+  const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null)
+  const openPreview = useCallback((port: number, path: string) => {
+    setPreviewRequest({ port, path, nonce: Date.now() })
+    setPanel('preview')
+  }, [setPanel])
   const [renaming, setRenaming] = useState(false)
+  const [draft, setDraft] = useState<{ text: string; id: number }>()
+  const [caps, setCaps] = useState<ThreadCapabilities | null>(null)
+  const [commands, setCommands] = useState<AgentCommand[]>([])
   const [atBottom, setAtBottom] = useState(true)
   const scroller = useRef<HTMLDivElement>(null)
   const shell = useRef<HTMLDivElement>(null)
@@ -63,33 +77,114 @@ export default function SessionPage() {
     return () => { stop(); window.clearTimeout(timeout) }
   }, [id])
 
+  // What this agent can do, and its own slash commands. Older hubs answer
+  // 404 here, which simply hides the extra actions.
+  useEffect(() => {
+    let alive = true
+    setCaps(null)
+    setCommands([])
+    api.get<ThreadCapabilities>(`/api/threads/${encodeURIComponent(id)}/capabilities`).then((value) => { if (alive) setCaps(value) }).catch(() => {})
+    api.get<AgentCommand[]>(`/api/threads/${encodeURIComponent(id)}/commands`).then((value) => { if (alive && Array.isArray(value)) setCommands(value) }).catch(() => {})
+    return () => { alive = false }
+  }, [id])
+
   // Opening a session marks it read, and so does every update seen while open.
   useEffect(() => {
     if (thread && thread.updatedAt > thread.lastReadAt && thread.status !== 'working') patchThread(thread.id, { read: true }).catch(() => {})
   }, [thread?.id, thread?.updatedAt, thread?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep the view pinned to the bottom while the agent streams, unless the
-  // reader scrolled up.
+  // Follow the agent while it streams, but only while the reader is at the
+  // bottom. Any upward scroll by the reader (wheel, touch, keys, scrollbar,
+  // minimap) lets go at once; scrolling back to the very bottom follows again.
+  // We only ever scroll down ourselves, so an upward move is always theirs.
+  const follow = useRef(true)
+  const lastTop = useRef(0)
+  const stick = (on: boolean) => {
+    follow.current = on
+    setAtBottom(on)
+  }
+  const toBottom = () => {
+    const node = scroller.current
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+    lastTop.current = node.scrollTop
+  }
+  const jumpToLatest = () => { stick(true); toBottom() }
+  useLayoutEffect(() => { if (follow.current) toBottom() }, [messages])
   useEffect(() => {
     const node = scroller.current
-    if (node && atBottom) node.scrollTop = node.scrollHeight
-  }, [messages, atBottom])
+    const content = node?.firstElementChild
+    if (!node || !content) return
+    stick(true)
+    toBottom()
+    // Replies grow after render too (code highlighting, images, diagrams).
+    const observer = new ResizeObserver(() => { if (follow.current) toBottom() })
+    observer.observe(content)
+    const onWheel = (event: WheelEvent) => { if (event.deltaY < 0 && follow.current) stick(false) }
+    const onKey = (event: KeyboardEvent) => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) && follow.current) stick(false) }
+    // A touch drag or a grab of the scrollbar hands control to the reader;
+    // ending at the bottom picks following back up in onScroll.
+    const onTouch = () => { if (follow.current) stick(false) }
+    const onPointer = (event: PointerEvent) => { if (event.offsetX > node.clientWidth && follow.current) stick(false) }
+    node.addEventListener('wheel', onWheel, { passive: true })
+    node.addEventListener('keydown', onKey)
+    node.addEventListener('touchmove', onTouch, { passive: true })
+    node.addEventListener('pointerdown', onPointer)
+    return () => {
+      observer.disconnect()
+      node.removeEventListener('wheel', onWheel)
+      node.removeEventListener('keydown', onKey)
+      node.removeEventListener('touchmove', onTouch)
+      node.removeEventListener('pointerdown', onPointer)
+    }
+  }, [thread?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const onScroll = () => {
     const node = scroller.current
-    if (node) setAtBottom(node.scrollHeight - node.scrollTop - node.clientHeight < 80)
+    if (!node) return
+    const gap = node.scrollHeight - node.scrollTop - node.clientHeight
+    if (gap < 4) { if (!follow.current) stick(true) }
+    else if (node.scrollTop < lastTop.current - 1 && follow.current) stick(false)
+    lastTop.current = node.scrollTop
   }
 
-  const settings: ComposerSettings | null = thread && { deviceId: thread.deviceId, agent: thread.agent, model: thread.model ?? '', access: thread.access, cwd: thread.cwd }
-  const send = async (text: string) => {
+  const settings: ComposerSettings | null = thread && { deviceId: thread.deviceId, agent: thread.agent, model: thread.model ?? '', effort: thread.effort ?? '', fast: !!thread.fast, mode: thread.mode ?? '', cwd: thread.cwd }
+  const send = async (text: string, images?: { path: string }[]) => {
     if (!thread) return
-    await sendPrompt(thread.id, text)
-    setAtBottom(true)
+    await sendPrompt(thread.id, text, images)
+    jumpToLatest()
+  }
+  const fork = async (messageId?: string) => {
+    if (!thread) return
+    try {
+      const child = await forkThread(thread.id, messageId)
+      navigate(`/sessions/${child.id}`)
+    } catch (cause) { toast(cause instanceof Error ? cause.message : 'Could not fork') }
+  }
+  const compact = async () => {
+    if (!thread) return
+    try { await compactThread(thread.id); toast('Compacting the conversation') } catch (cause) { toast(cause instanceof Error ? cause.message : 'Could not compact') }
+  }
+  const undo = async () => {
+    if (!thread || !confirm('Undo the last turn? Its messages are removed and the agent forgets it. File changes stay on disk.')) return
+    try { await undoTurn(thread.id); toast('Last turn undone') } catch (cause) { toast(cause instanceof Error ? cause.message : 'Could not undo') }
+  }
+  const actions: MessageActions = {
+    onEdit: (text) => setDraft({ text, id: Date.now() }),
+    onRetry: (text) => { send(text).catch((cause) => toast(cause instanceof Error ? cause.message : 'Could not send')) },
+    onFork: caps?.fork ? (messageId) => { fork(messageId) } : undefined,
+    onAnswer: async (questionId, answers, text) => { if (thread) await answerQuestion(thread.id, questionId, answers, text) },
   }
   const updateSettings = async (next: ComposerSettings) => {
     if (!thread) return
+    // Mode changes apply live; model, thinking and speed from the next turn.
     const patch: Partial<Thread> = {}
-    if (next.access !== thread.access) patch.access = next.access
+    if (next.mode !== (thread.mode ?? '')) {
+      patch.mode = next.mode
+      patch.access = accessForKind(modeOf(builtinOptions(thread.agent), next.mode)?.kind)
+    }
     if (next.model !== (thread.model ?? '')) patch.model = next.model
+    if (next.effort !== (thread.effort ?? '')) patch.effort = next.effort
+    if (next.fast !== !!thread.fast) patch.fast = next.fast
     if (Object.keys(patch).length) setThread(await patchThread(thread.id, patch))
   }
   const approve = useCallback(async (approvalId: string, optionId: string) => {
@@ -170,12 +265,20 @@ export default function SessionPage() {
             {(close) => thread && (
               <>
                 <MenuItem icon="edit" label="Rename" onClick={() => { close(); setRenaming(true) }} />
+                <MenuItem icon={thread.pinned ? 'pin-off' : 'pin'} label={thread.pinned ? 'Unpin' : 'Pin to top'} onClick={() => { close(); patchThread(thread.id, { pinned: !thread.pinned }).then(setThread).catch(() => {}) }} />
                 <MenuItem icon="link" label="Copy link" onClick={() => { close(); navigator.clipboard?.writeText(location.href); toast('Link copied') }} />
+                <MenuSeparator />
+                {caps?.fork && <MenuItem icon="git-fork" label="New child session" description="Continue in a new session with this context" onClick={() => { close(); fork() }} />}
+                {caps?.compact && <MenuItem icon="compress" label="Compact conversation" description="Summarise older turns to free context" disabled={running} onClick={() => { close(); compact() }} />}
+                {caps?.undo && <MenuItem icon="undo" label="Undo last turn" disabled={running} onClick={() => { close(); undo() }} />}
+                {(caps?.fork || caps?.compact || caps?.undo) && <MenuSeparator />}
                 <MenuItem icon="terminal" label="Open shell" onClick={() => { close(); setPanel('shell') }} />
+                <MenuItem icon="globe" label="Open preview" onClick={() => { close(); setPanel('preview') }} />
                 <MenuItem icon="presentation" label="Open desktop" onClick={() => { close(); setPanel('desktop') }} />
                 {thread.pr && <MenuItem icon="pull-request" label="Open pull request" href={thread.pr.url} onClick={close} />}
                 <MenuSeparator />
                 <MenuItem icon="stop" label="Stop the agent" disabled={!running} onClick={() => { close(); cancelThread(thread.id) }} />
+                <MenuItem icon={thread.archived ? 'unarchive' : 'archive'} label={thread.archived ? 'Unarchive' : 'Archive'} onClick={() => { close(); patchThread(thread.id, { archived: !thread.archived, pinned: false }).then(setThread).catch(() => {}) }} />
                 <MenuItem icon="trash" label="Delete session" danger onClick={async () => {
                   close()
                   if (!confirm('Delete this session and its history? The agent is stopped.')) return
@@ -196,7 +299,9 @@ export default function SessionPage() {
               {!thread ? (
                 <div className="space-y-5 pt-6">{[60, 90, 75].map((width) => <div key={width} className="skeleton h-5" style={{ width: `${width}%` }} />)}</div>
               ) : (
-                <Transcript thread={thread} messages={messages} expandAll={expandAll} onApprove={approve} />
+                <PreviewLinkContext.Provider value={openPreview}>
+                  <Transcript thread={thread} messages={messages} expandAll={expandAll} onApprove={approve} actions={actions} />
+                </PreviewLinkContext.Provider>
               )}
               {thread?.usage && !running && (
                 <p className="mt-6 text-center text-[12.5px] text-faint">
@@ -212,11 +317,11 @@ export default function SessionPage() {
               ))}
             </nav>
           )}
-          {!atBottom && <button className="jump-latest" onClick={() => setAtBottom(true)}><Icon name="arrow-down" size={14} />Latest</button>}
           <div className="thread-composer">
+            {!atBottom && <button className="jump-latest" onClick={jumpToLatest}><Icon name="arrow-down" size={14} />Latest</button>}
             {thread && settings && (
               <Composer
-                placeholder={running ? 'Send a follow-up — the agent picks it up after this step' : thread.status === 'waiting' ? 'Answer the approval above, or send a message' : 'Ask Overseer to build features, fix bugs, or work on your code'}
+                placeholder={running ? (caps?.steer ? 'Steer the agent: it reads this right away' : 'Send a follow-up: it is queued until this step finishes') : thread.status === 'waiting' ? (messages.some((message) => message.role === 'question' && !message.question?.answered) ? 'Answer the question above, or send a message' : 'Answer the approval above, or send a message') : 'Ask Overseer to build features, fix bugs, or work on your code'}
                 devices={devices ?? []}
                 settings={settings}
                 onSettings={updateSettings}
@@ -224,6 +329,11 @@ export default function SessionPage() {
                 busy={running}
                 onStop={() => cancelThread(thread.id)}
                 lockAgent
+                draft={draft}
+                commands={commands}
+                usage={thread.usage}
+                onCompact={caps?.compact && !running ? compact : undefined}
+                imageSupport={!!caps?.images}
               />
             )}
             {device && !device.online && <p className="mt-2 text-center text-[13px] text-warning">{device.name} is offline. Messages are sent when it reconnects.</p>}
@@ -235,7 +345,7 @@ export default function SessionPage() {
             <div className="resize-handle hidden lg:block" onPointerDown={startResize} role="separator" aria-orientation="vertical" aria-label="Resize workspace" />
             <aside className="workspace" style={{ width: `${panelWidth}%` }} aria-label="Workspace">
               <div className="workspace-tabs" role="tablist">
-                {([['shell', 'terminal', 'Shell'], ['desktop', 'presentation', 'Desktop'], ['files', 'folder', 'Files'], ['changes', 'file-diff', `Changes${changes.length ? ` ${changes.length}` : ''}`], ['plan', 'list-checks', 'Plan']] as const).map(([key, icon, label]) => (
+                {([['shell', 'terminal', 'Shell'], ['preview', 'globe', 'Preview'], ['desktop', 'presentation', 'Desktop'], ['files', 'folder', 'Files'], ['changes', 'file-diff', `Changes${changes.length ? ` ${changes.length}` : ''}`], ['plan', 'list-checks', 'Plan']] as const).map(([key, icon, label]) => (
                   <button key={key} role="tab" className="workspace-tab" aria-selected={panel === key} onClick={() => setPanel(key)}><Icon name={icon} size={16} />{label}</button>
                 ))}
                 <span className="flex-1" />
@@ -243,6 +353,7 @@ export default function SessionPage() {
               </div>
               <div className="workspace-body">
                 {panel === 'shell' && <ThreadShell thread={thread} />}
+                {panel === 'preview' && <PreviewPanel deviceId={thread.deviceId} deviceName={thread.deviceName} online={device?.online !== false} cwd={thread.cwd} request={previewRequest} />}
                 {panel === 'desktop' && <VncViewer deviceId={thread.deviceId} deviceName={thread.deviceName} compact />}
                 {panel === 'files' && <FileBrowser deviceId={thread.deviceId} initialPath={thread.cwd || '~'} compact />}
                 {panel === 'changes' && (

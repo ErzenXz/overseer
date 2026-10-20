@@ -52,11 +52,27 @@ func validAccess(a string) bool {
 	return a == "ask" || a == "edits" || a == "auto" || a == "full"
 }
 
+// validOptionId accepts agent-native mode and effort ids: short, no spaces
+// or control characters, and not starting with "-" (they end up as CLI
+// argument values). Empty is valid (means "default").
+func validOptionId(v string) bool {
+	if len(v) > 128 || strings.HasPrefix(v, "-") {
+		return false
+	}
+	for _, r := range v {
+		if r <= ' ' || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 const (
 	maxPromptBytes   = 256 * 1024
 	threadsDebounce  = 500 * time.Millisecond
 	threadStartWait  = 120 * time.Second
 	threadPromptWait = 60 * time.Second
+	threadUpdateWait = 20 * time.Second
 	errNotRunning    = "thread not running" // matches the agent's error text
 )
 
@@ -64,8 +80,10 @@ const (
 type threadRuntime struct {
 	mu       sync.Mutex  // serialises start/prompt delivery
 	conn     *agentConn  // connection the agent process was started over
-	restart  atomic.Bool // access/model changed: restart before the next prompt
+	restart  atomic.Bool // settings changed that need a restart before the next prompt
 	deviceId string      // owner, cached so events can be checked cheaply
+
+	qmu sync.Mutex // serialises flushing the prompt queue
 
 	tmu     sync.Mutex
 	turn    string // id of the latest user message
@@ -251,14 +269,57 @@ func (ts *threadService) appendEvent(id string, ev protocol.ThreadEvent) *Thread
 	return msg
 }
 
-// recordUser stores a user prompt and makes it the current turn.
-func (ts *threadService) recordUser(id, text string) {
+// recordUser stores a user prompt. A sent prompt becomes the current turn;
+// a queued one waits (queued: true) until flushQueue sends it.
+func (ts *threadService) recordUser(id, text string, images []string, queued bool) string {
 	msgId := "u-" + randomToken()[:12]
+	if !queued {
+		ts.setTurn(id, msgId)
+	}
+	msg := ts.appendEvent(id, protocol.ThreadEvent{Id: msgId, Role: "user", Text: text})
+	if msg != nil && (queued || len(images) > 0) {
+		if m, err := ts.s.store.SetUserMessageMeta(id, msgId, queued, images); err == nil && m != nil {
+			ts.pushMessage(id, m)
+		}
+	}
+	return msgId
+}
+
+func (ts *threadService) setTurn(id, msgId string) {
 	rt := ts.runtime(id)
 	rt.tmu.Lock()
 	rt.turn, rt.turnSet = msgId, true
 	rt.tmu.Unlock()
-	ts.appendEvent(id, protocol.ThreadEvent{Id: msgId, Role: "user", Text: text})
+}
+
+// hubPrompt is one prompt on its way to the device.
+type hubPrompt struct {
+	MessageId string
+	Text      string
+	Images    []string
+}
+
+// flushQueue sends the oldest queued prompt once the agent is idle.
+func (ts *threadService) flushQueue(id string) {
+	rt := ts.runtime(id)
+	rt.qmu.Lock()
+	t, err := ts.s.store.ThreadById(id)
+	if err != nil || t == nil || (t.Status != "idle" && t.Status != "error") {
+		rt.qmu.Unlock()
+		return
+	}
+	next, err := ts.s.store.NextQueuedMessage(id)
+	if err != nil || next == nil {
+		rt.qmu.Unlock()
+		return
+	}
+	if m, err := ts.s.store.SetUserMessageMeta(id, next.Id, false, nil); err == nil && m != nil {
+		ts.pushMessage(id, m)
+	}
+	ts.setTurn(id, next.Id)
+	ts.setStatus(id, "working", "") // a second idle event must not send it again
+	rt.qmu.Unlock()
+	ts.deliver(id, hubPrompt{MessageId: next.Id, Text: next.Text, Images: next.Images})
 }
 
 // ownedBy reports whether thread id belongs to deviceId (events from other
@@ -311,16 +372,26 @@ func (ts *threadService) onAgentState(c *agentConn, data json.RawMessage) {
 	}
 	store := ts.s.store
 	if st.ResumeId != "" {
+		// A forked session reporting its own id completes the fork.
+		if t, err := store.ThreadById(st.ThreadId); err == nil && t != nil && t.ForkPending && t.ResumeId != st.ResumeId {
+			store.SetThreadFork(st.ThreadId, false, "", "")
+		}
 		store.SetThreadResumeId(st.ThreadId, st.ResumeId)
 	}
 	if st.Usage != nil {
 		store.SetThreadUsage(st.ThreadId, *st.Usage)
+	}
+	if st.Capabilities != nil || st.Commands != nil {
+		store.MergeThreadMeta(st.ThreadId, st.Capabilities, st.Commands)
 	}
 	if st.Status != "" {
 		store.SetThreadStatus(st.ThreadId, st.Status, st.Error)
 	}
 	if st.Status != "" || st.Usage != nil {
 		ts.pushThread(st.ThreadId)
+	}
+	if st.Status == "idle" || st.Status == "error" {
+		go ts.flushQueue(st.ThreadId)
 	}
 }
 
@@ -342,11 +413,36 @@ func (ts *threadService) startOn(t *Thread, c *agentConn) error {
 		Cwd:        t.Cwd,
 		Model:      t.Model,
 		Access:     t.Access,
+		Effort:     t.Effort,
+		Fast:       t.Fast,
+		Mode:       t.Mode,
 		ResumeId:   t.ResumeId,
 		McpServers: ts.s.agentMcpServers(),
+		Fork:       t.ForkPending,
+		ForkAt:     t.ForkAt,
 	}, &res)
 	if err != nil {
 		return err
+	}
+	if t.ForkPending {
+		switch {
+		case res.ForkFallback || t.ResumeId == "":
+			// Fresh session: the transcript goes with the first prompt.
+			t.ForkPending, t.ForkAt = false, ""
+			ts.s.store.SetThreadFork(t.Id, false, "", t.ForkContext)
+			if res.ResumeId != t.ResumeId {
+				ts.s.store.SetThreadResumeId(t.Id, res.ResumeId)
+				t.ResumeId = res.ResumeId
+			}
+		case res.ResumeId != "" && res.ResumeId != t.ResumeId:
+			t.ForkPending, t.ForkAt, t.ForkContext = false, "", ""
+			ts.s.store.SetThreadFork(t.Id, false, "", "")
+		default:
+			// Native fork whose new session id arrives later (Claude):
+			// stays pending until thread.state reports it.
+			t.ForkContext = ""
+			ts.s.store.SetThreadFork(t.Id, true, t.ForkAt, "")
+		}
 	}
 	if res.ResumeId != "" && res.ResumeId != t.ResumeId {
 		ts.s.store.SetThreadResumeId(t.Id, res.ResumeId)
@@ -377,82 +473,185 @@ func (ts *threadService) ensureTerminal(t *Thread, c *agentConn) {
 	}
 }
 
-// deliver makes sure the thread's agent is running and hands it the prompt.
-func (ts *threadService) deliver(id, text string) {
+// ensureStarted makes sure t's agent runs on c (restarting it first when
+// settings asked for that). Caller holds rt.mu.
+func (ts *threadService) ensureStarted(rt *threadRuntime, t *Thread, c *agentConn) error {
+	if rt.restart.Swap(false) {
+		// Stop even when this hub never started it: the device keeps agent
+		// processes across hub restarts and would otherwise re-attach.
+		ctx, cancel := deviceCtx()
+		c.requestInto(ctx, protocol.TypeThreadStop, protocol.ThreadRef{ThreadId: t.Id}, nil)
+		cancel()
+		rt.conn = nil
+	}
+	if rt.conn == c {
+		return nil
+	}
+	err := ts.startOn(t, c)
+	if err != nil && t.ResumeId != "" && ts.s.registry.get(t.DeviceId) == c &&
+		!strings.Contains(err.Error(), "disconnected") && !errors.Is(err, context.DeadlineExceeded) {
+		// The agent's saved session may be gone (expired, other machine,
+		// CLI reinstalled): fall back to a fresh one.
+		t.ResumeId = ""
+		ts.s.store.SetThreadResumeId(t.Id, "")
+		if err = ts.startOn(t, c); err == nil {
+			ts.appendEvent(t.Id, protocol.ThreadEvent{Id: "s-" + randomToken()[:12], Role: "status",
+				Text: "Could not resume the previous agent session; started a new one."})
+		}
+	}
+	if err != nil {
+		return err
+	}
+	rt.conn = c
+	return nil
+}
+
+// withAgent runs fn against the thread's running agent, starting (or
+// resuming) it first and retrying once if the process turned out gone.
+func (ts *threadService) withAgent(id string, fn func(t *Thread, c *agentConn) error) error {
 	rt := ts.runtime(id)
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	t, err := ts.s.store.ThreadById(id)
+	if err != nil {
+		return err
+	}
+	if t == nil {
+		return errThreadGone
+	}
+	c := ts.s.registry.get(t.DeviceId)
+	if c == nil {
+		return errDeviceOffline
+	}
+	for attempt := 0; ; attempt++ {
+		if err := ts.ensureStarted(rt, t, c); err != nil {
+			return startError{err}
+		}
+		err := fn(t, c)
+		if err == nil || attempt > 0 || !strings.Contains(err.Error(), errNotRunning) {
+			return err
+		}
+		rt.conn = nil // agent process is gone: restart (resuming) and retry once
+		if t, _ = ts.s.store.ThreadById(id); t == nil {
+			return errThreadGone
+		}
+	}
+}
 
+var errDeviceOffline = errors.New("device is offline")
+
+// startError marks a failure to start the agent (vs. the action itself).
+type startError struct{ err error }
+
+func (e startError) Error() string { return e.err.Error() }
+
+// deliver makes sure the thread's agent is running and hands it the prompt.
+// A forked thread's first prompt carries the parent transcript when the
+// agent could not fork natively.
+func (ts *threadService) deliver(id string, p hubPrompt) {
+	err := ts.withAgent(id, func(t *Thread, c *agentConn) error {
+		text := p.Text
+		if t.ForkContext != "" && !t.ForkPending {
+			text = t.ForkContext + text
+		}
+		// Mark working before the agent can possibly report idle.
+		ts.setStatus(id, "working", "")
+		ctx, cancel := contextWithTimeout(threadPromptWait)
+		defer cancel()
+		err := c.requestInto(ctx, protocol.TypeThreadPrompt,
+			protocol.ThreadPrompt{ThreadId: id, Text: text, MessageId: p.MessageId, Images: p.Images}, nil)
+		if err == nil && text != p.Text {
+			ts.s.store.SetThreadFork(id, false, "", "")
+		}
+		return err
+	})
+	switch {
+	case err == nil || err == errThreadGone:
+	case err == errDeviceOffline:
+		ts.setStatus(id, "error", err.Error())
+	default:
+		ts.appendEvent(id, protocol.ThreadEvent{Id: "e-" + randomToken()[:12], Role: "error", Text: err.Error()})
+		ts.setStatus(id, "error", err.Error())
+	}
+}
+
+// applySettings pushes a thread's stored settings to its running agent.
+// It runs under the runtime lock so it is ordered with start and prompt
+// delivery; anything the device can't apply live marks a restart.
+func (ts *threadService) applySettings(id string) {
+	rt := ts.runtime(id)
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
 	t, err := ts.s.store.ThreadById(id)
 	if err != nil || t == nil {
 		return
 	}
 	c := ts.s.registry.get(t.DeviceId)
 	if c == nil {
-		ts.setStatus(id, "error", "device is offline")
+		rt.restart.Store(true) // the device may still run the old process
 		return
 	}
-	if rt.restart.Swap(false) && rt.conn != nil {
-		ctx, cancel := deviceCtx()
-		c.requestInto(ctx, protocol.TypeThreadStop, protocol.ThreadRef{ThreadId: id}, nil)
-		cancel()
-		rt.conn = nil
-	}
-	for attempt := 0; attempt < 2; attempt++ {
-		if rt.conn != c {
-			err := ts.startOn(t, c)
-			if err != nil && t.ResumeId != "" && ts.s.registry.get(t.DeviceId) == c &&
-				!strings.Contains(err.Error(), "disconnected") && !errors.Is(err, context.DeadlineExceeded) {
-				// The agent's saved session may be gone (expired, other
-				// machine, CLI reinstalled): fall back to a fresh one.
-				t.ResumeId = ""
-				ts.s.store.SetThreadResumeId(id, "")
-				if err = ts.startOn(t, c); err == nil {
-					ts.appendEvent(id, protocol.ThreadEvent{Id: "s-" + randomToken()[:12], Role: "status",
-						Text: "Could not resume the previous agent session; started a new one."})
-				}
-			}
-			if err != nil {
-				ts.appendEvent(id, protocol.ThreadEvent{Id: "e-" + randomToken()[:12], Role: "error", Text: err.Error()})
-				ts.setStatus(id, "error", err.Error())
-				return
-			}
-			rt.conn = c
-		}
-		// Mark working before the agent can possibly report idle.
-		ts.setStatus(id, "working", "")
-		ctx, cancel := contextWithTimeout(threadPromptWait)
-		err := c.requestInto(ctx, protocol.TypeThreadPrompt, protocol.ThreadPrompt{ThreadId: id, Text: text}, nil)
-		cancel()
-		if err == nil {
-			return
-		}
-		if strings.Contains(err.Error(), errNotRunning) {
-			rt.conn = nil // agent process is gone: restart (resuming) and retry once
-			t, _ = ts.s.store.ThreadById(id)
-			if t == nil {
-				return
-			}
-			continue
-		}
-		ts.appendEvent(id, protocol.ThreadEvent{Id: "e-" + randomToken()[:12], Role: "error", Text: err.Error()})
-		ts.setStatus(id, "error", err.Error())
-		return
+	ctx, cancel := contextWithTimeout(threadUpdateWait)
+	defer cancel()
+	var res protocol.ThreadUpdateResult
+	err = c.requestInto(ctx, protocol.TypeThreadUpdate, protocol.ThreadUpdate{
+		ThreadId: id, Model: t.Model, Effort: t.Effort, Fast: t.Fast, Mode: t.Mode, Access: t.Access,
+	}, &res)
+	switch {
+	case err != nil && strings.Contains(err.Error(), errNotRunning):
+		// Nothing running: the next start uses the new settings.
+	case err != nil || res.Restart:
+		rt.restart.Store(true)
 	}
 }
 
 // --- creation (shared by the API and automations) ---
 
 type threadInput struct {
-	DeviceId     string `json:"deviceId"`
-	Agent        string `json:"agent"`
-	Command      string `json:"command"`
-	Cwd          string `json:"cwd"`
-	Prompt       string `json:"prompt"`
-	Model        string `json:"model"`
-	Access       string `json:"access"`
-	Title        string `json:"title"`
-	AutomationId string `json:"-"`
+	DeviceId     string       `json:"deviceId"`
+	Agent        string       `json:"agent"`
+	Command      string       `json:"command"`
+	Cwd          string       `json:"cwd"`
+	Prompt       string       `json:"prompt"`
+	Model        string       `json:"model"`
+	Access       string       `json:"access"`
+	Effort       string       `json:"effort"`
+	Fast         bool         `json:"fast"`
+	Mode         string       `json:"mode"`
+	Title        string       `json:"title"`
+	Images       promptImages `json:"images"`
+	AutomationId string       `json:"-"`
+}
+
+// promptImages accepts the contract's [{path}] list.
+type promptImages []string
+
+func (p *promptImages) UnmarshalJSON(b []byte) error {
+	var items []struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(b, &items); err != nil {
+		return err
+	}
+	*p = nil
+	for _, it := range items {
+		if path := strings.TrimSpace(it.Path); path != "" {
+			*p = append(*p, path)
+		}
+	}
+	return nil
+}
+
+func validImages(images []string) string {
+	if len(images) > 10 {
+		return "at most 10 images per prompt"
+	}
+	for _, p := range images {
+		if len(p) > maxProjectPath || strings.ContainsRune(p, 0) {
+			return "image path is invalid"
+		}
+	}
+	return ""
 }
 
 // validate normalises in and returns a user-facing problem, if any.
@@ -462,6 +661,8 @@ func (in *threadInput) validate() string {
 	in.Command = strings.TrimSpace(in.Command)
 	in.Cwd = strings.TrimSpace(in.Cwd)
 	in.Model = strings.TrimSpace(in.Model)
+	in.Effort = strings.TrimSpace(in.Effort)
+	in.Mode = strings.TrimSpace(in.Mode)
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Access == "" {
 		in.Access = "edits"
@@ -479,6 +680,12 @@ func (in *threadInput) validate() string {
 		return "prompt is too long"
 	case !validAccess(in.Access):
 		return "access must be ask, edits, auto or full"
+	case !validOptionId(in.Effort):
+		return "effort is invalid"
+	case !validOptionId(in.Mode):
+		return "mode is invalid"
+	case validImages(in.Images) != "":
+		return validImages(in.Images)
 	case len(in.Cwd) > maxProjectPath || strings.ContainsRune(in.Cwd, 0):
 		return "cwd is invalid"
 	}
@@ -513,17 +720,21 @@ func (s *Server) createThread(in threadInput) (*Thread, error) {
 	if title == "" {
 		title = titleFromPrompt(in.Prompt)
 	}
+	access := in.Access
+	if in.Mode != "" {
+		access = s.accessForMode(in.DeviceId, in.Agent, in.Command, in.Mode)
+	}
 	t := &Thread{
 		Id: randomToken()[:16], Title: title, DeviceId: in.DeviceId, Agent: in.Agent, Command: in.Command,
-		Cwd: in.Cwd, Model: in.Model, Access: in.Access, Status: "starting",
-		CreatedAt: now, UpdatedAt: now, LastReadAt: now, AutomationId: in.AutomationId,
+		Cwd: in.Cwd, Model: in.Model, Access: access, Effort: in.Effort, Fast: in.Fast, Mode: in.Mode,
+		Status: "starting", CreatedAt: now, UpdatedAt: now, LastReadAt: now, AutomationId: in.AutomationId,
 	}
 	if err := s.store.CreateThread(t); err != nil {
 		return nil, err
 	}
-	s.threads.recordUser(t.Id, in.Prompt)
+	msgId := s.threads.recordUser(t.Id, in.Prompt, in.Images, false)
 	s.threads.changed(t.Id, true)
-	go s.threads.deliver(t.Id, in.Prompt)
+	go s.threads.deliver(t.Id, hubPrompt{MessageId: msgId, Text: in.Prompt, Images: in.Images})
 	stored, err := s.store.ThreadById(t.Id)
 	if err != nil || stored == nil {
 		return t, err
@@ -621,19 +832,53 @@ func (s *Server) handlePatchThread(w http.ResponseWriter, r *http.Request) {
 		model := strings.TrimSpace(*p.Model)
 		p.Model = &model
 	}
+	if p.Folder != nil {
+		folder := strings.TrimSpace(*p.Folder)
+		if len(folder) > 200 || strings.ContainsRune(folder, 0) {
+			httpError(w, http.StatusBadRequest, "folder must be at most 200 characters")
+			return
+		}
+		p.Folder = &folder
+	}
+	for _, f := range []struct {
+		v    **string
+		name string
+	}{{&p.Effort, "effort"}, {&p.Mode, "mode"}} {
+		if *f.v == nil {
+			continue
+		}
+		v := strings.TrimSpace(**f.v)
+		if !validOptionId(v) {
+			httpError(w, http.StatusBadRequest, f.name+" is invalid")
+			return
+		}
+		*f.v = &v
+	}
+	// With a mode, access follows the mode's kind (for older UIs); clearing
+	// the mode goes back to the stored or patched access level.
+	mode := t.Mode
+	if p.Mode != nil {
+		mode = *p.Mode
+	}
+	if mode != "" && (p.Mode != nil || p.Access != nil) {
+		access := s.accessForMode(t.DeviceId, t.Agent, t.Command, mode)
+		p.Access = &access
+	}
 	if err := s.store.PatchThread(t.Id, p); err != nil {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	// Access and model are command-line/session settings: apply them by
-	// restarting (and resuming) the agent before the next prompt.
-	if (p.Access != nil && *p.Access != t.Access) || (p.Model != nil && *p.Model != t.Model) {
-		s.threads.runtime(t.Id).restart.Store(true)
 	}
 	updated, err := s.store.ThreadById(t.Id)
 	if err != nil || updated == nil {
 		httpError(w, http.StatusInternalServerError, "thread vanished")
 		return
+	}
+	// Model, effort, fast, mode and access are session settings: the device
+	// applies what it can live and the rest by restarting (and resuming)
+	// the agent before the next prompt.
+	if updated.Access != t.Access || updated.Model != t.Model || updated.Effort != t.Effort ||
+		updated.Fast != t.Fast || updated.Mode != t.Mode {
+		go s.threads.applySettings(t.Id)
 	}
 	s.threads.push(t.Id, map[string]any{"type": "thread", "thread": updated})
 	s.threads.changed(t.Id, true)
@@ -669,9 +914,10 @@ func (s *Server) handleThreadPrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Text string `json:"text"`
+		Text   string       `json:"text"`
+		Images promptImages `json:"images"`
 	}
-	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Text) == "" {
+	if err := readJSON(r, &req); err != nil || (strings.TrimSpace(req.Text) == "" && len(req.Images) == 0) {
 		httpError(w, http.StatusBadRequest, "text is required")
 		return
 	}
@@ -679,13 +925,30 @@ func (s *Server) handleThreadPrompt(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "prompt is too long")
 		return
 	}
+	if msg := validImages(req.Images); msg != "" {
+		httpError(w, http.StatusBadRequest, msg)
+		return
+	}
+	caps := capabilities(t)
+	if len(req.Images) > 0 && t.Meta.Capabilities != nil && !caps.Images {
+		httpError(w, http.StatusConflict, "images "+protocol.ErrNotSupported+" "+t.Agent)
+		return
+	}
 	if s.registry.get(t.DeviceId) == nil {
 		httpError(w, http.StatusServiceUnavailable, "device is offline")
 		return
 	}
 	s.rememberPublicURL(r)
-	s.threads.recordUser(t.Id, req.Text)
-	go s.threads.deliver(t.Id, req.Text)
+	// While a turn runs, agents that can steer get the prompt right away;
+	// for the others it waits in the queue until the turn ends.
+	busy := t.Status == "working" || t.Status == "waiting" || t.Status == "starting"
+	if busy && !caps.Steer {
+		s.threads.recordUser(t.Id, req.Text, req.Images, true)
+		writeJSON(w, map[string]bool{"ok": true})
+		return
+	}
+	msgId := s.threads.recordUser(t.Id, req.Text, req.Images, false)
+	go s.threads.deliver(t.Id, hubPrompt{MessageId: msgId, Text: req.Text, Images: req.Images})
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

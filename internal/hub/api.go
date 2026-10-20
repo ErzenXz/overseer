@@ -80,6 +80,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issueSession(w http.ResponseWriter, r *http.Request) {
+	s.rememberPublicURL(r) // live previews send browsers back here to sign in
 	token := s.sessions.create()
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: token, Path: "/",
@@ -93,6 +94,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		s.sessions.revoke(c.Value)
 	}
+	s.previewAuth.revokeAll() // previews are unlocked by the session, so they go with it
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
 	writeJSON(w, map[string]bool{"ok": true})
 }

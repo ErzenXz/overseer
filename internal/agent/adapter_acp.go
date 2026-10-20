@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,7 +33,15 @@ type acpAdapter struct {
 	sessionId string
 	loading   atomic.Bool // replaying history during session/load: ignore updates
 
-	prompts chan string
+	infoMu sync.Mutex
+	info   acpSessionInfo // modes, models and config options from session/new|load
+
+	prompts chan promptInput
+
+	metaMu   sync.Mutex
+	images   bool // promptCapabilities.image
+	commands []protocol.AgentCommand
+	usage    protocol.Usage
 
 	planMu sync.Mutex
 	planId string
@@ -46,7 +57,7 @@ func newACPAdapter(cfg protocol.ThreadStart, sink threadSink, bin string, candid
 		candidates:  candidates,
 		ctx:         ctx,
 		cancelCtx:   cancel,
-		prompts:     make(chan string, 16),
+		prompts:     make(chan promptInput, 16),
 	}
 }
 
@@ -99,6 +110,10 @@ func (a *acpAdapter) spawn(ctx context.Context, path string, args []string) erro
 			McpCapabilities struct {
 				Http bool `json:"http"`
 			} `json:"mcpCapabilities"`
+			PromptCapabilities struct {
+				Image bool `json:"image"`
+			} `json:"promptCapabilities"`
+			SessionCapabilities map[string]any `json:"sessionCapabilities"`
 		} `json:"agentCapabilities"`
 	}
 	ictx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -106,26 +121,36 @@ func (a *acpAdapter) spawn(ctx context.Context, path string, args []string) erro
 	err = rpc.call(ictx, "initialize", map[string]any{
 		"protocolVersion": 1,
 		"clientCapabilities": map[string]any{
-			"fs":       map[string]bool{"readTextFile": true, "writeTextFile": true},
-			"terminal": false,
+			"fs":          map[string]bool{"readTextFile": true, "writeTextFile": true},
+			"terminal":    false,
+			"elicitation": map[string]any{"form": map[string]any{}},
 		},
 		"clientInfo": map[string]string{"name": "overseer", "title": "Overseer", "version": "1"},
 	}, &init)
 	if err != nil {
 		return fail(err)
 	}
+	a.metaMu.Lock()
+	a.images = init.AgentCapabilities.PromptCapabilities.Image
+	a.metaMu.Unlock()
+	_, canFork := init.AgentCapabilities.SessionCapabilities["fork"]
 
 	servers := acpMcpServers(a.cfg.McpServers, init.AgentCapabilities.McpCapabilities.Http)
-	var sess struct {
-		SessionId string `json:"sessionId"`
-		Modes     struct {
-			AvailableModes []struct {
-				Id string `json:"id"`
-			} `json:"availableModes"`
-		} `json:"modes"`
-	}
+	var sess json.RawMessage
 	resumed := false
-	if a.cfg.ResumeId != "" && init.AgentCapabilities.LoadSession {
+	if a.cfg.Fork {
+		// Native fork of the whole session where advertised; a cut at an
+		// earlier turn (or no fork support) starts fresh.
+		a.forkFallback = true
+		if a.cfg.ResumeId != "" && a.cfg.ForkAt == "" && canFork {
+			if err := rpc.call(ctx, "session/fork", map[string]any{
+				"sessionId": a.cfg.ResumeId, "cwd": a.cfg.Cwd, "mcpServers": servers,
+			}, &sess); err == nil && parseACPSession(sess).SessionId != "" {
+				a.sessionId, resumed = parseACPSession(sess).SessionId, true
+				a.forkFallback = false
+			}
+		}
+	} else if a.cfg.ResumeId != "" && init.AgentCapabilities.LoadSession {
 		a.loading.Store(true)
 		err := rpc.call(ctx, "session/load", map[string]any{
 			"sessionId": a.cfg.ResumeId, "cwd": a.cfg.Cwd, "mcpServers": servers,
@@ -136,30 +161,167 @@ func (a *acpAdapter) spawn(ctx context.Context, path string, args []string) erro
 		}
 	}
 	if !resumed {
+		sess = nil
 		if err := rpc.call(ctx, "session/new", map[string]any{"cwd": a.cfg.Cwd, "mcpServers": servers}, &sess); err != nil {
 			return fail(err)
 		}
-		if sess.SessionId == "" {
+		info := parseACPSession(sess)
+		if info.SessionId == "" {
 			return fmt.Errorf("agent returned no session id")
 		}
-		a.sessionId = sess.SessionId
+		a.sessionId = info.SessionId
 	}
 	a.mu.Lock()
 	a.resume = a.sessionId
 	a.mu.Unlock()
+	a.infoMu.Lock()
+	a.info = parseACPSession(sess)
+	a.infoMu.Unlock()
 
-	// Best effort: read-only access maps onto a "plan" mode when offered.
-	if a.cfg.Access == "ask" {
-		for _, m := range sess.Modes.AvailableModes {
+	// Best effort: a setting the agent rejects leaves its default in place.
+	a.apply(ctx, a.settings(), threadSettings{}, true)
+	a.publishACPMeta()
+	return nil
+}
+
+func (a *acpAdapter) hasCommand(name string) bool {
+	a.metaMu.Lock()
+	defer a.metaMu.Unlock()
+	for _, c := range a.commands {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *acpAdapter) publishACPMeta() {
+	a.metaMu.Lock()
+	caps := protocol.ThreadCapabilities{Fork: true, Images: a.images, Commands: len(a.commands) > 0}
+	cmds := a.commands
+	a.metaMu.Unlock()
+	caps.Compact = a.hasCommand("compact")
+	caps.Review = a.hasCommand("review")
+	a.publishMeta(caps, cmds)
+}
+
+func (a *acpAdapter) compact() error {
+	if !a.hasCommand("compact") {
+		return notSupported("compact", a.cfg.Agent)
+	}
+	return a.prompt(promptInput{Text: "/compact"})
+}
+
+func (a *acpAdapter) undo() error { return notSupported("undo", a.cfg.Agent) }
+
+// acpPromptBlocks builds the session/prompt content.
+func acpPromptBlocks(p promptInput) []map[string]any {
+	blocks := []map[string]any{}
+	for _, img := range p.Images {
+		blocks = append(blocks, map[string]any{"type": "image", "mimeType": img.Mime, "data": base64.StdEncoding.EncodeToString(img.Data)})
+	}
+	if p.Text != "" || len(blocks) == 0 {
+		blocks = append(blocks, map[string]any{"type": "text", "text": p.Text})
+	}
+	return blocks
+}
+
+// acpModeTarget is the mode to select for settings: the explicit mode, or a
+// "plan" mode for the legacy read-only access level when one is offered.
+func (a *acpAdapter) acpModeTarget(set threadSettings) string {
+	if set.Mode != "" {
+		return set.Mode
+	}
+	if set.Access == "ask" {
+		a.infoMu.Lock()
+		defer a.infoMu.Unlock()
+		for _, m := range a.info.modeChoices() {
 			if m.Id == "plan" {
-				rpc.call(ctx, "session/set_mode", map[string]any{"sessionId": a.sessionId, "modeId": m.Id}, nil)
+				return m.Id
 			}
 		}
 	}
-	if a.cfg.Model != "" && a.cfg.Agent != "gemini" {
-		rpc.call(ctx, "session/set_model", map[string]any{"sessionId": a.sessionId, "modelId": a.cfg.Model}, nil)
+	return ""
+}
+
+// apply selects mode, model and effort. On the initial call every set value
+// is applied; afterwards only what changed since prev. It reports whether
+// everything was applied.
+func (a *acpAdapter) apply(ctx context.Context, set, prev threadSettings, initial bool) bool {
+	ok := true
+	a.infoMu.Lock()
+	info := a.info
+	a.infoMu.Unlock()
+
+	target, prevTarget := a.acpModeTarget(set), a.acpModeTarget(prev)
+	if !initial && target == "" && prevTarget != "" {
+		target = info.initialMode() // back to the agent's default
+	}
+	if target != "" && (initial || target != prevTarget) {
+		ok = a.setMode(ctx, info, target) == nil && ok
+	}
+	if set.Model != "" && (initial || set.Model != prev.Model) {
+		if a.cfg.Agent == "gemini" {
+			ok = initial && ok // gemini takes the model as a flag: restart to change it
+		} else if err := a.setModel(ctx, info, set.Model); err != nil {
+			ok = false
+		}
+	} else if !initial && set.Model != prev.Model {
+		ok = false // back to the default model: start over
+	}
+	if set.Effort != "" && (initial || set.Effort != prev.Effort) {
+		if opt := info.option("thought_level"); opt != nil {
+			ok = a.setConfig(ctx, opt.Id, set.Effort) == nil && ok
+		}
+	}
+	return ok
+}
+
+func (a *acpAdapter) setMode(ctx context.Context, info acpSessionInfo, mode string) error {
+	if !info.HasModes {
+		if opt := info.option("mode"); opt != nil {
+			return a.setConfig(ctx, opt.Id, mode)
+		}
+	}
+	return a.rpc.call(ctx, "session/set_mode", map[string]any{"sessionId": a.sessionId, "modeId": mode}, nil)
+}
+
+func (a *acpAdapter) setModel(ctx context.Context, info acpSessionInfo, model string) error {
+	if !info.HasModels {
+		if opt := info.option("model"); opt != nil {
+			return a.setConfig(ctx, opt.Id, model)
+		}
+	}
+	return a.rpc.call(ctx, "session/set_model", map[string]any{"sessionId": a.sessionId, "modelId": model}, nil)
+}
+
+// setConfig sets one session config option and keeps the refreshed option
+// list the agent returns.
+func (a *acpAdapter) setConfig(ctx context.Context, configId, value string) error {
+	var res json.RawMessage
+	err := a.rpc.call(ctx, "session/set_config_option", map[string]any{
+		"sessionId": a.sessionId, "configId": configId, "value": value,
+	}, &res)
+	if err != nil {
+		return err
+	}
+	if opts := parseACPConfigOptions(jArr(decodeObj(res), "configOptions")); len(opts) > 0 {
+		a.infoMu.Lock()
+		a.info.Config = opts
+		a.infoMu.Unlock()
 	}
 	return nil
+}
+
+// update applies mode, model and effort live; anything the agent rejects
+// asks for a restart.
+func (a *acpAdapter) update(next threadSettings) bool {
+	cur := a.settings()
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	defer cancel()
+	ok := a.apply(ctx, next, cur, false)
+	a.setSettings(next)
+	return !ok
 }
 
 // acpMcpServers converts registry entries to ACP's McpServer shape.
@@ -191,9 +353,15 @@ func acpMcpServers(servers []protocol.McpServer, http bool) []map[string]any {
 	return out
 }
 
-func (a *acpAdapter) prompt(text string) error {
+func (a *acpAdapter) prompt(p promptInput) error {
+	a.metaMu.Lock()
+	images := a.images
+	a.metaMu.Unlock()
+	if len(p.Images) > 0 && !images {
+		return notSupported("images", a.cfg.Agent)
+	}
 	select {
-	case a.prompts <- text:
+	case a.prompts <- p:
 		return nil
 	default:
 		return fmt.Errorf("too many queued prompts")
@@ -206,13 +374,13 @@ func (a *acpAdapter) turnLoop() {
 		select {
 		case <-a.ctx.Done():
 			return
-		case text := <-a.prompts:
-			a.runTurn(text)
+		case p := <-a.prompts:
+			a.runTurn(p)
 		}
 	}
 }
 
-func (a *acpAdapter) runTurn(text string) {
+func (a *acpAdapter) runTurn(p promptInput) {
 	a.beginTurn()
 	a.planMu.Lock()
 	a.planId = ""
@@ -223,7 +391,7 @@ func (a *acpAdapter) runTurn(text string) {
 	}
 	err := a.rpc.call(a.ctx, "session/prompt", map[string]any{
 		"sessionId": a.sessionId,
-		"prompt":    []map[string]string{{"type": "text", "text": text}},
+		"prompt":    acpPromptBlocks(p),
 	}, &res)
 	if a.stopping.Load() {
 		return
@@ -278,6 +446,30 @@ func (a *acpAdapter) onNotify(method string, params json.RawMessage) {
 		a.chunk("assistant", jStr(jObj(u, "content"), "text"))
 	case "agent_thought_chunk":
 		a.chunk("thought", jStr(jObj(u, "content"), "text"))
+	case "available_commands_update":
+		var cmds []protocol.AgentCommand
+		for _, x := range jArr(u, "availableCommands") {
+			if m, ok := x.(map[string]any); ok && jStr(m, "name") != "" {
+				cmds = append(cmds, protocol.AgentCommand{Name: jStr(m, "name"), Description: jStr(m, "description"), Hint: jStr(jObj(m, "input"), "hint")})
+			}
+		}
+		a.metaMu.Lock()
+		a.commands = cmds
+		a.metaMu.Unlock()
+		go a.publishACPMeta()
+	case "usage_update":
+		used, ok1 := jNum(u, "used")
+		size, ok2 := jNum(u, "size")
+		if ok1 || ok2 {
+			a.metaMu.Lock()
+			a.usage.ContextTokens, a.usage.ContextWindow = int64(used), int64(size)
+			if cost, ok := jNum(jObj(u, "cost"), "amount"); ok {
+				a.usage.CostUsd = cost
+			}
+			usage := a.usage
+			a.metaMu.Unlock()
+			a.sink.state(protocol.ThreadState{Usage: &usage})
+		}
 	case "tool_call":
 		a.onToolCall(u, true)
 	case "tool_call_update":
@@ -421,6 +613,8 @@ func (a *acpAdapter) onRequest(id json.RawMessage, method string, params json.Ra
 	switch method {
 	case "session/request_permission":
 		a.requestPermission(id, params)
+	case "elicitation/create":
+		a.elicit(id, params)
 	case "fs/read_text_file":
 		var req struct {
 			Path  string `json:"path"`
@@ -450,6 +644,97 @@ func (a *acpAdapter) onRequest(id json.RawMessage, method string, params json.Ra
 	}
 }
 
+type acpField struct {
+	name, kind string // kind: string | number | integer | boolean
+}
+
+// acpElicitQuestions maps an MCP-style form elicitation (message +
+// requestedSchema) onto one question per field.
+func acpElicitQuestions(idPrefix string, p jsonObj) ([]protocol.ThreadQuestion, []acpField) {
+	schema := jObj(p, "requestedSchema")
+	props := jObj(schema, "properties")
+	names := make([]string, 0, len(props))
+	for k := range props {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	message := jStr(p, "message")
+	var qs []protocol.ThreadQuestion
+	var fields []acpField
+	for i, name := range names {
+		prop, _ := props[name].(map[string]any)
+		title := jStr(prop, "title", "description")
+		if title == "" {
+			title = name
+		}
+		text := title
+		if message != "" && len(names) == 1 {
+			text = message
+		} else if message != "" && i == 0 {
+			text = message + "\n\n" + title
+		}
+		q := protocol.ThreadQuestion{Id: fmt.Sprintf("%s-%d", idPrefix, i), Text: text, Options: []protocol.QuestionOption{}}
+		kind := jStr(prop, "type")
+		enum, _ := stringList(prop["enum"])
+		labels, _ := stringList(prop["enumNames"])
+		switch {
+		case len(enum) > 0:
+			for k, v := range enum {
+				label := v
+				if k < len(labels) {
+					label = labels[k]
+				}
+				q.Options = append(q.Options, protocol.QuestionOption{Id: v, Label: label})
+			}
+		case kind == "boolean":
+			q.Options = []protocol.QuestionOption{{Id: "true", Label: "Yes"}, {Id: "false", Label: "No"}}
+		default:
+			q.AllowText = true
+		}
+		qs = append(qs, q)
+		fields = append(fields, acpField{name: name, kind: kind})
+	}
+	return qs, fields
+}
+
+// acpElicitValue converts an answer to the field's JSON type.
+func acpElicitValue(f acpField, answers []string, text string) any {
+	v := text
+	if len(answers) > 0 {
+		v = answers[0]
+	}
+	switch f.kind {
+	case "boolean":
+		return v == "true"
+	case "number", "integer":
+		if n, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			if f.kind == "integer" {
+				return int64(n)
+			}
+			return n
+		}
+	}
+	return v
+}
+
+func (a *acpAdapter) elicit(id json.RawMessage, params json.RawMessage) {
+	questions, fields := acpElicitQuestions(a.newId("q"), decodeObj(params))
+	if len(questions) == 0 {
+		a.rpc.respond(id, map[string]any{"action": "decline"})
+		return
+	}
+	content := map[string]any{}
+	for i, q := range questions {
+		answers, text, ok := a.askQuestion(a.ctx, q)
+		if !ok {
+			a.rpc.respond(id, map[string]any{"action": "cancel"})
+			return
+		}
+		content[fields[i].name] = acpElicitValue(fields[i], answers, text)
+	}
+	a.rpc.respond(id, map[string]any{"action": "accept", "content": content})
+}
+
 func (a *acpAdapter) requestPermission(id json.RawMessage, params json.RawMessage) {
 	p := decodeObj(params)
 	call := jObj(p, "toolCall")
@@ -465,7 +750,7 @@ func (a *acpAdapter) requestPermission(id json.RawMessage, params json.RawMessag
 	selected := func(optionId string) {
 		a.rpc.respond(id, map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": optionId}})
 	}
-	if a.cfg.Access == "full" {
+	if a.fullAccess() {
 		for _, kind := range []string{"allow_once", "allow_always"} {
 			for _, o := range options {
 				if o.Kind == kind {

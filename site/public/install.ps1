@@ -4,8 +4,8 @@ param(
 )
 # Install the Overseer hub on Windows as a hidden Scheduled Task (no admin).
 #
-#   irm https://liveagent-lime.vercel.app/install.ps1 | iex
-#   & ([scriptblock]::Create((irm https://liveagent-lime.vercel.app/install.ps1))) uninstall
+#   irm https://overseer.sh/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://overseer.sh/install.ps1))) uninstall
 #
 # Release binaries are checked against the release's checksums.txt. When no
 # release exists it builds from source with temporary, checksum-verified Go
@@ -29,7 +29,7 @@ $Bin = Join-Path $BinDir "overseer.exe"
 $PreviousBin = Join-Path $BinDir "overseer.previous.exe"
 $Task = if ($env:OVERSEER_SERVICE_NAME) { $env:OVERSEER_SERVICE_NAME } else { "OverseerHub" }
 $Runner = Join-Path $BinDir "overseer-hub.ps1"
-$InstallerUrl = "https://liveagent-lime.vercel.app/install.ps1"
+$InstallerUrl = "https://overseer.sh/install.ps1"
 
 function Say([string]$Message) { Write-Host "  $Message" }
 function Ok([string]$Message) { Write-Host "  OK  $Message" }

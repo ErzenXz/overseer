@@ -7,9 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -33,6 +36,7 @@ const usage = `Overseer — control all your machines from one place.
 Usage:
   overseer serve [--addr :4200] [--data-dir ~/.overseer]   Run the hub (web UI + API)
   overseer serve --tls-domain d.com --tls-email you@d.com   Run the hub with automatic HTTPS (Let's Encrypt)
+  overseer serve --preview-domain example.com              Serve live previews at {port}-{machine}.example.com
   overseer agent enroll --hub URL --token TOKEN            Enroll this device with a hub
   overseer agent run                                       Run the device agent (foreground)
   overseer agent install-service                           Install + start the agent as a service
@@ -45,6 +49,7 @@ Usage:
   overseer fleet send DEVICE SESSION TEXT                  Type into a session (presses Enter)
   overseer fleet read DEVICE SESSION [--lines N]           Read a session's recent output
   overseer fleet kill DEVICE SESSION                       Kill a session
+  overseer forward MACHINE PORT [--local N] [--hub URL]    Open a machine's localhost:PORT on this computer
   overseer mcp                                             Run the MCP server (stdio) for coding agents
   overseer update [--check]                                Install or check the latest verified stable release
   overseer rollback                                        Restore the previous verified binary
@@ -65,6 +70,8 @@ func main() {
 		err = cmdAgent(os.Args[2:])
 	case "fleet":
 		err = cmdFleet(os.Args[2:])
+	case "forward":
+		err = cmdForward(os.Args[2:])
 	case "mcp":
 		err = cmdMCP()
 	case "update":
@@ -153,6 +160,7 @@ func cmdServe(args []string) error {
 	dataDir := fs.String("data-dir", "", "data directory (default ~/.overseer)")
 	tlsDomain := fs.String("tls-domain", "", "enable automatic HTTPS (Let's Encrypt) for this domain; serves :443 + :80")
 	tlsEmail := fs.String("tls-email", "", "contact email for Let's Encrypt (expiry notices)")
+	previewDomain := fs.String("preview-domain", "", "domain for live previews ({port}-{machine}.DOMAIN); default: derived from the hub's address")
 	fs.Parse(args)
 
 	if *tlsDomain != "" && *tlsEmail == "" {
@@ -170,6 +178,8 @@ func cmdServe(args []string) error {
 		TLSDomain:  *tlsDomain,
 		TLSEmail:   *tlsEmail,
 		UI:         uiFS(),
+
+		PreviewDomain: *previewDomain,
 	})
 	if err != nil {
 		return err
@@ -414,4 +424,76 @@ func cmdFleet(args []string) error {
 	default:
 		return fmt.Errorf("unknown fleet subcommand %q", sub)
 	}
+}
+
+// cmdForward listens on 127.0.0.1 and tunnels every connection to
+// localhost:PORT on a machine through the hub, using the fleet login.
+func cmdForward(args []string) error {
+	const forwardUsage = "usage: overseer forward MACHINE PORT [--local N] [--hub URL]"
+	fs := flag.NewFlagSet("forward", flag.ExitOnError)
+	localPort := fs.Int("local", 0, "local port (default: the same port, or the next free one)")
+	hubURL := fs.String("hub", "", "hub URL (default: the one saved by `overseer fleet login`)")
+	// Allow flags before or after the two positional arguments.
+	var flags, positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if strings.HasPrefix(a, "-") && len(a) > 1 {
+			flags = append(flags, a)
+			if !strings.Contains(a, "=") && i+1 < len(args) {
+				flags = append(flags, args[i+1])
+				i++
+			}
+			continue
+		}
+		positional = append(positional, a)
+	}
+	fs.Parse(flags)
+	if len(positional) != 2 {
+		return fmt.Errorf(forwardUsage)
+	}
+	port, err := strconv.Atoi(positional[1])
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("PORT must be 1-65535\n%s", forwardUsage)
+	}
+	if *localPort < 0 || *localPort > 65535 {
+		return fmt.Errorf("--local must be 1-65535")
+	}
+
+	client, err := fleet.NewFromEnv()
+	if err != nil {
+		return err
+	}
+	if *hubURL != "" {
+		client.HubURL = strings.TrimRight(*hubURL, "/")
+	}
+	d, err := client.ResolveDevice(positional[0])
+	if err != nil {
+		return err
+	}
+	if !d.Online {
+		fmt.Fprintf(os.Stderr, "note: %s is offline right now; connections will fail until it is back\n", d.Name)
+	}
+
+	ln, err := listenLocal(port, *localPort)
+	if err != nil {
+		return err
+	}
+	local := ln.Addr().(*net.TCPAddr).Port
+	fmt.Printf("Forwarding http://localhost:%d -> localhost:%d on %s (Ctrl-C to stop)\n", local, port, d.Name)
+	logf := func(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...) }
+	return client.Forward(signalContext(), ln, d.Id, port, logf)
+}
+
+// listenLocal binds 127.0.0.1: the requested port, else the remote port or
+// the next free one after it.
+func listenLocal(remote, requested int) (net.Listener, error) {
+	if requested != 0 {
+		return net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(requested)))
+	}
+	for p := remote; p <= 65535 && p < remote+50; p++ {
+		if ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p))); err == nil {
+			return ln, nil
+		}
+	}
+	return net.Listen("tcp", "127.0.0.1:0")
 }
