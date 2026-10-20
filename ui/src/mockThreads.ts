@@ -312,6 +312,25 @@ export function prStatsFor(repo: string, number: number) {
   return prStats[`${repo}#${number}`]
 }
 
+// Demo agent catalog: the built-ins plus a few agents from the ACP registry.
+const registryIcon = (id: string) => `https://cdn.agentclientprotocol.com/registry/v1/latest/${id}.svg`
+const demoCatalog = [
+  { id: 'claude', name: 'Claude Code', vendor: 'Anthropic', protocol: 'native', source: 'builtin', bins: ['claude'] },
+  { id: 'codex', name: 'Codex', vendor: 'OpenAI', protocol: 'native', source: 'builtin', bins: ['codex'] },
+  { id: 'gemini', name: 'Gemini CLI', vendor: 'Google', protocol: 'acp', source: 'builtin', bins: ['gemini'] },
+  { id: 'opencode', name: 'OpenCode', vendor: 'SST', protocol: 'acp', source: 'builtin', bins: ['opencode'] },
+  { id: 'goose', name: 'Goose', vendor: 'Block', protocol: 'acp', source: 'builtin', bins: ['goose'] },
+  { id: 'copilot', name: 'Copilot CLI', vendor: 'GitHub', protocol: 'acp', source: 'builtin', bins: ['copilot'] },
+  { id: 'cursor', name: 'Cursor Agent', vendor: 'Cursor', protocol: 'acp', source: 'builtin', bins: ['cursor-agent'] },
+  { id: 'devin', name: 'Devin', vendor: 'Cognition', description: 'Devin CLI coding agent by Cognition', icon: registryIcon('devin'), website: 'https://docs.devin.ai/cli', protocol: 'acp', source: 'registry', bins: ['devin'], login: 'devin auth login' },
+  { id: 'amp-acp', name: 'Amp', vendor: 'Sourcegraph', description: 'ACP wrapper for Amp - the frontier coding agent', icon: registryIcon('amp-acp'), website: 'https://ampcode.com', protocol: 'acp', source: 'registry', bins: ['amp-acp'] },
+  { id: 'kimi', name: 'Kimi CLI', vendor: 'Moonshot AI', description: 'Moonshot AI’s coding assistant', icon: registryIcon('kimi'), protocol: 'acp', source: 'registry', bins: ['kimi'] },
+  { id: 'qwen-code', name: 'Qwen Code', vendor: 'Alibaba Qwen Team', description: 'Alibaba’s Qwen coding assistant', icon: registryIcon('qwen-code'), protocol: 'acp', source: 'registry', bins: ['qwen'], install: 'npm install -g @qwen-code/qwen-code' },
+  { id: 'cline', name: 'Cline', vendor: 'Cline Bot Inc.', description: 'Autonomous coding agent CLI', icon: registryIcon('cline'), protocol: 'acp', source: 'registry', bins: ['cline'], install: 'npm install -g cline' },
+  { id: 'factory-droid', name: 'Factory Droid', vendor: 'Factory AI', description: 'Factory Droid, an AI coding agent', icon: registryIcon('factory-droid'), protocol: 'acp', source: 'registry', bins: ['droid'], install: 'npm install -g droid' },
+]
+let customAgents: { id: string; name: string; protocol: string; source: string; bins: string[]; description: string }[] = []
+
 export async function threadRoute(method: string, path: string, body: Record<string, unknown>): Promise<Response | null> {
   if (path === '/api/threads' && method === 'GET') return json([...threads].sort((a, b) => b.updatedAt - a.updatedAt))
   if (path === '/api/threads' && method === 'POST') {
@@ -445,13 +464,25 @@ export async function threadRoute(method: string, path: string, body: Record<str
     { id: 'claude', name: 'Claude Code', protocol: 'native' }, { id: 'codex', name: 'Codex', protocol: 'native' }, { id: 'gemini', name: 'Gemini CLI', protocol: 'acp' },
     { id: 'opencode', name: 'OpenCode', protocol: 'acp' }, { id: 'goose', name: 'Goose', protocol: 'acp' }, { id: 'copilot', name: 'Copilot CLI', protocol: 'acp' }, { id: 'cursor', name: 'Cursor Agent', protocol: 'acp' },
   ])
+  if (path === '/api/agents/catalog' && method === 'GET') return json([...demoCatalog, ...customAgents])
+  if (path === '/api/agents/custom' && method === 'POST') {
+    const name = String(body.name ?? '').trim()
+    const command = String(body.command ?? '').trim()
+    if (!name || !command) return json({ error: 'name and command are required' }, 400)
+    const agent = { id: `custom-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name, protocol: 'acp', source: 'custom', bins: [command.split(/\s+/)[0]], description: command }
+    customAgents.push(agent)
+    return json(agent)
+  }
+  const customMatch = path.match(/^\/api\/agents\/custom\/([^/]+)$/)
+  if (customMatch && method === 'DELETE') { customAgents = customAgents.filter((agent) => agent.id !== decodeURIComponent(customMatch[1])); return json({ ok: true }) }
   const optionsMatch = path.match(/^\/api\/devices\/([^/]+)\/agents\/([^/]+)\/options$/)
   if (optionsMatch) return json(demoOptions(decodeURIComponent(optionsMatch[2])))
   const agentsMatch = path.match(/^\/api\/devices\/([^/]+)\/(agents|desktop)$/)
   if (agentsMatch && agentsMatch[2] === 'agents') {
     const id = agentsMatch[1]
-    const installed: Record<string, string[]> = { macbook: ['claude', 'codex', 'gemini', 'opencode'], studio: ['claude', 'codex', 'gemini'], homelab: ['claude', 'codex', 'opencode'], office: [] }
-    return json(['claude', 'codex', 'gemini', 'opencode', 'goose', 'copilot', 'cursor'].map((agent) => ({ id: agent, installed: (installed[id] ?? []).includes(agent), version: (installed[id] ?? []).includes(agent) ? { claude: '2.1.4', codex: '0.61.0', gemini: '0.12.0', opencode: '1.0.40' }[agent as 'claude'] : undefined })))
+    const installed: Record<string, string[]> = { macbook: ['claude', 'codex', 'gemini', 'opencode', 'devin', ...customAgents.map((agent) => agent.id)], studio: ['claude', 'codex', 'gemini', 'devin'], homelab: ['claude', 'codex', 'opencode', 'kimi'], office: [] }
+    const versions: Record<string, string> = { claude: '2.1.4', codex: '0.61.0', gemini: '0.12.0', opencode: '1.0.40', devin: '3000.11.3', kimi: '1.4.0' }
+    return json([...demoCatalog.map((agent) => agent.id), ...customAgents.map((agent) => agent.id)].map((agent) => ({ id: agent, installed: (installed[id] ?? []).includes(agent), version: (installed[id] ?? []).includes(agent) ? versions[agent] : undefined })))
   }
   if (agentsMatch && agentsMatch[2] === 'desktop') {
     const id = agentsMatch[1]
@@ -485,7 +516,7 @@ export async function threadRoute(method: string, path: string, body: Record<str
     const automation = automations.find((item) => item.id === id)
     if (!automation) return json({ error: 'automation not found' }, 404)
     if (autoMatch[2] && method === 'POST') {
-      const response = await threadRoute('POST', '/api/threads', { prompt: automation.prompt, title: automation.name, deviceId: automation.deviceId, agent: automation.agent, cwd: automation.cwd, access: automation.access })
+      const response = await threadRoute('POST', '/api/threads', { prompt: automation.prompt, title: automation.name, deviceId: automation.deviceId, agent: automation.agent, cwd: automation.cwd, access: automation.access, model: automation.model ?? "", effort: automation.effort ?? "", fast: !!automation.fast, mode: automation.mode ?? "" })
       const created = await response!.clone().json() as Thread
       created.automationId = automation.id
       const stored = threads.find((item) => item.id === created.id)

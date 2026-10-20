@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useAgentCatalog } from '../agents'
 import { ShellContext, SidebarToggle, useMediaQuery } from '../shell'
 import { useHubStream, usePref, useThreads } from '../store'
 import type { ThreadStatus } from '../types'
@@ -7,6 +8,7 @@ import CommandPalette from './CommandPalette'
 import Sidebar from './Sidebar'
 
 export default function Layout() {
+  useAgentCatalog() // new agents from the hub re-render everything that names them
   const mobile = useMediaQuery('(max-width: 1023px)')
   const [collapsed, setCollapsed] = usePref('sidebar.collapsed', false)
   const [mobileOpen, setMobileOpen] = useState(false)

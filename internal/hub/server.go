@@ -54,6 +54,9 @@ type Server struct {
 	registry      *registry
 	threads       *threadService
 	agentOpts     *agentOptionsCache
+	agents        *agentCatalog
+	usageLimits   *usageLimitsCache
+	extensions    *extCache
 	mux           *http.ServeMux
 	updates       *updateManager
 	updateApplied atomic.Bool
@@ -104,9 +107,12 @@ func NewServer(opts Options) (*Server, error) {
 		mux:       http.NewServeMux(),
 		agentOpts: newAgentOptionsCache(),
 
+		usageLimits: newUsageLimitsCache(),
+		extensions:  newExtCache(),
 		previewAuth: newPreviewAuth(),
 	}
 	s.previewTransport = s.newPreviewTransport()
+	s.agents = newAgentCatalog(store, opts.DataDir, opts.Version)
 	s.threads = newThreadService(s)
 	s.resetInterruptedThreads()
 	s.routes()
@@ -166,6 +172,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	go s.runEmbeddedAgent(runCtx)
 	go s.runAutomations(runCtx)
+	go s.agents.run(runCtx)
 
 	if s.opts.TLSDomain != "" {
 		err := s.runTLS(runCtx)
@@ -354,10 +361,22 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/threads/{id}/commands", s.requireAuth(s.handleThreadCommands))
 	m.HandleFunc("GET /api/threads/{id}/capabilities", s.requireAuth(s.handleThreadCapabilities))
 	m.HandleFunc("GET /api/agent-kinds", s.requireAuth(s.handleAgentKinds))
+	m.HandleFunc("GET /api/agents/catalog", s.requireAuth(s.handleAgentCatalog))
+	m.HandleFunc("POST /api/agents/custom", s.requireAuth(s.handleCreateCustomAgent))
+	m.HandleFunc("DELETE /api/agents/custom/{id}", s.requireAuth(s.handleDeleteCustomAgent))
 	m.HandleFunc("GET /api/devices/{id}/agents", s.requireAuth(s.handleDeviceAgents))
 	m.HandleFunc("GET /api/devices/{id}/agents/{agent}/options", s.requireAuth(s.handleAgentOptions))
 	m.HandleFunc("GET /api/devices/{id}/desktop", s.requireAuth(s.handleDeviceDesktop))
 	m.HandleFunc("GET /api/devices/{id}/ports", s.requireAuth(s.handleDevicePorts))
+	m.HandleFunc("GET /api/usage/limits", s.requireAuth(s.handleUsageLimits))
+	m.HandleFunc("GET /api/devices/{id}/extensions", s.requireAuth(s.handleExtensions))
+	m.HandleFunc("GET /api/devices/{id}/extensions/item", s.requireAuth(s.handleExtensionItem))
+	m.HandleFunc("GET /api/devices/{id}/extensions/catalog", s.requireAuth(s.handleExtensionCatalog))
+	m.HandleFunc("POST /api/devices/{id}/extensions/toggle", s.requireAuth(s.handleExtensionToggle))
+	m.HandleFunc("POST /api/devices/{id}/extensions/uninstall", s.requireAuth(s.handleExtensionUninstall))
+	m.HandleFunc("POST /api/devices/{id}/extensions/install", s.requireAuth(s.handleExtensionInstall))
+	m.HandleFunc("POST /api/devices/{id}/skills", s.requireAuth(s.handleCreateSkill))
+	m.HandleFunc("POST /api/devices/{id}/skills/share", s.requireAuth(s.handleShareSkill))
 	m.HandleFunc("GET /api/previews/config", s.requireAuth(s.handleGetPreviewConfig))
 	m.HandleFunc("PUT /api/previews/config", s.requireAuth(s.handlePutPreviewConfig))
 	m.HandleFunc("GET /api/mcp-servers", s.requireAuth(s.handleListMcpServers))

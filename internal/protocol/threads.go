@@ -46,7 +46,7 @@ type McpServer struct {
 type ThreadStart struct {
 	ThreadId   string      `json:"threadId"`
 	Agent      string      `json:"agent"`
-	Command    string      `json:"command,omitempty"`
+	Command    string      `json:"command,omitempty"` // ACP launch command for "acp" and catalog ACP agents
 	Cwd        string      `json:"cwd"`
 	Model      string      `json:"model,omitempty"`
 	Access     string      `json:"access"`
@@ -127,6 +127,19 @@ type AgentInfo struct {
 	Id        string `json:"id"`
 	Installed bool   `json:"installed"`
 	Version   string `json:"version,omitempty"`
+}
+
+// AgentsDetect is the agents.detect request: the hub's catalog as the
+// executables that mean "installed". Empty (older hubs) means the device's
+// built-in list.
+type AgentsDetect struct {
+	Agents []AgentDetectSpec `json:"agents,omitempty"`
+}
+
+// AgentDetectSpec names one catalog agent and the executables to look for.
+type AgentDetectSpec struct {
+	Id   string   `json:"id"`
+	Bins []string `json:"bins"`
 }
 
 // AgentsDetectResult is the reply to agents.detect.

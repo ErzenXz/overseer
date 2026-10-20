@@ -654,6 +654,10 @@ func (c *codexAdapter) onNotify(method string, params json.RawMessage) {
 			c.cmu.Unlock()
 			c.sink.state(protocol.ThreadState{Usage: &usage})
 		}
+	case "account/rateLimits/updated":
+		if l, ok := codexLimitsEvent(params); ok {
+			reportLimits(c.sink, l)
+		}
 	case "turn/completed":
 		c.cmu.Lock()
 		c.turnActive = false

@@ -5,36 +5,9 @@ import Icon, { type IconName } from './Icon'
 
 export type Placement = 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end' | 'right-start' | 'left-start'
 
-// useFit keeps a popover inside the viewport: it flips vertically when the
-// other side has more room, and scrolls as a last resort.
-function useFit(open: boolean, placement: Placement) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [fitted, setFitted] = useState<{ placement: Placement; maxHeight?: number; top?: number }>({ placement })
-  useLayoutEffect(() => {
-    if (!open) { setFitted({ placement }); return }
-    const node = ref.current
-    if (!node) return
-    const margin = 8
-    const rect = node.getBoundingClientRect()
-    const anchor = node.parentElement!.getBoundingClientRect()
-    const above = anchor.top - margin
-    const below = window.innerHeight - anchor.bottom - margin
-    let next = placement
-    if (placement.startsWith('top') && rect.top < margin && below > above) next = placement.replace('top', 'bottom') as Placement
-    if (placement.startsWith('bottom') && rect.bottom > window.innerHeight - margin && above > below) next = placement.replace('bottom', 'top') as Placement
-    if (next === 'right-start' || next === 'left-start') {
-      // Side menus slide up instead of running off the bottom.
-      const overflow = rect.bottom - (window.innerHeight - margin)
-      const top = overflow > 0 ? Math.max(-7 - overflow, margin - anchor.top) : undefined
-      const room = window.innerHeight - margin * 2
-      setFitted({ placement: next, top, maxHeight: rect.height > room ? room : undefined })
-      return
-    }
-    const room = next.startsWith('top') ? above - 6 : below - 6
-    setFitted({ placement: next, maxHeight: rect.height > room ? Math.max(160, room) : undefined })
-  }, [open, placement])
-  return { ref, ...fitted }
-}
+// Submenu panels float on their own; clicks and scrolls inside one belong to
+// the menu that opened it.
+const inMenuLayer = (target: EventTarget | null) => target instanceof Element && !!target.closest('[data-menu-layer]')
 
 // Menu owns its open state and closes on outside click, Escape, or when an
 // item calls close(). The trigger must be a single element that accepts
@@ -113,7 +86,7 @@ export function Menu({
     if (!open) return
     const onDown = (event: MouseEvent) => {
       const target = event.target as Node
-      if (!anchor.current?.contains(target) && !panel.current?.contains(target)) setOpen(false)
+      if (!anchor.current?.contains(target) && !panel.current?.contains(target) && !inMenuLayer(target)) setOpen(false)
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.stopPropagation(); setOpen(false) }
@@ -127,7 +100,7 @@ export function Menu({
       }
     }
     // Scrolling anything but the menu itself would detach it from its trigger.
-    const onScroll = (event: Event) => { if (!panel.current?.contains(event.target as Node)) setOpen(false) }
+    const onScroll = (event: Event) => { if (!panel.current?.contains(event.target as Node) && !inMenuLayer(event.target)) setOpen(false) }
     window.addEventListener('mousedown', onDown)
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('scroll', onScroll, true)
@@ -205,15 +178,42 @@ export function MenuItem({ icon, label, description, end, checked, chevron, dang
 
 // Submenu opens to the side on hover or click and stays open while the
 // pointer is inside either panel.
-export function Submenu({ icon, label, end, children, placement = 'right-start', width }: { icon?: ItemProps['icon']; label: ReactNode; end?: ReactNode; children: ReactNode; placement?: Placement; width?: number }) {
+// Submenu opens beside its row on hover, click or →. Its panel lives in the
+// floating layer like Menu's, so a scrolling menu or modal can't clip it.
+export function Submenu({ icon, label, end, children, width = 220 }: { icon?: ItemProps['icon']; label: ReactNode; end?: ReactNode; children: ReactNode; placement?: Placement; width?: number }) {
   const [open, setOpen] = useState(false)
-  const fit = useFit(open, placement)
+  const [style, setStyle] = useState<React.CSSProperties>({ visibility: 'hidden' })
+  const row = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const timer = useRef<number>()
   const enter = () => { window.clearTimeout(timer.current); setOpen(true) }
-  const leave = () => { timer.current = window.setTimeout(() => setOpen(false), 140) }
+  const leave = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 160) }
   useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  useLayoutEffect(() => {
+    if (!open) { setStyle({ visibility: 'hidden' }); return }
+    const place = () => {
+      const a = row.current?.getBoundingClientRect()
+      const node = panel.current
+      if (!a || !node) return
+      const margin = 8
+      const w = node.offsetWidth
+      const h = node.scrollHeight
+      let left = a.right + 4
+      if (left + w > window.innerWidth - margin) left = Math.max(margin, a.left - w - 4)
+      const room = window.innerHeight - margin * 2
+      const height = Math.min(h, room)
+      const top = Math.max(margin, Math.min(a.top - 7, window.innerHeight - margin - height))
+      setStyle({ left, top, maxHeight: h > room ? room : undefined, overflowY: h > room ? 'auto' : undefined })
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    if (panel.current) observer.observe(panel.current)
+    return () => observer.disconnect()
+  }, [open])
+
   return (
-    <div className="relative" onMouseEnter={enter} onMouseLeave={leave}>
+    <div ref={row} className="relative" onMouseEnter={enter} onMouseLeave={leave}>
       <button
         type="button"
         className="menu-item"
@@ -226,7 +226,12 @@ export function Submenu({ icon, label, end, children, placement = 'right-start',
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <span className="menu-item-end">{end}<Icon name="chevron" size={14} /></span>
       </button>
-      {open && <div ref={fit.ref} className="popover" data-placement={fit.placement} role="menu" style={{ width, maxHeight: fit.maxHeight, overflowY: fit.maxHeight ? 'auto' : undefined, top: fit.top }}>{children}</div>}
+      {open && createPortal(
+        <div ref={panel} data-menu-layer="" className="popover popover-fixed" role="menu" style={{ width, ...style }} onMouseEnter={enter} onMouseLeave={leave} onClick={(event) => event.stopPropagation()}>
+          {children}
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
@@ -264,9 +269,9 @@ export function ContextMenu({ at, onClose, children, width = 250 }: { at: { x: n
     setPos({ left, top })
   }, [at.x, at.y])
   useEffect(() => {
-    const onDown = (event: MouseEvent) => { if (!panel.current?.contains(event.target as Node)) close.current() }
+    const onDown = (event: MouseEvent) => { if (!panel.current?.contains(event.target as Node) && !inMenuLayer(event.target)) close.current() }
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); close.current() } }
-    const onScroll = (event: Event) => { if (!panel.current?.contains(event.target as Node)) close.current() }
+    const onScroll = (event: Event) => { if (!panel.current?.contains(event.target as Node) && !inMenuLayer(event.target)) close.current() }
     const onResize = () => close.current()
     window.addEventListener('mousedown', onDown)
     window.addEventListener('keydown', onKey, true)

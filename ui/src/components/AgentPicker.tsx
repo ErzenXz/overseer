@@ -1,5 +1,5 @@
 import { effectiveModel, effortsFor, modeOf, useAgentOptions, useAgentsOn } from '../agentOptions'
-import { agentCatalog, agentInfo } from '../agents'
+import { agentInfo, useAgentCatalog } from '../agents'
 import type { AgentOptions, ModeKind } from '../types'
 import type { ComposerSettings } from './Composer'
 import Icon, { AgentMark, type IconName } from './Icon'
@@ -34,8 +34,10 @@ export function AgentPicker({ settings, onSettings, lockAgent }: { settings: Com
     const keep = !allowed || !settings.effort || allowed.includes(settings.effort)
     onSettings({ ...settings, model: id, effort: keep ? settings.effort : '' })
   }
-  const ready = agentCatalog.filter((item) => installed === null || installed.find((entry) => entry.id === item.id)?.installed)
-  const missing = installed === null ? [] : agentCatalog.filter((item) => !installed.find((entry) => entry.id === item.id)?.installed)
+  const catalog = useAgentCatalog()
+  // Everything the machine has, known or found through the ACP registry.
+  const ready = catalog.filter((item) => installed === null ? item.source !== 'registry' && item.source !== 'custom' : installed.find((entry) => entry.id === item.id)?.installed)
+  const more = installed === null ? 0 : catalog.length - ready.length
 
   return (
     <Menu
@@ -60,13 +62,10 @@ export function AgentPicker({ settings, onSettings, lockAgent }: { settings: Com
               {ready.map((item) => (
                 <MenuItem key={item.id} icon={<AgentMark agent={item.id} size={16} />} label={item.name} end={installed?.find((entry) => entry.id === item.id)?.version} checked={item.id === settings.agent} onClick={() => { pickAgent(item.id); close() }} />
               ))}
-              {missing.length > 0 && (
+              {more > 0 && (
                 <>
                   <MenuSeparator />
-                  <MenuLabel>Not installed</MenuLabel>
-                  {missing.map((item) => (
-                    <MenuItem key={item.id} icon={<AgentMark agent={item.id} size={16} />} label={<span className="text-muted">{item.name}</span>} end="Install" to={`/machines/${settings.deviceId}?tab=agents`} onClick={close} />
-                  ))}
+                  <MenuItem icon="plus" label="More agents…" end={<span className="text-faint">{more}</span>} to="/settings/agents" onClick={close} />
                 </>
               )}
             </Submenu>

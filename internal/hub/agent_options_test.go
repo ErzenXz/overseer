@@ -114,7 +114,7 @@ func TestAgentOptionsEndpoint(t *testing.T) {
 	// A thread created with a mode derives its access from the mode's kind.
 	var th Thread
 	in := threadInput{DeviceId: offline, Agent: "claude", Prompt: "x", Mode: "plan", Effort: "high", Fast: true}
-	if msg := in.validate(); msg != "" {
+	if msg := in.validate(srv.agents); msg != "" {
 		t.Fatal(msg)
 	}
 	created, err := srv.createThread(in)

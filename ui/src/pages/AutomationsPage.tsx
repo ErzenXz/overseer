@@ -1,7 +1,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
-import { accessLevels, agentCatalog, agentInfo, relativeTime, untilTime } from '../agents'
+import { agentInfo, relativeTime, untilTime } from '../agents'
+import { accessForKind, builtinOptions, modeOf, useAgentOptions } from '../agentOptions'
+import { AgentPicker, ModePicker } from '../components/AgentPicker'
+import type { ComposerSettings } from '../components/Composer'
 import Icon, { AgentMark, type IconName } from '../components/Icon'
 import { Menu, MenuItem, MenuSeparator, Switch } from '../components/Menu'
 import Modal from '../components/Modal'
@@ -142,7 +145,7 @@ export default function AutomationsPage() {
                 <span className="tile-icon"><AgentMark agent={item.agent} size={18} /></span>
                 <div className="min-w-0 flex-1">
                   <div className="list-row-title truncate">{item.name}</div>
-                  <div className="list-row-sub truncate">{describeCron(item.schedule)} · {deviceName(item.deviceId)} · <span className="font-mono text-[12.5px]">{item.cwd || '~'}</span></div>
+                  <div className="list-row-sub truncate">{describeCron(item.schedule)} · {deviceName(item.deviceId)}{item.model ? ` · ${modelLabel(item)}` : ''}{item.fast ? ' · fast' : ''} · <span className="font-mono text-[12.5px]">{item.cwd || '~'}</span></div>
                 </div>
                 <div className="hidden text-right text-[13px] text-muted md:block">
                   {item.lastRunAt ? <div>Last run {relativeTime(item.lastRunAt)}{item.lastThreadId && <> · <Link className="link" to={`/sessions/${item.lastThreadId}`}>view</Link></>}</div> : <div>Never run</div>}
@@ -192,6 +195,14 @@ export default function AutomationsPage() {
   )
 }
 
+// "Opus · High": the model and thinking a run uses, as the picker shows them.
+function modelLabel(item: Automation) {
+  const options = builtinOptions(item.agent)
+  const model = options.models.find((entry) => entry.id === item.model)?.label ?? item.model
+  const effort = options.efforts.find((entry) => entry.id === item.effort)?.label
+  return effort ? `${model} · ${effort}` : model
+}
+
 function fromTemplate(item: Template): Partial<Automation> {
   return { name: item.name, prompt: item.prompt, schedule: item.schedule }
 }
@@ -204,6 +215,10 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial: Partial<Auto
     prompt: initial.prompt ?? '',
     deviceId: initial.deviceId ?? online.find((device) => device.isHub)?.id ?? online[0]?.id ?? '',
     agent: initial.agent ?? 'claude',
+    model: initial.model ?? '',
+    effort: initial.effort ?? '',
+    fast: initial.fast ?? false,
+    mode: initial.mode ?? '',
     cwd: initial.cwd ?? '',
     access: (initial.access ?? 'auto') as Access,
     schedule: initial.schedule ?? '0 9 * * 1-5',
@@ -213,6 +228,12 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial: Partial<Auto
   const [error, setError] = useState('')
   const preset = useMemo(() => schedulePresets.find((item) => item.cron === form.schedule)?.cron ?? 'custom', [form.schedule])
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((current) => ({ ...current, [key]: value }))
+  // The same agent, model, thinking and mode controls as the composer.
+  const options = useAgentOptions(form.deviceId, form.agent)
+  // Nobody is watching a scheduled run, so it starts in the agent's Auto mode.
+  const mode = modeOf(options, form.mode || options.modes.find((item) => item.kind === 'auto')?.id)
+  const settings: ComposerSettings = { deviceId: form.deviceId, agent: form.agent, model: form.model, effort: form.effort, fast: form.fast, mode: mode?.id ?? form.mode, cwd: form.cwd }
+  const onSettings = (next: ComposerSettings) => setForm((current) => ({ ...current, agent: next.agent, model: next.model, effort: next.effort ?? '', fast: !!next.fast, mode: next.mode ?? '' }))
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
@@ -220,8 +241,9 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial: Partial<Auto
     setBusy(true)
     setError('')
     try {
-      if (initial.id) await api.patch(`/api/automations/${initial.id}`, form)
-      else await api.post('/api/automations', form)
+      const body = { ...form, mode: mode?.id ?? form.mode, access: accessForKind(mode?.kind) }
+      if (initial.id) await api.patch(`/api/automations/${initial.id}`, body)
+      else await api.post('/api/automations', body)
       onSaved()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save')
@@ -240,16 +262,13 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial: Partial<Auto
               {online.map((device) => <option key={device.id} value={device.id}>{device.name}{device.online ? '' : ' (offline)'}</option>)}
             </select>
           </div>
-          <div><label className="label" htmlFor="au-agent">Agent</label>
-            <select id="au-agent" className="select w-full" value={form.agent} onChange={(event) => set('agent', event.target.value)}>
-              {agentCatalog.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-            </select>
-          </div>
           <div><label className="label" htmlFor="au-cwd">Folder</label><input id="au-cwd" className="input input-mono" value={form.cwd} onChange={(event) => set('cwd', event.target.value)} placeholder="~/Projects/my-app" /></div>
-          <div><label className="label" htmlFor="au-access">Access</label>
-            <select id="au-access" className="select w-full" value={form.access} onChange={(event) => set('access', event.target.value as Access)}>
-              {accessLevels.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}
-            </select>
+        </div>
+        <div>
+          <span className="label">Agent</span>
+          <div className="automation-agent">
+            <AgentPicker settings={settings} onSettings={onSettings} />
+            <ModePicker settings={settings} onSettings={onSettings} />
           </div>
         </div>
         <div>
@@ -261,7 +280,7 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial: Partial<Auto
             </select>
             <input id="au-schedule" className="input input-mono flex-1" value={form.schedule} onChange={(event) => set('schedule', event.target.value)} />
           </div>
-          <p className="hint">{describeCron(form.schedule)} · cron in the hub’s time zone. {form.access === 'full' ? 'Runs without approval prompts.' : form.access === 'ask' ? 'Read-only.' : `${agentInfo(form.agent).name} may pause for approval; you’ll get a notification.`}</p>
+          <p className="hint">{describeCron(form.schedule)} · cron in the hub’s time zone. {mode?.kind === 'full' ? 'Runs without approval prompts.' : mode?.kind === 'readonly' || mode?.kind === 'plan' ? 'Changes nothing; you get its findings.' : `${agentInfo(form.agent).name} may pause for approval; you’ll get a notification.`}</p>
         </div>
         {error && <p className="text-[13px] text-danger">{error}</p>}
         <div className="modal-foot">

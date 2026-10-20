@@ -3,10 +3,11 @@ import { GithubLogo, List, X } from "@phosphor-icons/react";
 import { DOCS, REPO } from "../lib/site";
 import { Logo } from "./Logo";
 
+// Absolute paths so the links work from /changelog/ too.
 const LINKS = [
-  { label: "Features", href: "#features" },
-  { label: "How it works", href: "#how" },
-  { label: "Security", href: "#security" },
+  { label: "Features", href: "/#features" },
+  { label: "How it works", href: "/#how" },
+  { label: "Changelog", href: "/changelog/" },
   { label: "Docs", href: DOCS, external: true },
 ];
 
@@ -51,7 +52,7 @@ export function Nav() {
           aria-label="Main"
           className="container-page flex h-14 items-center gap-8"
         >
-          <a href="#top" aria-label="Overseer home" className="rounded-md">
+          <a href="/" aria-label="Overseer home" className="rounded-md">
             <Logo />
           </a>
 
@@ -78,7 +79,7 @@ export function Nav() {
               <GithubLogo size={16} />
               GitHub
             </a>
-            <a href="#install" className="btn btn-sm btn-dark">
+            <a href="/#install" className="btn btn-sm btn-dark">
               Get started
             </a>
           </div>
@@ -120,7 +121,7 @@ export function Nav() {
                 <GithubLogo size={18} /> GitHub
               </a>
               <a
-                href="#install"
+                href="/#install"
                 onClick={() => setOpen(false)}
                 className="btn btn-dark mt-2 w-full"
               >

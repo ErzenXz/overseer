@@ -21,6 +21,9 @@ type automationInput struct {
 	Agent    *string `json:"agent"`
 	Command  *string `json:"command"`
 	Model    *string `json:"model"`
+	Effort   *string `json:"effort"`
+	Fast     *bool   `json:"fast"`
+	Mode     *string `json:"mode"`
 	Cwd      *string `json:"cwd"`
 	Access   *string `json:"access"`
 	Schedule *string `json:"schedule"`
@@ -41,6 +44,11 @@ func (in automationInput) apply(a *Automation) {
 	set(&a.Agent, in.Agent)
 	set(&a.Command, in.Command)
 	set(&a.Model, in.Model)
+	set(&a.Effort, in.Effort)
+	set(&a.Mode, in.Mode)
+	if in.Fast != nil {
+		a.Fast = *in.Fast
+	}
 	set(&a.Cwd, in.Cwd)
 	set(&a.Access, in.Access)
 	set(&a.Schedule, in.Schedule)
@@ -53,7 +61,7 @@ func (in automationInput) apply(a *Automation) {
 func (a *Automation) threadInput() threadInput {
 	return threadInput{
 		DeviceId: a.DeviceId, Agent: a.Agent, Command: a.Command, Cwd: a.Cwd, Prompt: a.Prompt,
-		Model: a.Model, Access: a.Access, Title: a.Name, AutomationId: a.Id,
+		Model: a.Model, Effort: a.Effort, Fast: a.Fast, Mode: a.Mode, Access: a.Access, Title: a.Name, AutomationId: a.Id,
 	}
 }
 
@@ -63,7 +71,7 @@ func (s *Server) validateAutomation(a *Automation) string {
 		return "name must be 1-120 characters"
 	}
 	in := a.threadInput()
-	if msg := in.validate(); msg != "" {
+	if msg := in.validate(s.agents); msg != "" {
 		return msg
 	}
 	a.Access, a.Command = in.Access, in.Command
@@ -179,7 +187,7 @@ func (e automationError) Error() string { return string(e) }
 // device still gets a thread (in the error state) so the miss is visible.
 func (s *Server) runAutomation(a *Automation, now time.Time) (*Thread, error) {
 	in := a.threadInput()
-	if msg := in.validate(); msg != "" {
+	if msg := in.validate(s.agents); msg != "" {
 		return nil, automationError(msg)
 	}
 	t, err := s.createThread(in)

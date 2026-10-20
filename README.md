@@ -9,7 +9,7 @@
 Run Claude Code, Codex, Gemini and other agents on your laptop, desktop,
 homelab or cloud VMs, and watch, steer and review them from anywhere.
 
-[Website](https://overseer.sh) · [Guide](docs/guide.md) · [Releases](https://github.com/ErzenXz/overseer/releases)
+[Website](https://overseer.sh) · [Guide](docs/guide.md) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/ErzenXz/overseer/releases)
 
 <img src="docs/screenshots/preview.png" alt="An agent session with a live preview of the site it is building">
 
@@ -61,8 +61,14 @@ computer, all from the browser.
 
 <img src="docs/screenshots/machines.png" alt="All connected machines with live stats">
 
-**And more:** scheduled runs, MCP servers shared with every agent, pull request
-review, light and dark themes, and a layout that works on your phone.
+**Skills & plugins for every agent.** See and toggle the skills, plugins,
+commands, subagents, rules, hooks and MCP servers of Claude Code, Codex, Devin
+and more on each machine. Write a skill once and share it with all of them, or
+install plugins from their marketplaces.
+
+**And more:** your real plan limits, scheduled runs with the model of your
+choice, any ACP agent detected automatically, pull request review, light and
+dark themes, and a layout that works on your phone.
 
 <img src="docs/screenshots/dark.png" alt="Dark theme with the shell open beside a session">
 

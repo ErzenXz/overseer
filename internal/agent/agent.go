@@ -56,6 +56,11 @@ type Agent struct {
 	portsAsked    time.Time
 	portsWatching bool
 
+	// lastLimits is the last session limits reading sent per agent, so
+	// repeats are not forwarded (see usage.go).
+	limitsMu   sync.Mutex
+	lastLimits map[string]string
+
 	// threads are coding-agent processes keyed by hub thread id. They are
 	// deliberately not torn down with the hub connection.
 	threadMu    sync.Mutex
@@ -401,7 +406,9 @@ func (a *Agent) dispatch(m protocol.Msg) {
 	case protocol.TypePortsList:
 		go a.portsList(m.Id)
 	case protocol.TypeAgentsDetect:
-		go a.reply(m.Id, a.detectAgents(), nil)
+		var req protocol.AgentsDetect
+		json.Unmarshal(m.Data, &req) // older hubs send {}: built-in list
+		go a.reply(m.Id, a.detectAgents(req), nil)
 	case protocol.TypeThreadStart:
 		var req protocol.ThreadStart
 		if err := json.Unmarshal(m.Data, &req); err != nil {
@@ -480,6 +487,21 @@ func (a *Agent) dispatch(m protocol.Msg) {
 			return
 		}
 		go a.reply(m.Id, discoverAgentOptions(req), nil)
+	case protocol.TypeUsageLimits:
+		var req protocol.UsageLimitsRequest
+		if len(m.Data) > 0 {
+			if err := json.Unmarshal(m.Data, &req); err != nil {
+				a.reply(m.Id, nil, err)
+				return
+			}
+		}
+		go a.reply(m.Id, readUsageLimits(req), nil)
+	case protocol.TypeExtList, protocol.TypeExtItem, protocol.TypeExtToggle, protocol.TypeExtUninstall,
+		protocol.TypeExtInstall, protocol.TypeExtCatalog, protocol.TypeSkillCreate, protocol.TypeSkillShare:
+		go func() {
+			res, err := handleExtensions(m.Type, m.Data)
+			a.reply(m.Id, res, err)
+		}()
 	default:
 		// Unknown requests get an error reply so a newer hub doesn't wait
 		// for its timeout.

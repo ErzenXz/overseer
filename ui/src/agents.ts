@@ -1,3 +1,5 @@
+import { useEffect, useSyncExternalStore } from 'react'
+import { api } from './api'
 import type { Access, Thread, ThreadStatus } from './types'
 
 // The coding agents Overseer can drive on a machine. `models` are the values
@@ -11,6 +13,11 @@ export interface AgentInfo {
   install: string
   login?: string
   models: { id: string; label: string }[]
+  description?: string
+  icon?: string
+  website?: string
+  source?: 'builtin' | 'registry' | 'custom'
+  bins?: string[]
 }
 
 export const agentCatalog: AgentInfo[] = [
@@ -51,6 +58,53 @@ export const agentCatalog: AgentInfo[] = [
   { id: 'copilot', name: 'Copilot CLI', vendor: 'GitHub', protocol: 'acp', install: 'npm install -g @github/copilot', login: 'copilot', models: [{ id: '', label: 'Default' }] },
   { id: 'cursor', name: 'Cursor Agent', vendor: 'Cursor', protocol: 'acp', install: 'curl https://cursor.com/install -fsS | bash', login: 'cursor-agent login', models: [{ id: '', label: 'Default' }] },
 ]
+
+// The hub's catalog adds every agent in the ACP registry plus the user's own
+// (GET /api/agents/catalog). `agentCatalog` is updated in place so existing
+// lookups see new agents; useAgentCatalog re-renders when it changes.
+let catalogVersion = 0
+let catalogLoad: Promise<void> | null = null
+const catalogListeners = new Set<() => void>()
+
+interface CatalogAgent {
+  id: string
+  name: string
+  vendor?: string
+  description?: string
+  icon?: string
+  website?: string
+  protocol: 'native' | 'acp'
+  source: 'builtin' | 'registry' | 'custom'
+  bins?: string[]
+  install?: string
+  login?: string
+}
+
+export function loadAgentCatalog(force = false) {
+  if (catalogLoad && !force) return catalogLoad
+  catalogLoad = api.get<CatalogAgent[]>('/api/agents/catalog')
+    .then((items) => {
+      if (!Array.isArray(items) || !items.length) return
+      const builtins = new Map(agentCatalog.filter((agent) => agent.source !== 'registry' && agent.source !== 'custom').map((agent) => [agent.id, agent]))
+      const next: AgentInfo[] = items.filter((item) => item.id !== 'acp').map((item) => {
+        const known = builtins.get(item.id)
+        return known
+          ? { ...known, description: item.description ?? known.description, website: item.website ?? known.website, source: 'builtin', bins: item.bins }
+          : { id: item.id, name: item.name, vendor: item.vendor ?? '', protocol: item.protocol, install: item.install ?? '', login: item.login, models: [{ id: '', label: 'Default' }], description: item.description, icon: item.icon, website: item.website, source: item.source, bins: item.bins }
+      })
+      agentCatalog.splice(0, agentCatalog.length, ...next)
+      catalogVersion++
+      catalogListeners.forEach((listener) => listener())
+    })
+    .catch(() => { catalogLoad = null /* older hub: keep the built-in list */ })
+  return catalogLoad
+}
+
+export function useAgentCatalog() {
+  useEffect(() => { loadAgentCatalog() }, [])
+  useSyncExternalStore((listener) => { catalogListeners.add(listener); return () => catalogListeners.delete(listener) }, () => catalogVersion)
+  return agentCatalog
+}
 
 export function agentInfo(id: string): AgentInfo {
   return agentCatalog.find((agent) => agent.id === id) ?? { id, name: id === 'acp' ? 'Custom ACP agent' : id || 'Agent', vendor: '', protocol: 'acp', install: '', models: [{ id: '', label: 'Default' }] }

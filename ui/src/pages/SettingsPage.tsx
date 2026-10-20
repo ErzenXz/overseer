@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { agentCatalog, agentInfo } from '../agents'
+import { agentCatalog, agentInfo, loadAgentCatalog, relativeTime, useAgentCatalog, type AgentInfo } from '../agents'
 import AddDeviceModal from '../components/AddDeviceModal'
 import Icon, { AgentMark, type IconName } from '../components/Icon'
 import { Switch } from '../components/Menu'
 import { settingsSections } from '../settings'
-import { SidebarToggle, useOwnHeader } from '../shell'
+import { SidebarToggle, useOwnHeader, useShell } from '../shell'
 import { useDevices, usePref, useThreads } from '../store'
-import type { ExecResult } from '../types'
+import type { DeviceAgent, ExecResult } from '../types'
+import Modal from '../components/Modal'
 import { McpHelp, Presets, ApiTokens, PreviewSettings, SoftwareUpdates } from './SettingsParts'
-import type { ComposerSettings } from '../components/Composer'
+import { Meter, type ComposerSettings } from '../components/Composer'
+import { resetsIn, usePlanLimits } from '../usageLimits'
 
 export default function SettingsPage() {
   useOwnHeader()
@@ -279,7 +281,9 @@ function Usage() {
   const total = rows.reduce((sum, [, row]) => ({ sessions: sum.sessions + row.sessions, tokens: sum.tokens + row.tokens, cost: sum.cost + row.cost }), { sessions: 0, tokens: 0, cost: 0 })
   return (
     <>
-      <div className="mt-7 grid gap-4 sm:grid-cols-3">
+      <PlanLimitsSection />
+      <h2 className="settings-h2">Sessions in Overseer</h2>
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
         <div className="stat-card"><div className="k">Sessions</div><div className="v">{total.sessions}</div></div>
         <div className="stat-card"><div className="k">Tokens</div><div className="v">{(total.tokens / 1000).toFixed(0)}k</div></div>
         <div className="stat-card"><div className="k">Reported cost</div><div className="v">${total.cost.toFixed(2)}</div><div className="d">Only agents that report cost</div></div>
@@ -295,18 +299,161 @@ function Usage() {
   )
 }
 
+// Each subscription's rolling limits, as the agent CLIs on your machines
+// report them.
+function PlanLimitsSection() {
+  const { accounts, error, refreshing, refresh } = usePlanLimits()
+  const newest = Math.max(0, ...(accounts ?? []).map((item) => item.fetchedAt ?? 0))
+  return (
+    <section className="mt-7">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h2 className="settings-h2" style={{ marginTop: 0 }}>Plan limits</h2>
+          <p className="hint mt-1">Your Claude and ChatGPT subscriptions’ rolling limits, read from the CLIs on each machine.</p>
+        </div>
+        <button className="btn btn-outline btn-sm" onClick={refresh} disabled={refreshing}><Icon name="refresh" size={14} className={refreshing ? 'animate-spin' : ''} />{refreshing ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      {error && <p className="mt-3 text-[13px] text-danger">{error}</p>}
+      {!accounts ? (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">{[0, 1].map((key) => <div key={key} className="skeleton h-36 rounded-xl" />)}</div>
+      ) : accounts.length === 0 ? (
+        <div className="list-card mt-4 p-6 text-center text-[13.5px] text-muted">No subscriptions found. Sign in to Claude Code or Codex on a machine (Machines → Setup) and they show up here.</div>
+      ) : (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {accounts.map((item) => (
+            <div key={`${item.deviceId}:${item.agent}`} className="limit-card">
+              <div className="limit-card-head">
+                <AgentMark agent={item.agent} size={18} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-ink">{agentInfo(item.agent).name}{item.plan ? <span className="limit-plan">{item.plan}</span> : null}</div>
+                  <div className="truncate text-[12.5px] text-muted">{item.deviceName}{item.account ? ` · ${item.account}` : ''}</div>
+                </div>
+                {item.status === 'limited' && <span className="badge badge-red">Limited</span>}
+              </div>
+              {item.error ? <p className="mt-3 text-[13px] text-muted">{item.error}</p> : (
+                <div className="mt-3 space-y-3">
+                  {(item.windows ?? []).map((window) => (
+                    <div key={window.id}>
+                      <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[13px]"><span className="text-ink">{window.label}</span><span className="data-number text-muted">{Math.round(window.usedPercent)}% used{window.resetsAt ? ` · resets ${resetsIn(window.resetsAt)}` : ''}</span></div>
+                      <Meter percent={window.usedPercent} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {newest > 0 && <p className="hint mt-3">Updated {relativeTime(newest)}. Running sessions keep these current.</p>}
+    </section>
+  )
+}
+
 function AgentsSettings() {
+  const catalog = useAgentCatalog()
+  const { value: devices } = useDevices()
+  const [query, setQuery] = useState('')
+  const [found, setFound] = useState<Record<string, { device: string; version?: string }[]>>({})
+  const [adding, setAdding] = useState(false)
+  const { toast } = useShell()
+  const online = (devices ?? []).filter((device) => device.online)
+  const onlineKey = online.map((device) => device.id).join()
+
+  // Which machines have which agents, asked of every online machine.
+  useEffect(() => {
+    let alive = true
+    Promise.all(online.map((device) => api.get<DeviceAgent[]>(`/api/devices/${device.id}/agents`).then((items) => ({ device, items })).catch(() => ({ device, items: [] as DeviceAgent[] }))))
+      .then((results) => {
+        if (!alive) return
+        const next: Record<string, { device: string; version?: string }[]> = {}
+        for (const { device, items } of results) for (const item of items) if (item.installed && item.id !== 'acp') (next[item.id] ??= []).push({ device: device.name, version: item.version })
+        setFound(next)
+      })
+    return () => { alive = false }
+  }, [onlineKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const match = (agent: AgentInfo) => !query || `${agent.name} ${agent.vendor} ${agent.description ?? ''}`.toLowerCase().includes(query.toLowerCase())
+  const installed = catalog.filter((agent) => found[agent.id] && match(agent))
+  const custom = catalog.filter((agent) => agent.source === 'custom' && !found[agent.id] && match(agent))
+  const available = catalog.filter((agent) => agent.source !== 'custom' && !found[agent.id] && match(agent))
+  const remove = async (agent: AgentInfo) => {
+    if (!confirm(`Remove ${agent.name}?`)) return
+    try { await api.del(`/api/agents/custom/${encodeURIComponent(agent.id)}`); await loadAgentCatalog(true) } catch (cause) { toast(cause instanceof Error ? cause.message : 'Couldn’t remove it') }
+  }
+  const row = (agent: AgentInfo, end: ReactNode) => (
+    <div key={agent.id} className="settings-row" style={{ minHeight: 68 }}>
+      <span className="tile-icon"><AgentMark agent={agent.id} size={19} /></span>
+      <span className="settings-row-main min-w-0 flex-1">
+        <span className="settings-row-title">{agent.name}{agent.vendor ? <span className="ml-2 text-[12.5px] font-normal text-muted">{agent.vendor}</span> : null}</span>
+        <span className="settings-row-sub block truncate">{found[agent.id] ? found[agent.id].map((item) => `${item.device}${item.version ? ` ${item.version}` : ''}`).join(' · ') : agent.description || (agent.protocol === 'acp' ? 'Agent Client Protocol' : 'Native protocol')}</span>
+      </span>
+      {end}
+    </div>
+  )
   return (
     <>
-      <div className="settings-group">
-        {agentCatalog.map((agent) => (
-          <div key={agent.id} className="settings-row" style={{ minHeight: 72 }}>
-            <span className="tile-icon"><AgentMark agent={agent.id} size={19} /></span>
-            <span className="settings-row-main flex-1"><span className="settings-row-title">{agent.name}</span><span className="settings-row-sub block">{agent.vendor} · {agent.protocol === 'acp' ? 'Agent Client Protocol' : 'Native protocol'} · <code className="text-[12.5px]">{agent.install}</code></span></span>
-          </div>
-        ))}
+      <div className="mt-7 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[220px] flex-1">
+          <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+          <input className="input pl-9" placeholder={`Search ${catalog.length} agents`} value={query} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        <button className="btn btn-outline" onClick={() => setAdding(true)}><Icon name="plus" size={15} />Add your own</button>
       </div>
-      <LinkCard to="/customize?tab=agents" icon="grid" title="See which machines have which agents" text="Install missing ones from a machine’s Agents tab." />
+      <p className="hint mt-2">Overseer finds agents on your machines by itself, including every agent in the <a className="link" href="https://agentclientprotocol.com/registry" target="_blank" rel="noreferrer">ACP registry</a>. Install one and it shows up in the agent picker within a minute.</p>
+
+      <h2 className="settings-h2" style={{ marginTop: 28 }}>On your machines</h2>
+      <div className="settings-group mt-3">
+        {installed.length ? installed.map((agent) => row(agent, agent.source === 'custom' ? <button className="icon-btn" aria-label={`Remove ${agent.name}`} onClick={() => remove(agent)}><Icon name="trash" size={16} /></button> : null))
+          : <p className="p-5 text-[13.5px] text-muted">{online.length ? 'No agents found on your online machines yet.' : 'No machines are online.'}</p>}
+      </div>
+
+      {custom.length > 0 && (
+        <>
+          <h2 className="settings-h2" style={{ marginTop: 28 }}>Your agents</h2>
+          <div className="settings-group mt-3">{custom.map((agent) => row(agent, <button className="icon-btn" aria-label={`Remove ${agent.name}`} onClick={() => remove(agent)}><Icon name="trash" size={16} /></button>))}</div>
+        </>
+      )}
+
+      <h2 className="settings-h2" style={{ marginTop: 28 }}>Available</h2>
+      <div className="settings-group mt-3">
+        {available.map((agent) => row(agent, agent.install
+          ? <button className="btn btn-outline btn-sm" title={agent.install} onClick={() => navigator.clipboard?.writeText(agent.install).then(() => toast('Install command copied')).catch(() => {})}><Icon name="copy" size={14} />Install</button>
+          : agent.website ? <a className="btn btn-outline btn-sm" href={agent.website} target="_blank" rel="noreferrer">Get it<Icon name="arrow-up-right" size={13} /></a> : null))}
+        {!available.length && <p className="p-5 text-[13.5px] text-muted">Nothing else matches.</p>}
+      </div>
+      {adding && <AddAgentModal onClose={() => setAdding(false)} />}
     </>
+  )
+}
+
+// AddAgentModal registers any ACP agent by the command that starts it.
+function AddAgentModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [command, setCommand] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await api.post('/api/agents/custom', { name: name.trim(), command: command.trim() })
+      await loadAgentCatalog(true)
+      onClose()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Couldn’t add it')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal title="Add your own agent" onClose={onClose} footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" form="add-agent" disabled={busy || !name.trim() || !command.trim()}>{busy ? 'Adding…' : 'Add agent'}</button></>}>
+      <form id="add-agent" onSubmit={save} className="space-y-4">
+        <label className="block"><span className="mb-1.5 block text-sm font-medium text-ink">Name</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="My agent" /></label>
+        <label className="block"><span className="mb-1.5 block text-sm font-medium text-ink">Command</span><input className="input input-mono" value={command} onChange={(event) => setCommand(event.target.value)} placeholder="my-agent --acp" spellCheck={false} /></label>
+        <p className="text-[13px] text-muted">Any agent that speaks the Agent Client Protocol over stdio. Machines that have the command show it in the agent picker.</p>
+        {error && <p className="text-[13px] text-danger">{error}</p>}
+      </form>
+    </Modal>
   )
 }

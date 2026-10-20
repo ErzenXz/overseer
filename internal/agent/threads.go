@@ -8,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -335,8 +333,9 @@ func resolveCwd(cwd string) (string, error) {
 	return cwd, nil
 }
 
-// acpAgents maps ACP adapter ids to their CLI and candidate argument lists
-// (tried in order, for CLIs whose ACP flag changed between releases).
+// acpAgents maps the built-in ACP adapter ids to their CLI and candidate
+// argument lists (tried in order, for CLIs whose ACP flag changed between
+// releases). Other catalog agents arrive with their launch command.
 var acpAgents = map[string]struct {
 	bin  string
 	args [][]string
@@ -348,78 +347,59 @@ var acpAgents = map[string]struct {
 	"cursor":   {"cursor-agent", [][]string{{"acp"}}},
 }
 
+// nativeAgents have their own adapters instead of ACP.
+var nativeAgents = map[string]bool{"claude": true, "codex": true}
+
+// acpLaunch resolves an ACP agent to its CLI and candidate argument lists:
+// built-in ids use their own table; "acp" and any other (catalog) id run the
+// command the hub sent.
+func acpLaunch(agent, command string) (string, [][]string, error) {
+	if spec, ok := acpAgents[agent]; ok {
+		return spec.bin, spec.args, nil
+	}
+	if nativeAgents[agent] {
+		return "", nil, fmt.Errorf("%s is not an ACP agent", agent)
+	}
+	if strings.TrimSpace(command) == "" {
+		if agent == "acp" {
+			return "", nil, fmt.Errorf("command required for a custom ACP agent")
+		}
+		return "", nil, fmt.Errorf("unknown agent %q", agent)
+	}
+	words, err := splitCommandLine(command)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(words) == 0 {
+		return "", nil, fmt.Errorf("command required for a custom ACP agent")
+	}
+	return words[0], [][]string{words[1:]}, nil
+}
+
 func newThreadAdapter(cfg protocol.ThreadStart, sink threadSink) (threadAdapter, error) {
 	switch cfg.Agent {
 	case "claude":
 		return newClaudeAdapter(cfg, sink), nil
 	case "codex":
 		return newCodexAdapter(cfg, sink), nil
-	case "acp":
-		words, err := splitCommandLine(cfg.Command)
-		if err != nil {
-			return nil, err
-		}
-		if len(words) == 0 {
-			return nil, fmt.Errorf("command required for a custom ACP agent")
-		}
-		return newACPAdapter(cfg, sink, words[0], [][]string{words[1:]}), nil
 	}
-	spec, ok := acpAgents[cfg.Agent]
-	if !ok {
-		return nil, fmt.Errorf("unknown agent %q", cfg.Agent)
+	bin, candidates, err := acpLaunch(cfg.Agent, cfg.Command)
+	if err != nil {
+		return nil, err
 	}
-	candidates := spec.args
 	if cfg.Agent == "gemini" && cfg.Model != "" {
-		candidates = nil
-		for _, args := range spec.args {
-			candidates = append(candidates, append(append([]string{}, args...), "--model", cfg.Model))
+		withModel := make([][]string, 0, len(candidates))
+		for _, args := range candidates {
+			withModel = append(withModel, append(append([]string{}, args...), "--model", cfg.Model))
 		}
+		candidates = withModel
 	}
-	return newACPAdapter(cfg, sink, spec.bin, candidates), nil
+	return newACPAdapter(cfg, sink, bin, candidates), nil
 }
 
-// splitCommandLine splits a command line into words, honouring single and
-// double quotes and backslash escapes (no variable expansion).
-func splitCommandLine(s string) ([]string, error) {
-	var words []string
-	var cur strings.Builder
-	inWord := false
-	var quote rune
-	escaped := false
-	for _, r := range s {
-		switch {
-		case escaped:
-			cur.WriteRune(r)
-			escaped = false
-		case r == '\\' && quote != '\'':
-			escaped, inWord = true, true
-		case quote != 0:
-			if r == quote {
-				quote = 0
-			} else {
-				cur.WriteRune(r)
-			}
-		case r == '\'' || r == '"':
-			quote, inWord = r, true
-		case r == ' ' || r == '\t' || r == '\n':
-			if inWord {
-				words = append(words, cur.String())
-				cur.Reset()
-				inWord = false
-			}
-		default:
-			cur.WriteRune(r)
-			inWord = true
-		}
-	}
-	if quote != 0 || escaped {
-		return nil, fmt.Errorf("unterminated quote in command")
-	}
-	if inWord {
-		words = append(words, cur.String())
-	}
-	return words, nil
-}
+// splitCommandLine splits a command line into words (see
+// protocol.SplitCommandLine).
+func splitCommandLine(s string) ([]string, error) { return protocol.SplitCommandLine(s) }
 
 // --- shared adapter state ---
 
@@ -873,45 +853,4 @@ func compactJSON(v any) string {
 		return ""
 	}
 	return string(b)
-}
-
-// --- agents.detect ---
-
-var detectAgents = []struct{ id, bin string }{
-	{"claude", "claude"},
-	{"codex", "codex"},
-	{"gemini", "gemini"},
-	{"opencode", "opencode"},
-	{"goose", "goose"},
-	{"copilot", "copilot"},
-	{"cursor", "cursor-agent"},
-}
-
-var versionRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)?[0-9A-Za-z.+-]*`)
-
-func (a *Agent) detectAgents() protocol.AgentsDetectResult {
-	out := make([]protocol.AgentInfo, len(detectAgents))
-	var wg sync.WaitGroup
-	for i, d := range detectAgents {
-		out[i] = protocol.AgentInfo{Id: d.id}
-		path, err := exec.LookPath(d.bin)
-		if err != nil {
-			continue
-		}
-		out[i].Installed = true
-		wg.Add(1)
-		go func(i int, path string) {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, path, "--version")
-			cmd.Env = agentEnv()
-			b, _ := cmd.Output()
-			out[i].Version = versionRe.FindString(string(b))
-		}(i, path)
-	}
-	wg.Wait()
-	// A custom ACP command line can always be attempted.
-	out = append(out, protocol.AgentInfo{Id: "acp", Installed: true})
-	return protocol.AgentsDetectResult{Agents: out}
 }
