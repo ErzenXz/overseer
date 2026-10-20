@@ -136,7 +136,7 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / .55), inset 0 -1px 0 rgb(255 255 255 / .12), inset 0 0 0 1px rgb(255 255 255 / .1), 0 40px 100px -30px rgb(0 0 0 / .7), 0 0 0 1px rgb(0 0 0 / .35);
   }
   @media (max-width: 639px) { .glass { padding: 6px; border-radius: 16px; } }
-  .stage__frame { overflow: hidden; border-radius: 16px; background: #000; }
+  .stage__frame { overflow: hidden; border-radius: 16px; background: var(--surface); }
   @media (max-width: 639px) { .stage__frame { border-radius: 11px; } }
 
   /* ---------- ticks: a ruler between sections ---------- */
@@ -229,8 +229,15 @@
   .btn-outline:hover, .btn-ghost:hover { border-color: color-mix(in srgb, var(--text) 30%, transparent); }
   .btn-ghost { border-color: transparent; }
   .field { background: var(--bg-soft); }
-  .shot { position: relative; overflow: hidden; border-radius: 14px; background: #000; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06), 0 30px 60px -30px rgb(0 0 0 / .8); }
+  .shot { position: relative; overflow: hidden; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06), 0 30px 60px -30px rgb(0 0 0 / .8); }
   .shot img { width: 100%; }
+  /* Loading: a soft sweep in the page's own colours, then the image fades in. */
+  .shot::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--text) 5%, transparent) 50%, transparent 70%) 0 0 / 220% 100%; animation: shimmer 1.6s ease-in-out infinite; transition: opacity .4s; pointer-events: none; }
+  .shot.is-loaded::after { opacity: 0; animation: none; }
+  .shot img, .fade-img { opacity: 0; transform: scale(1.012); filter: blur(6px); transition: opacity .6s var(--ease-out-expo), transform .8s var(--ease-out-expo), filter .6s var(--ease-out-expo); }
+  .shot.is-loaded img, .fade-img.is-loaded { opacity: 1; transform: none; filter: none; }
+  @keyframes shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+  .light .shot { box-shadow: 0 0 0 1px var(--stroke), 0 24px 50px -30px rgb(15 17 22 / .3); }
   .shot-crop { aspect-ratio: 16 / 10; }
   .shot-crop img { height: 100%; object-fit: cover; object-position: top left; }
   .shot-phone { border-radius: 26px; }
