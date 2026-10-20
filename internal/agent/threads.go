@@ -40,13 +40,106 @@ type threadAdapter interface {
 	// start spawns the CLI and completes its handshake; it returns the
 	// agent's own session id (used to resume after a restart), if known.
 	start(ctx context.Context) (string, error)
-	// prompt begins a turn and returns once the agent has accepted it.
-	prompt(text string) error
+	// prompt begins a turn (or steers the running one, where the agent can)
+	// and returns once the agent has accepted it.
+	prompt(p promptInput) error
 	cancel() error
 	approve(approvalId, optionId string) error
+	answer(questionId string, answers []string, text string) error
+	// compact summarises the conversation to free context; undo drops the
+	// last turn. Both return a notSupported error where the CLI lacks it.
+	compact() error
+	undo() error
 	stop()
 	alive() bool
 	resumeId() string
+	// update applies changed settings to the running process where the CLI
+	// allows it; it reports whether a restart (with resume) is still needed.
+	update(s threadSettings) (restart bool)
+}
+
+// threadSettings are the per-thread choices that can change mid-session.
+type threadSettings struct {
+	Model  string
+	Effort string
+	Fast   bool
+	Mode   string // agent-native mode id; empty = derive from Access
+	Access string
+}
+
+// promptInput is one user prompt as the adapters see it.
+type promptInput struct {
+	Text      string
+	MessageId string // hub user message id (Codex clientUserMessageId)
+	Images    []promptImage
+}
+
+type promptImage struct {
+	Path string
+	Mime string
+	Data []byte
+}
+
+const (
+	maxPromptImages    = 10
+	maxPromptImageSize = 20 * 1024 * 1024
+)
+
+var imageTypes = map[string]string{
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+}
+
+// loadPromptImages reads image files for a prompt. Relative paths resolve
+// against cwd; only files under cwd or the home directory are allowed.
+func loadPromptImages(cwd string, paths []string) ([]promptImage, error) {
+	if len(paths) > maxPromptImages {
+		return nil, fmt.Errorf("at most %d images per prompt", maxPromptImages)
+	}
+	home, _ := os.UserHomeDir()
+	var out []promptImage
+	for _, p := range paths {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(cwd, p)
+		}
+		p = filepath.Clean(p)
+		if !pathWithin(p, cwd) && !pathWithin(p, home) {
+			return nil, fmt.Errorf("image outside the working directory and home: %s", p)
+		}
+		mime := imageTypes[strings.ToLower(filepath.Ext(p))]
+		if mime == "" {
+			return nil, fmt.Errorf("unsupported image type: %s", filepath.Base(p))
+		}
+		info, err := os.Stat(p)
+		if err != nil {
+			return nil, fmt.Errorf("image: %w", err)
+		}
+		if !info.Mode().IsRegular() || info.Size() > maxPromptImageSize {
+			return nil, fmt.Errorf("image %s is not a regular file under %d MB", filepath.Base(p), maxPromptImageSize>>20)
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil, fmt.Errorf("image: %w", err)
+		}
+		out = append(out, promptImage{Path: p, Mime: mime, Data: data})
+	}
+	return out, nil
+}
+
+func pathWithin(p, base string) bool {
+	if base == "" {
+		return false
+	}
+	rel, err := filepath.Rel(base, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// notSupported is the error for a feature agent's CLI lacks (409 at the hub).
+func notSupported(feature, agent string) error {
+	return fmt.Errorf("%s %s %s", feature, protocol.ErrNotSupported, agent)
+}
+
+func settingsOf(cfg protocol.ThreadStart) threadSettings {
+	return threadSettings{Model: cfg.Model, Effort: cfg.Effort, Fast: cfg.Fast, Mode: cfg.Mode, Access: cfg.Access}
 }
 
 // hubSink forwards adapter output to the hub as notifications.
@@ -125,7 +218,11 @@ func (a *Agent) threadStart(req protocol.ThreadStart) (protocol.ThreadStartResul
 	a.threadMu.Lock()
 	a.threads[req.ThreadId] = ad
 	a.threadMu.Unlock()
-	return protocol.ThreadStartResult{ResumeId: resume}, nil
+	res := protocol.ThreadStartResult{ResumeId: resume}
+	if f, ok := ad.(interface{ forkedFresh() bool }); ok {
+		res.ForkFallback = f.forkedFresh()
+	}
+	return res, nil
 }
 
 // errThreadNotRunning is matched by the hub (by text) to trigger a restart.
@@ -144,7 +241,41 @@ func (a *Agent) threadPrompt(req protocol.ThreadPrompt) error {
 	if err != nil {
 		return err
 	}
-	return ad.prompt(req.Text)
+	in := promptInput{Text: req.Text, MessageId: req.MessageId}
+	if len(req.Images) > 0 {
+		cwd := ""
+		if b, ok := ad.(interface{ workDir() string }); ok {
+			cwd = b.workDir()
+		}
+		if in.Images, err = loadPromptImages(cwd, req.Images); err != nil {
+			return err
+		}
+	}
+	return ad.prompt(in)
+}
+
+func (a *Agent) threadAnswer(req protocol.ThreadAnswer) error {
+	ad, err := a.runningThread(req.ThreadId)
+	if err != nil {
+		return err
+	}
+	return ad.answer(req.QuestionId, req.Answers, req.Text)
+}
+
+func (a *Agent) threadCompact(req protocol.ThreadRef) error {
+	ad, err := a.runningThread(req.ThreadId)
+	if err != nil {
+		return err
+	}
+	return ad.compact()
+}
+
+func (a *Agent) threadUndo(req protocol.ThreadRef) error {
+	ad, err := a.runningThread(req.ThreadId)
+	if err != nil {
+		return err
+	}
+	return ad.undo()
 }
 
 func (a *Agent) threadCancel(req protocol.ThreadRef) error {
@@ -161,6 +292,15 @@ func (a *Agent) threadApproval(req protocol.ThreadApproval) error {
 		return err
 	}
 	return ad.approve(req.ApprovalId, req.OptionId)
+}
+
+func (a *Agent) threadUpdate(req protocol.ThreadUpdate) (protocol.ThreadUpdateResult, error) {
+	ad, err := a.runningThread(req.ThreadId)
+	if err != nil {
+		return protocol.ThreadUpdateResult{}, err
+	}
+	restart := ad.update(threadSettings{Model: req.Model, Effort: req.Effort, Fast: req.Fast, Mode: req.Mode, Access: req.Access})
+	return protocol.ThreadUpdateResult{Restart: restart}, nil
 }
 
 func (a *Agent) threadStop(req protocol.ThreadRef) {
@@ -301,7 +441,101 @@ type adapterBase struct {
 	lastAssistant string
 	turnStart     time.Time
 	approvals     map[string]*pendingApproval
+	questions     map[string]*pendingQuestion
 	resume        string
+	set           threadSettings // current settings (updated live by update)
+	forkFallback  bool           // a fork was asked for but a fresh session started
+}
+
+func (b *adapterBase) forkedFresh() bool { return b.forkFallback }
+
+type pendingQuestion struct {
+	ch       chan questionReply
+	canceled chan struct{}
+	once     sync.Once
+	q        protocol.ThreadQuestion
+}
+
+type questionReply struct {
+	answers []string
+	text    string
+}
+
+func (b *adapterBase) workDir() string { return b.cfg.Cwd }
+
+// publishMeta reports the running agent's capabilities and commands.
+func (b *adapterBase) publishMeta(caps protocol.ThreadCapabilities, commands []protocol.AgentCommand) {
+	b.sink.state(protocol.ThreadState{Capabilities: &caps, Commands: commands})
+}
+
+// askQuestion surfaces a question and blocks until the hub answers (ok) or
+// the request is cancelled / ctx ends.
+func (b *adapterBase) askQuestion(ctx context.Context, q protocol.ThreadQuestion) (answers []string, text string, ok bool) {
+	if q.Options == nil {
+		q.Options = []protocol.QuestionOption{}
+	}
+	p := &pendingQuestion{ch: make(chan questionReply, 1), canceled: make(chan struct{}), q: q}
+	b.mu.Lock()
+	b.questions[q.Id] = p
+	b.mu.Unlock()
+	b.emit(protocol.ThreadEvent{Id: q.Id, Role: "question", Text: q.Text, Question: &q})
+	b.setStatus("waiting", "")
+
+	var reply questionReply
+	select {
+	case reply = <-p.ch:
+		ok = true
+	case <-p.canceled:
+	case <-ctx.Done():
+	}
+	b.mu.Lock()
+	delete(b.questions, q.Id)
+	remaining := len(b.questions) + len(b.approvals)
+	b.mu.Unlock()
+	answered := append([]string{}, reply.answers...)
+	if reply.text != "" {
+		answered = append(answered, reply.text)
+	}
+	if !ok {
+		answered = []string{"(cancelled)"}
+	}
+	b.sink.event(protocol.ThreadEvent{Id: q.Id, Question: &protocol.ThreadQuestion{Id: q.Id, Answered: answered}})
+	if remaining == 0 && ok && !b.stopping.Load() {
+		b.setStatus("working", "")
+	}
+	return reply.answers, reply.text, ok
+}
+
+func (b *adapterBase) answer(questionId string, answers []string, text string) error {
+	b.mu.Lock()
+	p := b.questions[questionId]
+	b.mu.Unlock()
+	if p == nil {
+		return fmt.Errorf("no pending question %q", questionId)
+	}
+	valid := map[string]bool{}
+	for _, o := range p.q.Options {
+		valid[o.Id] = true
+	}
+	for _, a := range answers {
+		if !valid[a] {
+			return fmt.Errorf("unknown option %q", a)
+		}
+	}
+	if len(answers) > 1 && !p.q.Multiple {
+		return fmt.Errorf("question takes one answer")
+	}
+	if text != "" && !p.q.AllowText {
+		return fmt.Errorf("question does not take free text")
+	}
+	if len(answers) == 0 && text == "" {
+		return fmt.Errorf("answer required")
+	}
+	select {
+	case p.ch <- questionReply{answers: answers, text: text}:
+	default:
+	}
+	return nil
 }
 
 type pendingApproval struct {
@@ -317,9 +551,26 @@ func newAdapterBase(cfg protocol.ThreadStart, sink threadSink) adapterBase {
 		sink:      sink,
 		run:       hex.EncodeToString(b),
 		approvals: map[string]*pendingApproval{},
+		questions: map[string]*pendingQuestion{},
 		resume:    cfg.ResumeId,
+		set:       settingsOf(cfg),
 	}
 }
+
+func (b *adapterBase) settings() threadSettings {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.set
+}
+
+func (b *adapterBase) setSettings(s threadSettings) {
+	b.mu.Lock()
+	b.set = s
+	b.mu.Unlock()
+}
+
+// fullAccess reports whether permission prompts are auto-approved.
+func (b *adapterBase) fullAccess() bool { return b.settings().Access == "full" }
 
 func (b *adapterBase) resumeId() string {
 	b.mu.Lock()
@@ -491,12 +742,17 @@ func (b *adapterBase) approve(approvalId, optionId string) error {
 	return nil
 }
 
-// cancelApprovals releases every blocked approval with "" (cancelled).
+// cancelApprovals releases every blocked approval with "" (cancelled) and
+// every pending question as unanswered.
 func (b *adapterBase) cancelApprovals() {
 	b.mu.Lock()
 	pending := make([]*pendingApproval, 0, len(b.approvals))
 	for _, p := range b.approvals {
 		pending = append(pending, p)
+	}
+	questions := make([]*pendingQuestion, 0, len(b.questions))
+	for _, q := range b.questions {
+		questions = append(questions, q)
 	}
 	b.mu.Unlock()
 	for _, p := range pending {
@@ -504,6 +760,9 @@ func (b *adapterBase) cancelApprovals() {
 		case p.ch <- "":
 		default:
 		}
+	}
+	for _, q := range questions {
+		q.once.Do(func() { close(q.canceled) })
 	}
 }
 

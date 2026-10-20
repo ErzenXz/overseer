@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -139,6 +140,10 @@ func (r *rateLimiter) allow(remoteAddr string) bool {
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(sessionCookie); err == nil && s.sessions.valid(c.Value) {
+			if !s.sameOriginWrite(r) {
+				httpError(w, http.StatusForbidden, "cross-origin request refused")
+				return
+			}
 			next(w, r)
 			return
 		}
@@ -151,4 +156,38 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		httpError(w, http.StatusUnauthorized, "not authenticated")
 	}
+}
+
+// sameOriginWrite guards cookie-authenticated writes against CSRF. Live
+// previews serve arbitrary dev-server code on origins that are same-site
+// with the hub (so the Lax session cookie is sent), which makes an Origin
+// check necessary: browsers always send Origin on non-GET requests.
+//
+// The hub's own origin is the request Host, the host a reverse proxy says it
+// forwarded (X-Forwarded-Host, for proxies that rewrite Host), or the public
+// URL the hub has learned.
+func (s *Server) sameOriginWrite(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // not a browser
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if strings.EqualFold(u.Host, r.Host) {
+		return true
+	}
+	if fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); fwd != "" && strings.EqualFold(u.Host, fwd) {
+		return true
+	}
+	if public, err := url.Parse(s.hubPublicURL()); err == nil && public.Host != "" && strings.EqualFold(u.Host, public.Host) {
+		_, preview := s.matchPreviewHost(u.Host)
+		return !preview
+	}
+	return false
 }

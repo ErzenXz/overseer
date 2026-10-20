@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -29,7 +30,7 @@ type claudeAdapter struct {
 	interrupted atomic.Bool
 
 	smu         sync.Mutex
-	ctlWait     map[string]chan struct{}
+	ctlWait     map[string]chan jsonObj
 	curMsg      string              // API message id being streamed
 	blockIds    map[int]string      // stream block index -> message id
 	streamed    map[string][]string // "<msg>/text" | "<msg>/thinking" -> streamed ids in order
@@ -38,6 +39,10 @@ type claudeAdapter struct {
 	alwaysAllow map[string]bool     // tools the user allowed for this process
 	planId      string
 	usage       protocol.Usage
+	commands    []protocol.AgentCommand
+	// turnActive: a turn is running, so a new prompt steers it (Claude
+	// reads streamed user messages mid-turn).
+	turnActive atomic.Bool
 }
 
 func newClaudeAdapter(cfg protocol.ThreadStart, sink threadSink) *claudeAdapter {
@@ -46,7 +51,7 @@ func newClaudeAdapter(cfg protocol.ThreadStart, sink threadSink) *claudeAdapter 
 		adapterBase: newAdapterBase(cfg, sink),
 		ctx:         ctx,
 		cancelCtx:   cancel,
-		ctlWait:     map[string]chan struct{}{},
+		ctlWait:     map[string]chan jsonObj{},
 		blockIds:    map[int]string{},
 		streamed:    map[string][]string{},
 		finalCount:  map[string]int{},
@@ -115,26 +120,52 @@ func mcpServerKey(name string, taken map[string]any) string {
 	}
 }
 
+// claudeArgs builds the CLI arguments for a thread (pure, for tests).
+func claudeArgs(cfg protocol.ThreadStart, set threadSettings) []string {
+	args := []string{
+		"--print", "--input-format", "stream-json", "--output-format", "stream-json",
+		"--verbose", "--include-partial-messages", "--permission-prompt-tool", "stdio",
+		"--permission-mode", claudeMode(set),
+	}
+	if set.Model != "" && set.Model != "default" {
+		args = append(args, "--model", set.Model)
+	}
+	if set.Effort != "" {
+		args = append(args, "--effort", set.Effort)
+	}
+	if set.Fast {
+		args = append(args, "--settings", `{"fastMode":true}`)
+	}
+	if cfg.ResumeId != "" && !(cfg.Fork && cfg.ForkAt != "") {
+		args = append(args, "--resume", cfg.ResumeId)
+		if cfg.Fork {
+			args = append(args, "--fork-session")
+		}
+	}
+	if mcp := claudeMcpConfig(cfg.McpServers); mcp != "" {
+		args = append(args, "--mcp-config", mcp)
+	}
+	return args
+}
+
+// claudeMode is the --permission-mode for settings: an explicit mode wins
+// over the legacy access level.
+func claudeMode(set threadSettings) string {
+	if set.Mode != "" {
+		return set.Mode
+	}
+	return claudePermissionMode(set.Access)
+}
+
 func (c *claudeAdapter) start(ctx context.Context) (string, error) {
 	path, err := lookAgentBinary("claude")
 	if err != nil {
 		return "", err
 	}
-	args := []string{
-		"--print", "--input-format", "stream-json", "--output-format", "stream-json",
-		"--verbose", "--include-partial-messages", "--permission-prompt-tool", "stdio",
-		"--permission-mode", claudePermissionMode(c.cfg.Access),
-	}
-	if c.cfg.Model != "" {
-		args = append(args, "--model", c.cfg.Model)
-	}
-	if c.cfg.ResumeId != "" {
-		args = append(args, "--resume", c.cfg.ResumeId)
-	}
-	if mcp := claudeMcpConfig(c.cfg.McpServers); mcp != "" {
-		args = append(args, "--mcp-config", mcp)
-	}
-	proc, err := startAgentProcess(path, args, c.cfg.Cwd, agentEnv())
+	// Claude can fork a whole session (--fork-session) but not cut it at an
+	// earlier turn: that falls back to a fresh session.
+	c.forkFallback = c.cfg.Fork && (c.cfg.ResumeId == "" || c.cfg.ForkAt != "")
+	proc, err := startAgentProcess(path, claudeArgs(c.cfg, c.settings()), c.cfg.Cwd, agentEnv())
 	if err != nil {
 		return "", err
 	}
@@ -145,8 +176,9 @@ func (c *claudeAdapter) start(ctx context.Context) (string, error) {
 	// Initialize the control protocol. Older CLIs may not answer; carry on
 	// after a grace period as long as the process is still up.
 	waiter := c.sendControl(map[string]any{"subtype": "initialize"})
+	var initResp jsonObj
 	select {
-	case <-waiter:
+	case initResp = <-waiter:
 	case <-proc.done:
 		return "", fmt.Errorf("claude exited during startup: %s", proc.exitError())
 	case <-time.After(20 * time.Second):
@@ -157,14 +189,90 @@ func (c *claudeAdapter) start(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("claude exited during startup: %s", proc.exitError())
 	}
 	c.started.Store(true)
+	c.publishMeta(claudeCapabilities(c.setCommands(claudeCommands(jObj(initResp, "response")))), c.commandList())
+	if c.cfg.Fork && !c.forkFallback {
+		return "", nil // the forked session's id arrives with system/init
+	}
+	if c.forkFallback {
+		return "", nil
+	}
 	return c.cfg.ResumeId, nil
 }
 
-// sendControl writes a control_request and returns a channel closed when the
-// matching control_response arrives.
-func (c *claudeAdapter) sendControl(request map[string]any) <-chan struct{} {
+// claudeCommands reads the command list from the initialize response.
+func claudeCommands(resp jsonObj) []protocol.AgentCommand {
+	var out []protocol.AgentCommand
+	for _, x := range findArray(resp, "commands") {
+		switch t := x.(type) {
+		case map[string]any:
+			if name := jStr(t, "name"); name != "" {
+				out = append(out, protocol.AgentCommand{Name: name, Description: jStr(t, "description"), Hint: jStr(t, "argumentHint", "argument_hint")})
+			}
+		case string:
+			out = append(out, protocol.AgentCommand{Name: t})
+		}
+	}
+	return out
+}
+
+func claudeCapabilities(commands []protocol.AgentCommand) protocol.ThreadCapabilities {
+	caps := protocol.ThreadCapabilities{Fork: true, Compact: true, Steer: true, Images: true, Commands: true}
+	for _, c := range commands {
+		caps.Review = caps.Review || c.Name == "review"
+	}
+	return caps
+}
+
+func (c *claudeAdapter) setCommands(cmds []protocol.AgentCommand) []protocol.AgentCommand {
+	c.smu.Lock()
+	defer c.smu.Unlock()
+	if len(cmds) > 0 {
+		c.commands = cmds
+	}
+	return c.commands
+}
+
+func (c *claudeAdapter) commandList() []protocol.AgentCommand {
+	c.smu.Lock()
+	defer c.smu.Unlock()
+	return c.commands
+}
+
+func (c *claudeAdapter) compact() error {
+	return c.prompt(promptInput{Text: "/compact"})
+}
+
+func (c *claudeAdapter) undo() error { return notSupported("undo", "claude") }
+
+// update switches the permission mode live (set_permission_mode); model,
+// effort and fast mode are command-line settings and need a restart.
+func (c *claudeAdapter) update(next threadSettings) bool {
+	cur := c.settings()
+	if next.Model != cur.Model || next.Effort != cur.Effort || next.Fast != cur.Fast {
+		return true
+	}
+	if claudeMode(next) != claudeMode(cur) {
+		waiter := c.sendControl(map[string]any{"subtype": "set_permission_mode", "mode": claudeMode(next)})
+		select {
+		case resp, ok := <-waiter:
+			if !ok || jStr(resp, "subtype") != "success" {
+				return true // e.g. bypassPermissions needs a fresh launch
+			}
+		case <-time.After(10 * time.Second):
+			return true
+		case <-c.ctx.Done():
+			return true
+		}
+	}
+	c.setSettings(next)
+	return false
+}
+
+// sendControl writes a control_request and returns a channel that receives
+// the matching control_response (then closes).
+func (c *claudeAdapter) sendControl(request map[string]any) <-chan jsonObj {
 	id := fmt.Sprintf("ovs-%d", c.ctlSeq.Add(1))
-	ch := make(chan struct{})
+	ch := make(chan jsonObj, 1)
 	c.smu.Lock()
 	c.ctlWait[id] = ch
 	c.smu.Unlock()
@@ -172,11 +280,27 @@ func (c *claudeAdapter) sendControl(request map[string]any) <-chan struct{} {
 	return ch
 }
 
-func (c *claudeAdapter) prompt(text string) error {
-	c.beginTurn()
-	c.smu.Lock()
-	c.planId = ""
-	c.smu.Unlock()
+// claudeUserContent builds the content blocks of a user message.
+func claudeUserContent(p promptInput) []map[string]any {
+	content := []map[string]any{}
+	for _, img := range p.Images {
+		content = append(content, map[string]any{"type": "image", "source": map[string]any{
+			"type": "base64", "media_type": img.Mime, "data": base64.StdEncoding.EncodeToString(img.Data),
+		}})
+	}
+	if p.Text != "" || len(content) == 0 {
+		content = append(content, map[string]any{"type": "text", "text": p.Text})
+	}
+	return content
+}
+
+func (c *claudeAdapter) prompt(p promptInput) error {
+	if !c.turnActive.Swap(true) {
+		c.beginTurn()
+		c.smu.Lock()
+		c.planId = ""
+		c.smu.Unlock()
+	}
 	session := c.resumeId()
 	if session == "" {
 		session = "default"
@@ -185,7 +309,7 @@ func (c *claudeAdapter) prompt(text string) error {
 		"type": "user",
 		"message": map[string]any{
 			"role":    "user",
-			"content": []map[string]string{{"type": "text", "text": text}},
+			"content": claudeUserContent(p),
 		},
 		"parent_tool_use_id": nil,
 		"session_id":         session,
@@ -220,6 +344,17 @@ func (c *claudeAdapter) onLine(line []byte) {
 	case "system":
 		if jStr(m, "subtype") == "init" {
 			c.setResumeId(jStr(m, "session_id"))
+			if len(c.commandList()) == 0 {
+				var cmds []protocol.AgentCommand
+				for _, n := range jArr(m, "slash_commands") {
+					if name, ok := n.(string); ok {
+						cmds = append(cmds, protocol.AgentCommand{Name: name})
+					}
+				}
+				if len(cmds) > 0 {
+					c.publishMeta(claudeCapabilities(c.setCommands(cmds)), cmds)
+				}
+			}
 		}
 	case "stream_event":
 		if m["parent_tool_use_id"] != nil {
@@ -227,7 +362,11 @@ func (c *claudeAdapter) onLine(line []byte) {
 		}
 		c.onStreamEvent(jObj(m, "event"))
 	case "assistant":
-		c.onAssistant(jObj(m, "message"), m["parent_tool_use_id"] != nil)
+		msg := jObj(m, "message")
+		if m["parent_tool_use_id"] == nil {
+			c.noteContext(jObj(msg, "usage"))
+		}
+		c.onAssistant(msg, m["parent_tool_use_id"] != nil)
 	case "user":
 		msg := jObj(m, "message")
 		for _, b := range jArr(msg, "content") {
@@ -240,12 +379,14 @@ func (c *claudeAdapter) onLine(line []byte) {
 	case "control_request":
 		go c.onControlRequest(line)
 	case "control_response":
-		id := jStr(jObj(m, "response"), "request_id")
+		resp := jObj(m, "response")
+		id := jStr(resp, "request_id")
 		c.smu.Lock()
 		ch := c.ctlWait[id]
 		delete(c.ctlWait, id)
 		c.smu.Unlock()
 		if ch != nil {
+			ch <- resp
 			close(ch)
 		}
 	}
@@ -504,7 +645,30 @@ func (c *claudeAdapter) onToolResult(block jsonObj) {
 	}})
 }
 
+// noteContext records the context fill from a top-level assistant message.
+func (c *claudeAdapter) noteContext(u jsonObj) {
+	in, ok := jNum(u, "input_tokens")
+	if !ok {
+		return
+	}
+	cacheW, _ := jNum(u, "cache_creation_input_tokens")
+	cacheR, _ := jNum(u, "cache_read_input_tokens")
+	c.smu.Lock()
+	c.usage.ContextTokens = int64(in + cacheW + cacheR)
+	c.smu.Unlock()
+}
+
 func (c *claudeAdapter) onResult(m jsonObj) {
+	c.turnActive.Store(false)
+	for _, mu := range jObj(m, "modelUsage") {
+		if o, ok := mu.(map[string]any); ok {
+			if w, ok := jNum(o, "contextWindow"); ok && int64(w) > 0 {
+				c.smu.Lock()
+				c.usage.ContextWindow = max(c.usage.ContextWindow, int64(w))
+				c.smu.Unlock()
+			}
+		}
+	}
 	interrupted := c.interrupted.Swap(false)
 	if interrupted {
 		c.emit(protocol.ThreadEvent{Id: c.newId("stop"), Role: "status", Text: "Cancelled"})
@@ -553,6 +717,68 @@ func (c *claudeAdapter) onResult(m jsonObj) {
 
 // --- control requests from the CLI (permission prompts) ---
 
+// claudeQuestions maps AskUserQuestion input onto question messages. Option
+// ids are the labels (what Claude expects back).
+func claudeQuestions(idPrefix string, input jsonObj) []protocol.ThreadQuestion {
+	var out []protocol.ThreadQuestion
+	for i, x := range jArr(input, "questions") {
+		m, ok := x.(map[string]any)
+		if !ok {
+			continue
+		}
+		q := protocol.ThreadQuestion{
+			Id: fmt.Sprintf("%s-%d", idPrefix, i), Text: jStr(m, "question"),
+			Multiple: jBool(m, "multiSelect"), AllowText: true, Options: []protocol.QuestionOption{},
+		}
+		if h := jStr(m, "header"); h != "" && q.Text == "" {
+			q.Text = h
+		}
+		for _, o := range jArr(m, "options") {
+			if om, ok := o.(map[string]any); ok && jStr(om, "label") != "" {
+				q.Options = append(q.Options, protocol.QuestionOption{Id: jStr(om, "label"), Label: jStr(om, "label"), Description: jStr(om, "description")})
+			}
+		}
+		out = append(out, q)
+	}
+	return out
+}
+
+// claudeAnswerInput is the AskUserQuestion input with the user's answers
+// added (answers: question text -> comma-separated labels / free text).
+func claudeAnswerInput(input jsonObj, questions []protocol.ThreadQuestion, replies [][]string) jsonObj {
+	out := jsonObj{}
+	for k, v := range input {
+		out[k] = v
+	}
+	answers := map[string]string{}
+	for i, q := range questions {
+		if i < len(replies) {
+			answers[q.Text] = strings.Join(replies[i], ", ")
+		}
+	}
+	out["answers"] = answers
+	return out
+}
+
+func (c *claudeAdapter) askUserQuestion(requestId string, input json.RawMessage, reply func(map[string]any)) {
+	var in jsonObj
+	json.Unmarshal(input, &in)
+	questions := claudeQuestions(c.scopedId("q", requestId), in)
+	var replies [][]string
+	for _, q := range questions {
+		answers, text, ok := c.askQuestion(c.ctx, q)
+		if !ok {
+			reply(map[string]any{"behavior": "deny", "message": "The user dismissed the question."})
+			return
+		}
+		if text != "" {
+			answers = append(answers, text)
+		}
+		replies = append(replies, answers)
+	}
+	reply(map[string]any{"behavior": "allow", "updatedInput": claudeAnswerInput(in, questions, replies)})
+}
+
 func (c *claudeAdapter) onControlRequest(line []byte) {
 	var req struct {
 		RequestId string `json:"request_id"`
@@ -582,11 +808,15 @@ func (c *claudeAdapter) onControlRequest(line []byte) {
 		input = json.RawMessage("{}")
 	}
 	allow := func() { reply(map[string]any{"behavior": "allow", "updatedInput": input}) }
+	if req.Request.ToolName == "AskUserQuestion" {
+		c.askUserQuestion(req.RequestId, input, reply)
+		return
+	}
 
 	c.smu.Lock()
 	always := c.alwaysAllow[req.Request.ToolName]
 	c.smu.Unlock()
-	if always || c.cfg.Access == "full" {
+	if always || c.fullAccess() {
 		allow()
 		return
 	}

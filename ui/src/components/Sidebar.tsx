@@ -8,7 +8,8 @@ import { useShell } from '../shell'
 import type { FleetSession, Thread } from '../types'
 import Icon, { type IconName } from './Icon'
 import { AppIcon } from './Logo'
-import { Menu, MenuItem, MenuLabel, MenuSeparator, Submenu, SwitchMark } from './Menu'
+import { ContextMenu, Menu, MenuItem, MenuLabel, MenuSeparator, Submenu, SwitchMark } from './Menu'
+import { TerminalMenuItems, ThreadMenuItems } from './SessionActions'
 
 export const docsURL = 'https://github.com/ErzenXz/overseer#readme'
 
@@ -27,16 +28,21 @@ export interface SessionRow {
   unread: boolean
   pr?: Thread['pr']
   active: boolean
+  pinned: boolean
+  archived: boolean
+  folder: string
+  thread?: Thread
+  session?: FleetSession
 }
 
 type Sort = 'updated' | 'created' | 'name' | 'status'
-type Filter = 'all' | 'active' | 'unread' | 'prs' | 'agents' | 'terminals'
-type Group = 'none' | 'machine' | 'agent' | 'status'
+type Filter = 'all' | 'active' | 'unread' | 'prs' | 'agents' | 'terminals' | 'archived'
+type Group = 'none' | 'folder' | 'machine' | 'agent' | 'status'
 type Property = 'status' | 'time' | 'pr' | 'machine' | 'agent'
 
 const sortLabels: Record<Sort, string> = { updated: 'Last updated', created: 'Created', name: 'Name', status: 'Status' }
-const filterLabels: Record<Filter, string> = { all: 'All sessions', active: 'Active', unread: 'Unread', prs: 'With pull request', agents: 'Agent sessions', terminals: 'Terminals' }
-const groupLabels: Record<Group, string> = { none: 'None', machine: 'Machines', agent: 'Agents', status: 'Status' }
+const filterLabels: Record<Filter, string> = { all: 'All sessions', active: 'Active', unread: 'Unread', prs: 'With pull request', agents: 'Agent sessions', terminals: 'Terminals', archived: 'Archived' }
+const groupLabels: Record<Group, string> = { none: 'None', folder: 'Folders', machine: 'Machines', agent: 'Agents', status: 'Status' }
 const propertyLabels: Record<Property, string> = { status: 'Status', time: 'Last updated', pr: 'Pull request', machine: 'Machine', agent: 'Agent' }
 const defaultProps: Record<Property, boolean> = { status: true, time: true, pr: true, machine: false, agent: false }
 const statusRank: Record<string, number> = { waiting: 0, working: 1, starting: 1, error: 2, idle: 3, stopped: 4, exited: 5 }
@@ -58,6 +64,10 @@ export function threadRow(thread: Thread, path: string): SessionRow {
     unread: isUnread(thread),
     pr: thread.pr,
     active: path === `/sessions/${thread.id}`,
+    pinned: !!thread.pinned,
+    archived: !!thread.archived,
+    folder: thread.folder ?? '',
+    thread,
   }
 }
 
@@ -76,6 +86,10 @@ export function terminalRow(session: FleetSession, path: string, search: string)
     createdAt: session.createdAt,
     updatedAt: session.lastActivity,
     unread: false,
+    pinned: false,
+    archived: false,
+    folder: '',
+    session,
     active: `${path}${search}`.includes(`/machines/${session.deviceId}`) && search.includes(`session=${encodeURIComponent(session.name)}`),
   }
 }
@@ -207,6 +221,8 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
     const owned = new Set((threads ?? []).map((thread) => `${thread.deviceId}:${thread.terminal}`))
     const terminalRows = showTerminals ? (terminals ?? []).filter((session) => !owned.has(`${session.deviceId}:${session.name}`)).map((session) => terminalRow(session, location.pathname, location.search)) : []
     let all = [...threadRows, ...terminalRows]
+    // Archived sessions only show in the Archived view.
+    all = filter === 'archived' ? all.filter((row) => row.archived) : all.filter((row) => !row.archived)
     if (filter === 'active') all = all.filter((row) => ['working', 'starting', 'waiting'].includes(row.status))
     if (filter === 'unread') all = all.filter((row) => row.unread)
     if (filter === 'prs') all = all.filter((row) => row.pr)
@@ -222,15 +238,22 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
   }, [threads, terminals, filter, sort, location.pathname, location.search, showTerminals])
 
   const groups = useMemo(() => {
-    if (group === 'none') return [{ key: 'all', label: '', rows }]
+    // Pinned sessions get their own section above, whatever the grouping.
+    const rest = rows.filter((row) => !row.pinned)
+    const head: { key: string; label: string; rows: SessionRow[] }[] = []
+    if (group === 'none') return [{ key: 'all', label: '', rows: rest }]
     const buckets = new Map<string, SessionRow[]>()
-    for (const row of rows) {
-      const label = group === 'machine' ? row.machine : group === 'agent' ? row.agent : row.statusText || (row.status === 'idle' ? 'Done' : row.status === 'exited' ? 'Ended' : 'Other')
+    for (const row of rest) {
+      const label = group === 'folder' ? row.folder || 'No folder' : group === 'machine' ? row.machine : group === 'agent' ? row.agent : row.statusText || (row.status === 'idle' ? 'Done' : row.status === 'exited' ? 'Ended' : 'Other')
       buckets.set(label, [...(buckets.get(label) ?? []), row])
     }
-    return [...buckets.entries()].map(([label, items]) => ({ key: label, label, rows: items }))
+    const entries = [...buckets.entries()]
+    if (group === 'folder') entries.sort(([a], [b]) => (a === 'No folder' ? 1 : b === 'No folder' ? -1 : a.localeCompare(b)))
+    return [...head, ...entries.map(([label, items]) => ({ key: label, label, rows: items }))]
   }, [rows, group])
 
+  const pinnedRows = rows.filter((row) => row.pinned)
+  const [pinnedOpen, setPinnedOpen] = usePref('sidebar.pinnedOpen', true)
   const visibleProps = Object.values(props).filter(Boolean).length
   const customized = sort !== 'updated' || filter !== 'all' || group !== 'none' || compact
   const unreadCount = (threads ?? []).filter(isUnread).length
@@ -318,14 +341,23 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
             </Menu>
           </div>
         </div>
-        <div className="sessions-sub">
+
+        </div>
+        <div className="sessions-scroll">
+          {pinnedRows.length > 0 && filter !== 'archived' && (
+            <>
+              <div className="sessions-sub sessions-sub-inline">
+                <button onClick={() => setPinnedOpen(!pinnedOpen)} aria-expanded={pinnedOpen}><Icon name="pin" size={16} />Pinned</button>
+              </div>
+              {pinnedOpen && pinnedRows.map((row) => <SessionLink key={row.key} row={row} props={props} />)}
+            </>
+          )}
+        <div className="sessions-sub sessions-sub-inline">
           <button onClick={() => setRecentOpen(!recentOpen)} aria-expanded={recentOpen}>
             <Icon name="clock" size={17} />
             {group === 'none' ? (filter === 'all' ? 'Recent' : filterLabels[filter]) : `By ${groupLabels[group].toLowerCase()}`}
           </button>
         </div>
-        </div>
-        <div className="sessions-scroll">
           {threadsError && !threads && <p className="sidebar-message">Couldn’t load sessions.</p>}
           {threads === null && !threadsError && [0, 1, 2, 3].map((index) => <div key={index} className="mx-3 my-3 h-9 skeleton" />)}
           {recentOpen && threads && rows.length === 0 && <p className="sidebar-message">{filter === 'all' ? 'No sessions yet. Start one above.' : 'Nothing matches this filter.'}</p>}
@@ -350,27 +382,69 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
 }
 
 function SessionLink({ row, props }: { row: SessionRow; props: Record<Property, boolean> }) {
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
+  const [renaming, setRenaming] = useState(false)
   const meta: React.ReactNode[] = []
   if (props.status && row.statusText) meta.push(<span key="s" className={row.tone}>{row.tone === 'working' ? <span className="shimmer">{row.statusText}</span> : row.statusText}</span>)
   if (props.time && !(props.status && row.tone === 'ok')) meta.push(<span key="t">{relativeTime(row.updatedAt)}</span>)
   if (props.machine) meta.push(<span key="m" className="truncate">{row.machine}</span>)
   if (props.agent) meta.push(<span key="a">{row.agent}</span>)
   if (props.pr && row.pr) meta.push(<span key="p" className="pr"><Icon name={row.pr.state === 'merged' ? 'git-merge' : 'pull-request'} size={14} />1</span>)
+  const items = (close: () => void) => row.thread
+    ? <ThreadMenuItems thread={row.thread} close={close} onRename={() => setRenaming(true)} />
+    : row.session ? <TerminalMenuItems session={row.session} close={close} /> : null
+  const stop = (event: React.MouseEvent) => { event.preventDefault(); event.stopPropagation() }
+  const rename = (value: string) => {
+    setRenaming(false)
+    const title = value.trim()
+    if (row.thread && title && title !== row.thread.title) patchThread(row.thread.id, { title }).catch(() => {})
+  }
+
   return (
-    <Link to={row.to} className="session-row" aria-current={row.active ? 'page' : undefined} title={`${row.title} · ${row.machine}`}>
-      <span className="session-row-lead">
-        {row.kind === 'terminal' ? <Icon name="terminal" size={13} /> : row.status === 'error' ? <span className="dot dot-red" style={{ width: 6, height: 6 }} /> : row.status === 'waiting' ? <span className="dot dot-amber" style={{ width: 6, height: 6 }} /> : <span className="tiny-dot" />}
-      </span>
-      <span className="session-row-body">
-        <span className="session-row-title" style={row.unread ? { paddingRight: 18 } : undefined}>{row.title}</span>
-        {meta.length > 0 && (
-          <span className="session-row-meta">
-            {meta.map((node, index) => <span key={index} className="contents">{index > 0 && <span className="sep">·</span>}{node}</span>)}
-          </span>
-        )}
-      </span>
-      {row.unread && <span className="session-row-unread" aria-label="Unread" />}
-    </Link>
+    <div className={`session-row-wrap ${menuAt ? 'menu-open' : ''}`} onContextMenu={(event) => { event.preventDefault(); setMenuAt({ x: event.clientX, y: event.clientY }) }}>
+      <Link to={row.to} className="session-row" aria-current={row.active ? 'page' : undefined} onClick={(event) => { if (renaming) event.preventDefault() }}>
+        <span className="session-row-lead">
+          {row.kind === 'terminal' ? <Icon name="terminal" size={13} /> : row.pinned ? <Icon name="pin" size={12} /> : row.status === 'error' ? <span className="dot dot-red" style={{ width: 6, height: 6 }} /> : row.status === 'waiting' ? <span className="dot dot-amber" style={{ width: 6, height: 6 }} /> : <span className="tiny-dot" />}
+        </span>
+        <span className="session-row-body">
+          {renaming ? (
+            <input
+              className="session-rename"
+              autoFocus
+              defaultValue={row.title}
+              aria-label="Session name"
+              onFocus={(event) => event.currentTarget.select()}
+              onClick={stop}
+              onBlur={(event) => rename(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') rename(event.currentTarget.value)
+                if (event.key === 'Escape') setRenaming(false)
+              }}
+            />
+          ) : <span className="session-row-title">{row.title}</span>}
+          {meta.length > 0 && (
+            <span className="session-row-meta">
+              {meta.map((node, index) => <span key={index} className="contents">{index > 0 && <span className="sep">·</span>}{node}</span>)}
+            </span>
+          )}
+        </span>
+        {row.unread && <span className="session-row-unread" aria-label="Unread" />}
+      </Link>
+      {!renaming && (
+        <span className="session-row-actions" onClick={stop}>
+          {row.thread && (
+            <>
+              <button className="icon-btn icon-btn-sm" aria-label={row.pinned ? 'Unpin' : 'Pin'} title={row.pinned ? 'Unpin' : 'Pin to top'} onClick={(event) => { stop(event); patchThread(row.thread!.id, { pinned: !row.pinned }).catch(() => {}) }}><Icon name={row.pinned ? 'pin-off' : 'pin'} size={15} /></button>
+              <button className="icon-btn icon-btn-sm" aria-label={row.archived ? 'Unarchive' : 'Archive'} title={row.archived ? 'Unarchive' : 'Archive'} onClick={(event) => { stop(event); patchThread(row.thread!.id, { archived: !row.archived, pinned: false }).catch(() => {}) }}><Icon name={row.archived ? 'unarchive' : 'archive'} size={15} /></button>
+            </>
+          )}
+          <Menu placement="bottom-start" width={250} trigger={<button className="icon-btn icon-btn-sm" aria-label="Session actions" title="More"><Icon name="more" size={15} /></button>}>
+            {items}
+          </Menu>
+        </span>
+      )}
+      {menuAt && <ContextMenu at={menuAt} onClose={() => setMenuAt(null)}>{items}</ContextMenu>}
+    </div>
   )
 }
 
@@ -414,7 +488,7 @@ function SettingsNav({ onClose }: { onClose: () => void }) {
     )
   }
   const personal = ['preferences', 'shortcuts', 'notifications'].map(link).filter(Boolean)
-  const hub = ['general', 'connections', 'machines', 'usage'].map(link).filter(Boolean)
+  const hub = ['general', 'connections', 'machines', 'previews', 'usage'].map(link).filter(Boolean)
   const products = ['agents', 'automations', 'mcp', 'review'].map(link).filter(Boolean)
   const advanced = ['presets', 'tokens'].map(link).filter(Boolean)
   return (

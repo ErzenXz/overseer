@@ -11,6 +11,9 @@ const (
 	TypeThreadCancel   = "thread.cancel"
 	TypeThreadApproval = "thread.approval"
 	TypeThreadStop     = "thread.stop"
+	TypeThreadCompact  = "thread.compact"
+	TypeThreadUndo     = "thread.undo"
+	TypeThreadAnswer   = "thread.answer"
 	TypeAgentsDetect   = "agents.detect"
 	TypeDesktopProbe   = "desktop.probe"
 
@@ -47,20 +50,65 @@ type ThreadStart struct {
 	Cwd        string      `json:"cwd"`
 	Model      string      `json:"model,omitempty"`
 	Access     string      `json:"access"`
+	Effort     string      `json:"effort,omitempty"` // thinking level id (agent-native)
+	Fast       bool        `json:"fast,omitempty"`   // fast / priority tier
+	Mode       string      `json:"mode,omitempty"`   // agent-native mode id; wins over Access
 	ResumeId   string      `json:"resumeId,omitempty"`
 	McpServers []McpServer `json:"mcpServers"`
+	// Fork starts a copy of the ResumeId session instead of resuming it.
+	// ForkAt (a hub user message id) keeps only the turns through that
+	// prompt, where the CLI can (Codex); otherwise the device starts a
+	// fresh session and reports ForkFallback.
+	Fork   bool   `json:"fork,omitempty"`
+	ForkAt string `json:"forkAt,omitempty"`
 }
 
 // ThreadStartResult is the reply to thread.start.
 type ThreadStartResult struct {
 	ResumeId string `json:"resumeId,omitempty"`
+	// ForkFallback: a fork was asked for but the agent started a fresh
+	// session (the hub then sends the transcript with the first prompt).
+	ForkFallback bool `json:"forkFallback,omitempty"`
 }
 
-// ThreadPrompt sends one user turn to a running thread.
+// ThreadPrompt sends one user turn to a running thread. When a turn is
+// already running, agents that can steer add it to that turn.
 type ThreadPrompt struct {
-	ThreadId string `json:"threadId"`
-	Text     string `json:"text"`
+	ThreadId  string   `json:"threadId"`
+	Text      string   `json:"text"`
+	MessageId string   `json:"messageId,omitempty"` // hub id of the user message
+	Images    []string `json:"images,omitempty"`    // image file paths on the device
 }
+
+// ThreadAnswer replies to a pending question.
+type ThreadAnswer struct {
+	ThreadId   string   `json:"threadId"`
+	QuestionId string   `json:"questionId"`
+	Answers    []string `json:"answers"`
+	Text       string   `json:"text,omitempty"`
+}
+
+// ThreadCapabilities says which native features a thread's agent supports.
+type ThreadCapabilities struct {
+	Fork     bool `json:"fork"`
+	Compact  bool `json:"compact"`
+	Undo     bool `json:"undo"`
+	Steer    bool `json:"steer"`
+	Images   bool `json:"images"`
+	Commands bool `json:"commands"`
+	Review   bool `json:"review"`
+}
+
+// AgentCommand is one of the agent's own slash commands.
+type AgentCommand struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Hint        string `json:"hint,omitempty"`
+}
+
+// ErrNotSupported prefixes device errors for features an agent lacks; the
+// hub turns them into 409s.
+const ErrNotSupported = "not supported by"
 
 // ThreadRef names a thread (thread.cancel, thread.stop).
 type ThreadRef struct {
@@ -146,6 +194,24 @@ type ThreadEvent struct {
 	Approval   *ThreadApprovalRequest `json:"approval,omitempty"`
 	Turn       string                 `json:"turn,omitempty"`
 	DurationMs int64                  `json:"durationMs,omitempty"`
+	Question   *ThreadQuestion        `json:"question,omitempty"`
+}
+
+// ThreadQuestion asks the user to pick options and/or type an answer.
+type ThreadQuestion struct {
+	Id        string           `json:"id"`
+	Text      string           `json:"text"`
+	Options   []QuestionOption `json:"options"`
+	Multiple  bool             `json:"multiple,omitempty"`
+	AllowText bool             `json:"allowText,omitempty"`
+	Answered  []string         `json:"answered,omitempty"`
+}
+
+// QuestionOption is one choice of a question.
+type QuestionOption struct {
+	Id          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 // ThreadEventMsg is the payload of a thread.event notification.
@@ -156,9 +222,11 @@ type ThreadEventMsg struct {
 
 // Usage is cumulative token usage for a thread.
 type Usage struct {
-	InputTokens  int64   `json:"inputTokens"`
-	OutputTokens int64   `json:"outputTokens"`
-	CostUsd      float64 `json:"costUsd,omitempty"`
+	InputTokens   int64   `json:"inputTokens"`
+	OutputTokens  int64   `json:"outputTokens"`
+	CostUsd       float64 `json:"costUsd,omitempty"`
+	ContextTokens int64   `json:"contextTokens,omitempty"` // latest context fill
+	ContextWindow int64   `json:"contextWindow,omitempty"`
 }
 
 // ThreadState is the payload of a thread.state notification. Empty fields
@@ -169,6 +237,10 @@ type ThreadState struct {
 	Error    string `json:"error,omitempty"`
 	ResumeId string `json:"resumeId,omitempty"`
 	Usage    *Usage `json:"usage,omitempty"`
+	// Capabilities and Commands describe the running agent (sent after
+	// start and whenever the agent's command list changes).
+	Capabilities *ThreadCapabilities `json:"capabilities,omitempty"`
+	Commands     []AgentCommand      `json:"commands,omitempty"`
 }
 
 // TcpOpen asks the agent to dial a local TCP port and bridge it on Channel.

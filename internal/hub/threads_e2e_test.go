@@ -29,6 +29,10 @@ func TestMain(m *testing.M) {
 		fakeACPAgent()
 		os.Exit(0)
 	}
+	if os.Getenv(fakeHTTPEnv) == "1" {
+		fakeHTTPApp()
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
 }
 

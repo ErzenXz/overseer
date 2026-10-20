@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { accessLevels, agentCatalog, agentInfo } from '../agents'
+import { agentCatalog, agentInfo } from '../agents'
 import AddDeviceModal from '../components/AddDeviceModal'
 import Icon, { AgentMark, type IconName } from '../components/Icon'
 import { Switch } from '../components/Menu'
@@ -9,7 +9,7 @@ import { settingsSections } from '../settings'
 import { SidebarToggle, useOwnHeader } from '../shell'
 import { useDevices, usePref, useThreads } from '../store'
 import type { ExecResult } from '../types'
-import { McpHelp, Presets, ApiTokens, SoftwareUpdates } from './SettingsParts'
+import { McpHelp, Presets, ApiTokens, PreviewSettings, SoftwareUpdates } from './SettingsParts'
 import type { ComposerSettings } from '../components/Composer'
 
 export default function SettingsPage() {
@@ -40,6 +40,7 @@ export default function SettingsPage() {
               {section === 'general' && <SoftwareUpdates />}
               {section === 'connections' && <Connections />}
               {section === 'machines' && <MachinesSettings />}
+              {section === 'previews' && <PreviewSettings />}
               {section === 'usage' && <Usage />}
               {section === 'agents' && <AgentsSettings />}
               {section === 'automations' && <LinkCard to="/automations" icon="automation" title="Open Automations" text="Create schedules, run them now, and see past runs." />}
@@ -71,7 +72,7 @@ function Overview() {
     <>
       <h1 className="settings-h1">{name || 'Overseer'}</h1>
       <p className="settings-sub">Hub preferences and settings</p>
-      <div className="settings-group">{['general', 'connections', 'machines', 'usage'].map(row)}</div>
+      <div className="settings-group">{['general', 'connections', 'machines', 'previews', 'usage'].map(row)}</div>
       <h2 className="settings-h2">Products</h2>
       <p className="settings-sub" style={{ fontSize: 15 }}>Configure agents and the tools they get</p>
       <div className="settings-group">{['agents', 'automations', 'mcp', 'review'].map(row)}</div>
@@ -108,7 +109,7 @@ function Field({ title, sub, children }: { title: string; sub?: string; children
 function Preferences() {
   const [name, setName] = usePref('displayName', 'Overseer')
   const [theme, setTheme] = usePref<'system' | 'light' | 'dark'>('theme', 'system')
-  const [defaults, setDefaults] = usePref<ComposerSettings>('composer.defaults', { deviceId: '', agent: 'claude', model: '', access: 'auto', cwd: '' })
+  const [defaults, setDefaults] = usePref<Partial<ComposerSettings>>('composer.defaults', {})
   const [terminals, setTerminals] = usePref('sidebar.terminals', false)
   return (
     <div className="settings-group">
@@ -121,14 +122,12 @@ function Preferences() {
         </div>
       </Field>
       <Field title="Default agent" sub="Preselected when you start a new session">
-        <select className="select" value={defaults.agent} onChange={(event) => setDefaults({ ...defaults, agent: event.target.value, model: '' })}>
+        <select className="select" value={defaults.agent ?? 'claude'} onChange={(event) => setDefaults({ ...defaults, agent: event.target.value, model: '', effort: '', fast: false, mode: '' })}>
           {agentCatalog.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
         </select>
       </Field>
-      <Field title="Default access" sub={accessLevels.find((item) => item.id === defaults.access)?.description}>
-        <select className="select" value={defaults.access} onChange={(event) => setDefaults({ ...defaults, access: event.target.value as ComposerSettings['access'] })}>
-          {accessLevels.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}
-        </select>
+      <Field title="Model, thinking and mode" sub="Picked in the composer and remembered per agent">
+        <Link to="/" className="settings-row-end hover:text-ink">Open composer<Icon name="chevron" size={15} /></Link>
       </Field>
       <Field title="Show terminals in the sidebar" sub="Plain terminal sessions appear next to agent sessions">
         <Switch checked={terminals} label="Show terminals in the sidebar" onChange={setTerminals} />

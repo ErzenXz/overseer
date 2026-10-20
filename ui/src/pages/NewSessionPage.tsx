@@ -4,23 +4,29 @@ import { api } from '../api'
 import Composer, { ContextStrip, type ComposerSettings } from '../components/Composer'
 import Icon from '../components/Icon'
 import { LogoMark } from '../components/Logo'
+import { accessForKind, builtinOptions, modeOf } from '../agentOptions'
 import { createThread, terminalsResource, useDevices, usePref, useThreads } from '../store'
-import type { Access } from '../types'
 
 const suggestions = [
-  { icon: 'code' as const, text: 'Fix the failing tests and explain the root cause' },
-  { icon: 'pull-request' as const, text: 'Review my open pull request for bugs' },
-  { icon: 'sparkles' as const, text: 'Add a dark mode to the settings page' },
-  { icon: 'disk' as const, text: 'Find what is using the most disk space and clean safe caches' },
+  { icon: 'code' as const, label: 'Fix failing tests', text: 'Run the tests, fix what fails, and explain the root cause.' },
+  { icon: 'pull-request' as const, label: 'Review my PR', text: 'Review my open pull request for bugs and risky changes.' },
+  { icon: 'disk' as const, label: 'Free up disk space', text: 'Find what is using the most disk space and clean caches that rebuild themselves.' },
 ]
+
+type AgentChoice = Pick<ComposerSettings, 'model' | 'effort' | 'fast' | 'mode'>
+
+const blank: ComposerSettings = { deviceId: '', agent: 'claude', model: '', effort: '', fast: false, mode: '', cwd: '' }
 
 export default function NewSessionPage() {
   const { value: devices } = useDevices()
   const { value: threads } = useThreads()
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
-  const [defaults, setDefaults] = usePref<ComposerSettings>('composer.defaults', { deviceId: '', agent: 'claude', model: '', access: 'auto', cwd: '' })
-  const [mode, setMode] = useState<'agent' | 'ask' | 'terminal'>(params.get('mode') === 'terminal' ? 'terminal' : 'agent')
+  const [stored, setDefaults] = usePref<Partial<ComposerSettings>>('composer.defaults', blank)
+  // Each agent remembers its own model, thinking level, speed and mode.
+  const [perAgent, setPerAgent] = usePref<Record<string, AgentChoice>>('composer.perAgent', {})
+  const defaults: ComposerSettings = { ...blank, ...stored }
+  const [mode, setMode] = useState<'agent' | 'terminal'>(params.get('mode') === 'terminal' ? 'terminal' : 'agent')
   const [settings, setSettings] = useState<ComposerSettings>(defaults)
   const [seed, setSeed] = useState(params.get('prompt') ?? '')
   const online = useMemo(() => (devices ?? []).filter((device) => device.online), [devices])
@@ -38,8 +44,15 @@ export default function NewSessionPage() {
   }, [devices]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = (next: ComposerSettings) => {
-    setSettings(next)
-    setDefaults(next)
+    let value = next
+    if (next.agent !== settings.agent) {
+      const remembered = perAgent[next.agent]
+      value = { ...next, ...(remembered ?? { model: '', effort: '', fast: false, mode: '' }) }
+    } else {
+      setPerAgent({ ...perAgent, [next.agent]: { model: next.model, effort: next.effort, fast: next.fast, mode: next.mode } })
+    }
+    setSettings(value)
+    setDefaults(value)
   }
 
   const start = async (text: string) => {
@@ -52,8 +65,18 @@ export default function NewSessionPage() {
       navigate(`/machines/${effective.deviceId}?tab=terminal&session=${encodeURIComponent(name)}`)
       return
     }
-    const access: Access = mode === 'ask' ? 'ask' : effective.access
-    const thread = await createThread({ deviceId: effective.deviceId, agent: effective.agent, model: effective.model || undefined, cwd: effective.cwd, prompt: text, access })
+    const kind = modeOf(builtinOptions(effective.agent), effective.mode)?.kind
+    const thread = await createThread({
+      deviceId: effective.deviceId,
+      agent: effective.agent,
+      cwd: effective.cwd,
+      prompt: text,
+      model: effective.model || undefined,
+      effort: effective.effort || undefined,
+      fast: effective.fast || undefined,
+      mode: effective.mode || undefined,
+      access: accessForKind(kind),
+    })
     navigate(`/sessions/${thread.id}`)
   }
 
@@ -82,15 +105,14 @@ export default function NewSessionPage() {
           <span className="brand"><LogoMark size={24} />Overseer</span>
           <div className="seg" role="group" aria-label="Mode">
             <button aria-pressed={mode === 'agent'} onClick={() => { setMode('agent'); setParams({}) }}>Agent</button>
-            <button aria-pressed={mode === 'ask'} onClick={() => { setMode('ask'); setParams({}) }}>Ask</button>
             <button aria-pressed={mode === 'terminal'} onClick={() => setMode('terminal')}>Terminal</button>
           </div>
         </div>
         <Composer
           autoFocus
-          placeholder={mode === 'terminal' ? 'Command to run, or press Enter for a plain shell' : mode === 'ask' ? 'Ask a question about your code. Nothing will be changed.' : 'Ask Overseer to build features, fix bugs, or work on your code'}
+          placeholder={mode === 'terminal' ? 'Command to run, or press Enter for a plain shell' : 'Ask Overseer to build features, fix bugs, or work on your code'}
           devices={devices ?? []}
-          settings={mode === 'ask' ? { ...settings, access: 'ask' } : settings}
+          settings={settings}
           onSettings={update}
           onSubmit={start}
           initialText={seed}
@@ -100,8 +122,8 @@ export default function NewSessionPage() {
         {mode !== 'terminal' && (
           <div className="new-suggestions">
             {suggestions.map((item) => (
-              <button key={item.text} className="suggestion" onClick={() => setSeed(item.text)}>
-                <Icon name={item.icon} size={14} />{item.text}
+              <button key={item.label} className="suggestion" onClick={() => setSeed(item.text)} title={item.text}>
+                <Icon name={item.icon} size={14} />{item.label}
               </button>
             ))}
           </div>

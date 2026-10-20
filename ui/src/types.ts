@@ -156,6 +156,9 @@ export interface Thread {
   cwd: string
   model?: string
   access: Access
+  effort?: string
+  fast?: boolean
+  mode?: string
   status: ThreadStatus
   error?: string
   createdAt: number
@@ -163,8 +166,28 @@ export interface Thread {
   lastReadAt: number
   terminal?: string
   pr?: PullRequestRef
-  usage?: { inputTokens: number; outputTokens: number; costUsd?: number }
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number; contextTokens?: number; contextWindow?: number }
   automationId?: string
+  pinned?: boolean
+  archived?: boolean
+  folder?: string
+  parentId?: string
+}
+
+export interface ThreadCapabilities {
+  fork: boolean
+  compact: boolean
+  undo: boolean
+  steer: boolean
+  images: boolean
+  commands: boolean
+  review: boolean
+}
+
+export interface AgentCommand {
+  name: string
+  description: string
+  hint?: string
 }
 
 export interface ToolFile {
@@ -179,7 +202,16 @@ export interface ThreadMessage {
   seq: number
   at: number
   updatedAt: number
-  role: 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'approval' | 'error' | 'status'
+  role: 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'approval' | 'question' | 'error' | 'status'
+  queued?: boolean
+  question?: {
+    id: string
+    text: string
+    options: { id: string; label: string; description?: string }[]
+    multiple?: boolean
+    allowText?: boolean
+    answered?: string[]
+  }
   text: string
   turn?: string
   tool?: {
@@ -251,4 +283,38 @@ export interface Automation {
 
 export function metricMissing(stats: Stats | undefined, metric: NonNullable<Stats['unavailable']>[number]) {
   return !stats || !!stats.unavailable?.includes(metric)
+}
+
+// ---- Per-agent options (docs/agent-sessions-api.md, "Agent options") ----
+
+export type ModeKind = 'readonly' | 'plan' | 'ask' | 'edits' | 'auto' | 'full'
+
+export interface AgentOptions {
+  agent: string
+  source: 'discovered' | 'builtin'
+  models: { id: string; label: string; description?: string; efforts?: string[]; defaultEffort?: string; default?: boolean }[]
+  efforts: { id: string; label: string; description?: string }[]
+  fast?: { label: string; description: string }
+  modes: { id: string; label: string; description: string; kind: ModeKind }[]
+  defaultMode: string
+}
+
+// Live previews: dev servers listening on a machine, viewed through the hub.
+export interface PortInfo {
+  port: number
+  address: string
+  pid?: number
+  process?: string
+  command?: string
+  cwd?: string
+  http: boolean
+  title?: string
+  previewUrl: string
+}
+
+export interface PreviewConfig {
+  domain: string
+  source: 'flag' | 'setting' | 'derived' | 'none'
+  hubHost: string
+  secure: boolean
 }

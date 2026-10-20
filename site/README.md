@@ -1,7 +1,7 @@
 # Overseer marketing site
 
 The public landing page for Overseer, deployed on Vercel at
-[liveagent-lime.vercel.app](https://liveagent-lime.vercel.app). It also serves
+[overseer.sh](https://overseer.sh). It also serves
 the hub installers from `public/` (`install.sh`, `install-macos.sh`,
 `install.ps1`). This is a standalone app: it is not the hub UI in
 [`../ui`](../ui) and is never compiled into the `overseer` binary.

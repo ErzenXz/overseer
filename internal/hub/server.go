@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +37,11 @@ type Options struct {
 	// CA for expiry notices.
 	TLSDomain string
 	TLSEmail  string
+
+	// PreviewDomain overrides the domain live previews are served under
+	// ({port}-{slug}.{PreviewDomain}); empty means the setting, else derived
+	// from the hub's public address.
+	PreviewDomain string
 }
 
 // Server is the hub.
@@ -47,9 +53,16 @@ type Server struct {
 	events        *eventBus
 	registry      *registry
 	threads       *threadService
+	agentOpts     *agentOptionsCache
 	mux           *http.ServeMux
 	updates       *updateManager
 	updateApplied atomic.Bool
+
+	// Live previews (previews.go, preview_proxy.go).
+	previewAuth        *previewAuth
+	previewDomainCache previewDomainCache
+	previewTransport   *http.Transport
+	tunnelHosts        sync.Map // "{deviceId}:{port}" -> loopback address that answered
 
 	// internalURL is a loopback-only plain-HTTP address serving the same mux.
 	// The embedded agent and the MCP endpoint use it so they work identically
@@ -71,20 +84,29 @@ func NewServer(opts Options) (*Server, error) {
 	if opts.GithubRepo == "" {
 		opts.GithubRepo = "ErzenXz/overseer"
 	}
+	previewDomain, err := normalizePreviewDomain(opts.PreviewDomain)
+	if err != nil {
+		return nil, fmt.Errorf("--preview-domain: %w", err)
+	}
+	opts.PreviewDomain = previewDomain
 	store, err := OpenStore(filepath.Join(opts.DataDir, "overseer.db"))
 	if err != nil {
 		return nil, err
 	}
 	events := newEventBus()
 	s := &Server{
-		opts:     opts,
-		store:    store,
-		sessions: newSessionManager(),
-		loginRL:  newRateLimiter(),
-		events:   events,
-		registry: newRegistry(events),
-		mux:      http.NewServeMux(),
+		opts:      opts,
+		store:     store,
+		sessions:  newSessionManager(),
+		loginRL:   newRateLimiter(),
+		events:    events,
+		registry:  newRegistry(events),
+		mux:       http.NewServeMux(),
+		agentOpts: newAgentOptionsCache(),
+
+		previewAuth: newPreviewAuth(),
 	}
+	s.previewTransport = s.newPreviewTransport()
 	s.threads = newThreadService(s)
 	s.resetInterruptedThreads()
 	s.routes()
@@ -133,7 +155,7 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 	s.internalURL = "http://" + internalLn.Addr().String()
-	internalSrv := s.newHTTPServer(s.mux)
+	internalSrv := s.newHTTPServer(s.handler())
 	go internalSrv.Serve(internalLn)
 
 	go func() {
@@ -165,7 +187,7 @@ func (s *Server) runPlain(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	srv := s.newHTTPServer(s.mux)
+	srv := s.newHTTPServer(s.handler())
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -202,7 +224,7 @@ func (s *Server) runTLS(ctx context.Context) error {
 		}
 	}()
 
-	httpsSrv := s.newHTTPServer(s.mux)
+	httpsSrv := s.newHTTPServer(s.handler())
 	httpsSrv.Addr = ":443"
 	httpsSrv.TLSConfig = m.TLSConfig() // negotiates certs + acme-tls/1
 
@@ -254,6 +276,19 @@ func (s *Server) runEmbeddedAgent(ctx context.Context) {
 	}
 }
 
+// handler is the root handler: requests for a live-preview origin
+// ({port}-{slug}.{previewDomain}) go to the preview proxy, everything else
+// to the app and API.
+func (s *Server) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ph, ok := s.matchPreviewHost(r.Host); ok {
+			s.servePreview(w, r, ph)
+			return
+		}
+		s.mux.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) routes() {
 	m := s.mux
 
@@ -267,6 +302,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/agent-binary", s.handleAgentBinary)
 	m.HandleFunc("GET /api/agent-binary/sha256", s.handleAgentBinarySum)
 	m.HandleFunc("GET /api/ws/agent", s.handleAgentWS)
+	m.HandleFunc("GET /api/previews/auth", s.handlePreviewAuth) // checks the session itself
 
 	// Remote MCP endpoint (does its own Bearer-token auth).
 	m.HandleFunc("/mcp", s.handleMCPHTTP)
@@ -311,9 +347,19 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/threads/{id}/prompt", s.requireAuth(s.handleThreadPrompt))
 	m.HandleFunc("POST /api/threads/{id}/cancel", s.requireAuth(s.handleThreadCancel))
 	m.HandleFunc("POST /api/threads/{id}/approval", s.requireAuth(s.handleThreadApproval))
+	m.HandleFunc("POST /api/threads/{id}/fork", s.requireAuth(s.handleForkThread))
+	m.HandleFunc("POST /api/threads/{id}/compact", s.requireAuth(s.handleCompactThread))
+	m.HandleFunc("POST /api/threads/{id}/undo", s.requireAuth(s.handleUndoThread))
+	m.HandleFunc("POST /api/threads/{id}/answer", s.requireAuth(s.handleAnswerThread))
+	m.HandleFunc("GET /api/threads/{id}/commands", s.requireAuth(s.handleThreadCommands))
+	m.HandleFunc("GET /api/threads/{id}/capabilities", s.requireAuth(s.handleThreadCapabilities))
 	m.HandleFunc("GET /api/agent-kinds", s.requireAuth(s.handleAgentKinds))
 	m.HandleFunc("GET /api/devices/{id}/agents", s.requireAuth(s.handleDeviceAgents))
+	m.HandleFunc("GET /api/devices/{id}/agents/{agent}/options", s.requireAuth(s.handleAgentOptions))
 	m.HandleFunc("GET /api/devices/{id}/desktop", s.requireAuth(s.handleDeviceDesktop))
+	m.HandleFunc("GET /api/devices/{id}/ports", s.requireAuth(s.handleDevicePorts))
+	m.HandleFunc("GET /api/previews/config", s.requireAuth(s.handleGetPreviewConfig))
+	m.HandleFunc("PUT /api/previews/config", s.requireAuth(s.handlePutPreviewConfig))
 	m.HandleFunc("GET /api/mcp-servers", s.requireAuth(s.handleListMcpServers))
 	m.HandleFunc("POST /api/mcp-servers", s.requireAuth(s.handleCreateMcpServer))
 	m.HandleFunc("PATCH /api/mcp-servers/{id}", s.requireAuth(s.handlePatchMcpServer))
@@ -327,6 +373,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/ws/events", s.requireAuth(s.handleEventsWS))
 	m.HandleFunc("GET /api/ws/threads/{id}", s.requireAuth(s.handleThreadWS))
 	m.HandleFunc("GET /api/ws/desktop", s.requireAuth(s.handleDesktopWS))
+	m.HandleFunc("GET /api/ws/devices/{id}/tcp/{port}", s.requireAuth(s.handleDeviceTCPWS))
 
 	// Web UI (embedded SPA) at everything else.
 	if s.opts.UI != nil {

@@ -34,6 +34,13 @@ type Thread struct {
 	Cwd          string          `json:"cwd"`
 	Model        string          `json:"model,omitempty"`
 	Access       string          `json:"access"`
+	Effort       string          `json:"effort,omitempty"`
+	Fast         bool            `json:"fast,omitempty"`
+	Mode         string          `json:"mode,omitempty"`
+	Pinned       bool            `json:"pinned,omitempty"`
+	Archived     bool            `json:"archived,omitempty"`
+	Folder       string          `json:"folder,omitempty"`
+	ParentId     string          `json:"parentId,omitempty"`
 	Status       string          `json:"status"`
 	Error        string          `json:"error,omitempty"`
 	CreatedAt    int64           `json:"createdAt"`
@@ -45,22 +52,41 @@ type Thread struct {
 	AutomationId string          `json:"automationId,omitempty"`
 
 	ResumeId string `json:"-"` // the agent's own session id, for resuming
+
+	// Fork bookkeeping: ForkPending asks the next start to fork ResumeId
+	// (cut after the ForkAt user message); ForkContext is the transcript
+	// sent with the first prompt when the agent could not fork natively.
+	ForkPending bool       `json:"-"`
+	ForkAt      string     `json:"-"`
+	ForkContext string     `json:"-"`
+	Meta        threadMeta `json:"-"` // last capabilities/commands the agent reported
+}
+
+// threadMeta is what the running agent last said about itself.
+type threadMeta struct {
+	Capabilities *protocol.ThreadCapabilities `json:"capabilities,omitempty"`
+	Commands     []protocol.AgentCommand      `json:"commands,omitempty"`
 }
 
 const threadColumns = `t.id, t.title, t.device_id, COALESCE(d.name, ''), t.agent, t.command, t.cwd, t.model,
 	t.access, t.status, t.error, t.created_at, t.updated_at, t.last_read_at, t.terminal, t.pr, t.usage,
-	t.automation_id, t.resume_id`
+	t.automation_id, t.resume_id, t.effort, t.fast, t.mode, t.pinned, t.archived, t.folder, t.parent_id,
+	t.fork_pending, t.fork_at, t.fork_context, t.agent_meta`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
 func scanThread(row rowScanner) (*Thread, error) {
 	var t Thread
-	var pr, usage string
+	var pr, usage, meta string
 	err := row.Scan(&t.Id, &t.Title, &t.DeviceId, &t.DeviceName, &t.Agent, &t.Command, &t.Cwd, &t.Model,
 		&t.Access, &t.Status, &t.Error, &t.CreatedAt, &t.UpdatedAt, &t.LastReadAt, &t.Terminal, &pr, &usage,
-		&t.AutomationId, &t.ResumeId)
+		&t.AutomationId, &t.ResumeId, &t.Effort, &t.Fast, &t.Mode, &t.Pinned, &t.Archived, &t.Folder, &t.ParentId,
+		&t.ForkPending, &t.ForkAt, &t.ForkContext, &meta)
 	if err != nil {
 		return nil, err
+	}
+	if meta != "" {
+		json.Unmarshal([]byte(meta), &t.Meta)
 	}
 	if pr != "" {
 		json.Unmarshal([]byte(pr), &t.PR)
@@ -73,10 +99,12 @@ func scanThread(row rowScanner) (*Thread, error) {
 
 func (s *Store) CreateThread(t *Thread) error {
 	_, err := s.db.Exec(`INSERT INTO threads (id, title, device_id, agent, command, cwd, model, access, status,
-		error, created_at, updated_at, last_read_at, automation_id, resume_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		error, created_at, updated_at, last_read_at, automation_id, resume_id, effort, fast, mode,
+		pinned, archived, folder, parent_id, fork_pending, fork_at, fork_context)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.Id, t.Title, t.DeviceId, t.Agent, t.Command, t.Cwd, t.Model, t.Access, t.Status,
-		t.Error, t.CreatedAt, t.UpdatedAt, t.LastReadAt, t.AutomationId, t.ResumeId)
+		t.Error, t.CreatedAt, t.UpdatedAt, t.LastReadAt, t.AutomationId, t.ResumeId, t.Effort, t.Fast, t.Mode,
+		t.Pinned, t.Archived, t.Folder, t.ParentId, t.ForkPending, t.ForkAt, t.ForkContext)
 	return err
 }
 
@@ -129,6 +157,28 @@ func (s *Store) SetThreadUsage(id string, usage protocol.Usage) error {
 	return err
 }
 
+// SetThreadFork updates the fork bookkeeping columns.
+func (s *Store) SetThreadFork(id string, pending bool, at, context string) error {
+	_, err := s.db.Exec(`UPDATE threads SET fork_pending = ?, fork_at = ?, fork_context = ? WHERE id = ?`, pending, at, context, id)
+	return err
+}
+
+// MergeThreadMeta stores capabilities and/or commands the agent reported.
+func (s *Store) MergeThreadMeta(id string, caps *protocol.ThreadCapabilities, commands []protocol.AgentCommand) error {
+	t, err := s.ThreadById(id)
+	if err != nil || t == nil {
+		return err
+	}
+	if caps != nil {
+		t.Meta.Capabilities = caps
+	}
+	if commands != nil {
+		t.Meta.Commands = commands
+	}
+	_, err = s.db.Exec(`UPDATE threads SET agent_meta = ? WHERE id = ?`, jsonText(t.Meta), id)
+	return err
+}
+
 func (s *Store) SetThreadTerminal(id, terminal string) error {
 	_, err := s.db.Exec(`UPDATE threads SET terminal = ? WHERE id = ?`, terminal, id)
 	return err
@@ -146,10 +196,16 @@ func (s *Store) TouchThread(id string, at int64) (bool, error) {
 
 // threadPatch is a partial update from PATCH /api/threads/{id}.
 type threadPatch struct {
-	Title  *string `json:"title"`
-	Access *string `json:"access"`
-	Model  *string `json:"model"`
-	Read   *bool   `json:"read"`
+	Title    *string `json:"title"`
+	Access   *string `json:"access"`
+	Model    *string `json:"model"`
+	Effort   *string `json:"effort"`
+	Fast     *bool   `json:"fast"`
+	Mode     *string `json:"mode"`
+	Pinned   *bool   `json:"pinned"`
+	Archived *bool   `json:"archived"`
+	Folder   *string `json:"folder"`
+	Read     *bool   `json:"read"`
 }
 
 func (s *Store) PatchThread(id string, p threadPatch) error {
@@ -168,8 +224,51 @@ func (s *Store) PatchThread(id string, p threadPatch) error {
 			return err
 		}
 	}
+	if p.Effort != nil {
+		if _, err := s.db.Exec(`UPDATE threads SET effort = ? WHERE id = ?`, *p.Effort, id); err != nil {
+			return err
+		}
+	}
+	if p.Fast != nil {
+		if _, err := s.db.Exec(`UPDATE threads SET fast = ? WHERE id = ?`, *p.Fast, id); err != nil {
+			return err
+		}
+	}
+	if p.Mode != nil {
+		if _, err := s.db.Exec(`UPDATE threads SET mode = ? WHERE id = ?`, *p.Mode, id); err != nil {
+			return err
+		}
+	}
+	for _, col := range []struct {
+		name string
+		v    any
+		set  bool
+	}{
+		{"pinned", p.Pinned, p.Pinned != nil},
+		{"archived", p.Archived, p.Archived != nil},
+		{"folder", p.Folder, p.Folder != nil},
+	} {
+		if !col.set {
+			continue
+		}
+		var v any
+		switch x := col.v.(type) {
+		case *bool:
+			v = *x
+		case *string:
+			v = *x
+		}
+		if _, err := s.db.Exec(`UPDATE threads SET `+col.name+` = ? WHERE id = ?`, v, id); err != nil {
+			return err
+		}
+	}
 	if p.Read != nil && *p.Read {
 		if _, err := s.db.Exec(`UPDATE threads SET last_read_at = MAX(updated_at, ?) WHERE id = ?`, time.Now().Unix(), id); err != nil {
+			return err
+		}
+	}
+	if p.Read != nil && !*p.Read {
+		if _, err := s.db.Exec(`UPDATE threads SET last_read_at = 0 WHERE id = ?`, id); err != nil {
 			return err
 		}
 	}
@@ -208,6 +307,10 @@ type ThreadMessage struct {
 	Plan       []protocol.PlanEntry            `json:"plan,omitempty"`
 	Approval   *protocol.ThreadApprovalRequest `json:"approval,omitempty"`
 	DurationMs int64                           `json:"durationMs,omitempty"`
+	Question   *protocol.ThreadQuestion        `json:"question,omitempty"`
+	Queued     bool                            `json:"queued,omitempty"` // user prompt waiting for the turn to end
+
+	Images []string `json:"-"` // image paths of a (queued) user prompt
 }
 
 // messageData is the JSON blob column holding the structured fields.
@@ -217,6 +320,15 @@ type messageData struct {
 	Plan       []protocol.PlanEntry            `json:"plan,omitempty"`
 	Approval   *protocol.ThreadApprovalRequest `json:"approval,omitempty"`
 	DurationMs int64                           `json:"durationMs,omitempty"`
+	Question   *protocol.ThreadQuestion        `json:"question,omitempty"`
+	Queued     bool                            `json:"queued,omitempty"`
+	Images     []string                        `json:"images,omitempty"`
+}
+
+func (m *ThreadMessage) data() string {
+	b, _ := json.Marshal(messageData{Turn: m.Turn, Tool: m.Tool, Plan: m.Plan, Approval: m.Approval, DurationMs: m.DurationMs,
+		Question: m.Question, Queued: m.Queued, Images: m.Images})
+	return string(b)
 }
 
 func scanMessage(row rowScanner) (*ThreadMessage, error) {
@@ -229,6 +341,7 @@ func scanMessage(row rowScanner) (*ThreadMessage, error) {
 		var d messageData
 		if json.Unmarshal([]byte(data), &d) == nil {
 			m.Turn, m.Tool, m.Plan, m.Approval, m.DurationMs = d.Turn, d.Tool, d.Plan, d.Approval, d.DurationMs
+			m.Question, m.Queued, m.Images = d.Question, d.Queued, d.Images
 		}
 	}
 	return &m, nil
@@ -305,13 +418,13 @@ func (s *Store) ApplyThreadEvent(threadId string, ev protocol.ThreadEvent, defau
 		msg.Turn = ""
 	}
 
-	data, _ := json.Marshal(messageData{Turn: msg.Turn, Tool: msg.Tool, Plan: msg.Plan, Approval: msg.Approval, DurationMs: msg.DurationMs})
+	data := msg.data()
 	if isNew {
 		_, err = tx.Exec(`INSERT INTO thread_messages (thread_id, id, seq, at, updated_at, role, text, data)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, threadId, msg.Id, msg.Seq, msg.At, msg.UpdatedAt, msg.Role, msg.Text, string(data))
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, threadId, msg.Id, msg.Seq, msg.At, msg.UpdatedAt, msg.Role, msg.Text, data)
 	} else {
 		_, err = tx.Exec(`UPDATE thread_messages SET updated_at = ?, role = ?, text = ?, data = ?
-			WHERE thread_id = ? AND id = ?`, msg.UpdatedAt, msg.Role, msg.Text, string(data), threadId, msg.Id)
+			WHERE thread_id = ? AND id = ?`, msg.UpdatedAt, msg.Role, msg.Text, data, threadId, msg.Id)
 	}
 	if err != nil {
 		return nil, err
@@ -333,6 +446,8 @@ func foldEvent(msg *ThreadMessage, ev protocol.ThreadEvent) {
 			msg.Role = "plan"
 		case ev.Approval != nil:
 			msg.Role = "approval"
+		case ev.Question != nil:
+			msg.Role = "question"
 		default:
 			msg.Role = "status"
 		}
@@ -377,6 +492,117 @@ func foldEvent(msg *ThreadMessage, ev protocol.ThreadEvent) {
 			msg.Approval.Resolved = a.Resolved
 		}
 	}
+	if q := ev.Question; q != nil {
+		if msg.Question == nil {
+			msg.Question = &protocol.ThreadQuestion{Options: []protocol.QuestionOption{}}
+		}
+		if q.Id != "" {
+			msg.Question.Id = q.Id
+		}
+		if q.Text != "" {
+			msg.Question.Text = q.Text
+		}
+		if q.Options != nil {
+			msg.Question.Options = q.Options
+		}
+		if q.Multiple {
+			msg.Question.Multiple = true
+		}
+		if q.AllowText {
+			msg.Question.AllowText = true
+		}
+		if q.Answered != nil {
+			msg.Question.Answered = q.Answered
+		}
+	}
+}
+
+// --- message bookkeeping for queueing, forks and undo ---
+
+// updateMessage rewrites one message's data (and text) after fn changes it.
+func (s *Store) updateMessage(threadId, id string, fn func(m *ThreadMessage)) (*ThreadMessage, error) {
+	m, err := scanMessage(s.db.QueryRow(`SELECT id, seq, at, updated_at, role, text, data FROM thread_messages
+		WHERE thread_id = ? AND id = ?`, threadId, id))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	fn(m)
+	m.UpdatedAt = time.Now().UnixMilli()
+	_, err = s.db.Exec(`UPDATE thread_messages SET updated_at = ?, text = ?, data = ? WHERE thread_id = ? AND id = ?`,
+		m.UpdatedAt, m.Text, m.data(), threadId, id)
+	return m, err
+}
+
+// SetUserMessageMeta marks a user message queued (or sent) and records its
+// images. A queued prompt that is sent moves to the end of the transcript
+// (new seq), where its turn starts.
+func (s *Store) SetUserMessageMeta(threadId, id string, queued bool, images []string) (*ThreadMessage, error) {
+	var wasQueued bool
+	m, err := s.updateMessage(threadId, id, func(m *ThreadMessage) {
+		wasQueued = m.Queued
+		m.Queued = queued
+		if images != nil {
+			m.Images = images
+		}
+	})
+	if err != nil || m == nil || !wasQueued || queued {
+		return m, err
+	}
+	if err := s.db.QueryRow(`UPDATE thread_messages SET seq = (SELECT MAX(seq) + 1 FROM thread_messages WHERE thread_id = ?)
+		WHERE thread_id = ? AND id = ? RETURNING seq`, threadId, threadId, id).Scan(&m.Seq); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// NextQueuedMessage returns the oldest queued user prompt, if any.
+func (s *Store) NextQueuedMessage(threadId string) (*ThreadMessage, error) {
+	msgs, err := s.ThreadMessages(threadId)
+	if err != nil {
+		return nil, err
+	}
+	for i := range msgs {
+		if msgs[i].Role == "user" && msgs[i].Queued {
+			return &msgs[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// CopyThreadMessages copies messages (in order, keeping ids and turns) into
+// another thread, renumbering seq from 1.
+func (s *Store) CopyThreadMessages(toThread string, msgs []ThreadMessage) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, m := range msgs {
+		m.Queued = false
+		if _, err := tx.Exec(`INSERT INTO thread_messages (thread_id, id, seq, at, updated_at, role, text, data)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, toThread, m.Id, i+1, m.At, m.UpdatedAt, m.Role, m.Text, m.data()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// DeleteThreadMessages removes the given message ids.
+func (s *Store) DeleteThreadMessages(threadId string, ids []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.Exec(`DELETE FROM thread_messages WHERE thread_id = ? AND id = ?`, threadId, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func mergeTool(dst, src *protocol.ThreadTool) {

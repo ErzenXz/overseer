@@ -7,13 +7,14 @@ import FileBrowser from '../components/FileBrowser'
 import Icon, { AgentMark } from '../components/Icon'
 import { Menu, MenuItem } from '../components/Menu'
 import Terminal from '../components/Terminal'
+import PreviewPanel from '../components/PreviewPanel'
 import VncViewer from '../components/VncViewer'
 import { SidebarToggle, useOwnHeader, useShell } from '../shell'
 import { devicesResource, terminalsResource, useDevices, useTerminals, useThreads } from '../store'
 import { metricMissing, type Device } from '../types'
 import { osLabel, pct } from './MachinesPage'
 
-type Tab = 'overview' | 'desktop' | 'terminal' | 'files' | 'agents'
+type Tab = 'overview' | 'desktop' | 'preview' | 'terminal' | 'files' | 'agents'
 
 export default function MachinePage() {
   useOwnHeader()
@@ -64,7 +65,7 @@ export default function MachinePage() {
         </div>
       </header>
       <div className="underline-tabs px-5" role="tablist">
-        {([['overview', 'gauge', 'Overview'], ['desktop', 'presentation', 'Desktop'], ['terminal', 'terminal', 'Terminals'], ['files', 'folder', 'Files'], ['agents', 'bot', 'Agents']] as const).map(([key, icon, label]) => (
+        {([['overview', 'gauge', 'Overview'], ['desktop', 'presentation', 'Desktop'], ['preview', 'globe', 'Preview'], ['terminal', 'terminal', 'Terminals'], ['files', 'folder', 'Files'], ['agents', 'bot', 'Agents']] as const).map(([key, icon, label]) => (
           <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}><Icon name={icon} size={16} />{label}</button>
         ))}
       </div>
@@ -80,6 +81,7 @@ export default function MachinePage() {
             <div className="relative min-h-0 flex-1">
               {tab === 'overview' && <Overview device={device} onTab={setTab} />}
               {tab === 'desktop' && <VncViewer deviceId={device.id} deviceName={device.name} />}
+              {tab === 'preview' && <PreviewPanel deviceId={device.id} deviceName={device.name} online={device.online} />}
               {tab === 'terminal' && <Terminals device={device} active={params.get('session')} onSelect={(name) => setTab('terminal', name ? { session: name } : {})} />}
               {tab === 'files' && <div className="h-full"><FileBrowser deviceId={device.id} /></div>}
               {tab === 'agents' && <Agents device={device} />}

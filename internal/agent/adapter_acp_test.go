@@ -17,7 +17,10 @@ import (
 
 // The test binary doubles as a fake ACP agent when this variable is set, so
 // the adapter can be exercised end to end over real stdio pipes.
-const fakeACPEnv = "OVERSEER_FAKE_ACP_AGENT"
+const (
+	fakeACPEnv    = "OVERSEER_FAKE_ACP_AGENT"
+	fakeACPLogEnv = "OVERSEER_FAKE_ACP_LOG" // file the fake agent appends "method params" lines to
+)
 
 func TestMain(m *testing.M) {
 	if os.Getenv(fakeACPEnv) == "1" {
@@ -41,6 +44,15 @@ func runFakeACPAgent() {
 	}
 	update := func(u map[string]any) {
 		send(map[string]any{"method": "session/update", "params": map[string]any{"sessionId": "sess-1", "update": u}})
+	}
+	logCall := func(method string, params json.RawMessage) {
+		if path := os.Getenv(fakeACPLogEnv); path != "" {
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+			if err == nil {
+				fmt.Fprintf(f, "%s %s\n", method, params)
+				f.Close()
+			}
+		}
 	}
 	nextId := 100
 	// request sends a client request and waits for its response, answering
@@ -72,26 +84,75 @@ func runFakeACPAgent() {
 			continue
 		}
 		reply := func(result any) { send(map[string]any{"id": m.Id, "result": result}) }
+		logCall(m.Method, m.Params)
 		switch m.Method {
 		case "initialize":
-			reply(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"loadSession": false}})
+			var p struct {
+				ClientCapabilities struct {
+					Elicitation map[string]any `json:"elicitation"`
+				} `json:"clientCapabilities"`
+			}
+			json.Unmarshal(m.Params, &p)
+			if p.ClientCapabilities.Elicitation == nil && os.Getenv(fakeACPLogEnv) != "" {
+				logCall("missing-elicitation-capability", nil)
+			}
+			reply(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"loadSession": false,
+				"promptCapabilities":  map[string]any{"image": true},
+				"sessionCapabilities": map[string]any{"delete": map[string]any{}}}})
+			update(map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []map[string]any{
+				{"name": "compact", "description": "Compact"}, {"name": "review", "description": "Review", "input": map[string]any{"hint": "what"}}}})
 		case "session/new":
 			var p struct {
 				McpServers []map[string]any `json:"mcpServers"`
 			}
 			json.Unmarshal(m.Params, &p)
-			if len(p.McpServers) != 1 || p.McpServers[0]["command"] != "mcp-fs" {
+			// Discovery probes pass no servers; the adapter test passes one.
+			if len(p.McpServers) > 0 && (len(p.McpServers) != 1 || p.McpServers[0]["command"] != "mcp-fs") {
 				send(map[string]any{"id": m.Id, "error": map[string]any{"code": -32602, "message": "bad mcpServers"}})
 				continue
 			}
-			reply(map[string]any{"sessionId": "sess-1"})
+			reply(map[string]any{
+				"sessionId": "sess-1",
+				"modes": map[string]any{"currentModeId": "code", "availableModes": []map[string]string{
+					{"id": "ask", "name": "Ask", "description": "Asks first"},
+					{"id": "code", "name": "Code", "description": "Writes code"},
+					{"id": "plan", "name": "Plan"},
+				}},
+				"models": map[string]any{"currentModelId": "m1", "availableModels": []map[string]string{
+					{"modelId": "m1", "name": "Model One"}, {"modelId": "m2", "name": "Model Two", "description": "Bigger"},
+				}},
+				"configOptions": []map[string]any{{
+					"id": "effort", "name": "Thinking", "category": "thought_level", "type": "select", "currentValue": "low",
+					"options": []map[string]any{{"group": "levels", "name": "Levels", "options": []map[string]string{
+						{"value": "low", "name": "Low"}, {"value": "high", "name": "High", "description": "Thinks hard"},
+					}}},
+				}},
+			})
+		case "session/set_mode", "session/set_model", "session/set_config_option", "session/delete":
+			reply(map[string]any{})
 		case "session/prompt":
 			var p struct {
 				Prompt []struct {
-					Text string `json:"text"`
+					Type     string `json:"type"`
+					Text     string `json:"text"`
+					MimeType string `json:"mimeType"`
 				} `json:"prompt"`
 			}
 			json.Unmarshal(m.Params, &p)
+			if last := p.Prompt[len(p.Prompt)-1]; last.Text == "ask" {
+				// A form elicitation: one enum field and one free-text field.
+				res := request("elicitation/create", map[string]any{"sessionId": "sess-1", "mode": "form", "message": "Pick a colour",
+					"requestedSchema": map[string]any{"type": "object", "properties": map[string]any{
+						"colour": map[string]any{"type": "string", "enum": []string{"red", "blue"}, "enumNames": []string{"Red", "Blue"}},
+						"note":   map[string]any{"type": "string", "title": "Anything else?"},
+					}}})
+				r, _ := res["result"].(map[string]any)
+				content, _ := r["content"].(map[string]any)
+				update(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text",
+					"text": fmt.Sprintf("%v: %v / %v (images %d)", r["action"], content["colour"], content["note"], len(p.Prompt)-1)}})
+				reply(map[string]any{"stopReason": "end_turn"})
+				continue
+			}
 			update(map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]any{"type": "text", "text": "Thinking"}})
 			update(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "Hello"}})
 			update(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": " world"}})
@@ -174,6 +235,8 @@ func (s *recordingSink) waitFor(t *testing.T, what string, cond func() bool) {
 
 func TestACPAdapterEndToEnd(t *testing.T) {
 	t.Setenv(fakeACPEnv, "1")
+	logPath := filepath.Join(t.TempDir(), "calls.log")
+	t.Setenv(fakeACPLogEnv, logPath)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -188,6 +251,7 @@ func TestACPAdapterEndToEnd(t *testing.T) {
 	sink := newRecordingSink()
 	cfg := protocol.ThreadStart{
 		ThreadId: "th1", Agent: "acp", Command: fmt.Sprintf("%q", exe), Cwd: cwd, Access: "edits",
+		Mode: "plan", Model: "m2", Effort: "high",
 		McpServers: []protocol.McpServer{{Name: "fs", Transport: "stdio", Command: "mcp-fs", Enabled: true},
 			{Name: "remote", Transport: "http", Url: "https://example.com/mcp", Enabled: true}},
 	}
@@ -205,7 +269,24 @@ func TestACPAdapterEndToEnd(t *testing.T) {
 	if resume != "sess-1" {
 		t.Fatalf("resumeId = %q, want sess-1", resume)
 	}
-	if err := ad.prompt(notes); err != nil {
+	calls := func() string { b, _ := os.ReadFile(logPath); return string(b) }
+	for _, want := range []string{
+		`session/set_mode {"modeId":"plan","sessionId":"sess-1"}`,
+		`session/set_model {"modelId":"m2","sessionId":"sess-1"}`,
+		`session/set_config_option {"configId":"effort","sessionId":"sess-1","value":"high"}`,
+	} {
+		if !strings.Contains(calls(), want) {
+			t.Errorf("missing call %s in:\n%s", want, calls())
+		}
+	}
+	// A live mode change goes through session/set_mode, no restart needed.
+	if restart := ad.update(threadSettings{Mode: "ask", Model: "m2", Effort: "high", Access: "edits"}); restart {
+		t.Error("live mode change asked for a restart")
+	}
+	if !strings.Contains(calls(), `session/set_mode {"modeId":"ask","sessionId":"sess-1"}`) {
+		t.Errorf("live set_mode missing:\n%s", calls())
+	}
+	if err := ad.prompt(promptInput{Text: notes}); err != nil {
 		t.Fatal(err)
 	}
 

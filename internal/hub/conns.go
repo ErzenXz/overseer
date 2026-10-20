@@ -250,6 +250,8 @@ func (s *Server) handleAgentMsg(c *agentConn, m protocol.Msg) {
 		s.threads.onAgentEvent(c, m.Data)
 	case m.Type == protocol.TypeThreadState:
 		s.threads.onAgentState(c, m.Data)
+	case m.Type == protocol.TypePortsChanged:
+		s.events.publish(event{Type: "ports.changed", DeviceId: c.deviceId})
 	case m.Type == protocol.TypeStats:
 		var st protocol.Stats
 		if err := json.Unmarshal(m.Data, &st); err == nil {

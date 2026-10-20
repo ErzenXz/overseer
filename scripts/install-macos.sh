@@ -1,8 +1,8 @@
 #!/bin/sh
 # Install the Overseer hub on macOS as a LaunchAgent (no sudo needed).
 #
-#   curl -fsSL https://liveagent-lime.vercel.app/install-macos.sh | sh
-#   curl -fsSL https://liveagent-lime.vercel.app/install-macos.sh | sh -s -- uninstall
+#   curl -fsSL https://overseer.sh/install-macos.sh | sh
+#   curl -fsSL https://overseer.sh/install-macos.sh | sh -s -- uninstall
 #
 # This file only defines functions until the last line, so a download that is
 # cut short never runs half an installer. Release binaries are checked against
@@ -31,7 +31,7 @@ PLIST="$LAUNCH_AGENT_DIR/$LABEL.plist"
 LOG_DIR="$DATA_DIR/logs"
 BIN="$BIN_DIR/overseer"
 PREVIOUS_BIN="$BIN_DIR/overseer.previous"
-INSTALLER_URL="https://liveagent-lime.vercel.app/install-macos.sh"
+INSTALLER_URL="https://overseer.sh/install-macos.sh"
 
 log() { printf '  %s\n' "$*"; }
 ok() { printf '  \342\234\223 %s\n' "$*"; }

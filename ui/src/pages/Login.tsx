@@ -30,6 +30,10 @@ export default function Login({
     try {
       await api.post(setupDone ? '/api/login' : '/api/setup', setupDone ? { password } : { password, code })
       if (!setupDone) history.replaceState(null, '', location.pathname)
+      // A preview link opened while signed out comes back here with
+      // ?next=/api/previews/auth?return=…; carry on to the preview.
+      const next = new URLSearchParams(location.search).get('next') ?? ''
+      if (next.startsWith('/api/previews/auth?')) { location.assign(next); return }
       onSuccess()
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setError('Incorrect password. Try again.')

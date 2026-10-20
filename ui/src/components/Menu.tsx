@@ -247,3 +247,42 @@ export function SwitchMark({ checked }: { checked: boolean }) {
 export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (value: boolean) => void; label: string; disabled?: boolean }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="switch" disabled={disabled} onClick={(event) => { event.stopPropagation(); onChange(!checked) }} />
 }
+
+// ContextMenu is a Menu panel opened at a point (right-click). It closes on
+// outside click, Escape, scroll or resize, like Menu.
+export function ContextMenu({ at, onClose, children, width = 250 }: { at: { x: number; y: number }; onClose: () => void; children: (close: () => void) => ReactNode; width?: number }) {
+  const panel = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ left: number; top: number; visibility?: 'hidden' }>({ left: at.x, top: at.y, visibility: 'hidden' })
+  const close = useRef(onClose)
+  close.current = onClose
+  useLayoutEffect(() => {
+    const node = panel.current
+    if (!node) return
+    const margin = 8
+    const left = Math.max(margin, Math.min(at.x, window.innerWidth - node.offsetWidth - margin))
+    const top = at.y + node.offsetHeight > window.innerHeight - margin ? Math.max(margin, at.y - node.offsetHeight) : at.y
+    setPos({ left, top })
+  }, [at.x, at.y])
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => { if (!panel.current?.contains(event.target as Node)) close.current() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); close.current() } }
+    const onScroll = (event: Event) => { if (!panel.current?.contains(event.target as Node)) close.current() }
+    const onResize = () => close.current()
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
+  return createPortal(
+    <div ref={panel} className="popover popover-fixed" role="menu" style={{ width, ...pos }} onContextMenu={(event) => event.preventDefault()}>
+      {children(() => close.current())}
+    </div>,
+    document.body,
+  )
+}

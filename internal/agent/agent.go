@@ -50,6 +50,12 @@ type Agent struct {
 	nextUpdateAttempt time.Time
 	updateApplied     bool
 
+	// portsAsked is when the hub last listed ports; a watcher re-scans for
+	// ports.changed while that is recent (see ports.go).
+	portsMu       sync.Mutex
+	portsAsked    time.Time
+	portsWatching bool
+
 	// threads are coding-agent processes keyed by hub thread id. They are
 	// deliberately not torn down with the hub connection.
 	threadMu    sync.Mutex
@@ -392,6 +398,8 @@ func (a *Agent) dispatch(m protocol.Msg) {
 		a.tcpClose(m.Channel)
 	case protocol.TypeDesktopProbe:
 		go a.reply(m.Id, probeDesktop(), nil)
+	case protocol.TypePortsList:
+		go a.portsList(m.Id)
 	case protocol.TypeAgentsDetect:
 		go a.reply(m.Id, a.detectAgents(), nil)
 	case protocol.TypeThreadStart:
@@ -435,6 +443,49 @@ func (a *Agent) dispatch(m protocol.Msg) {
 			a.threadStop(req)
 			a.reply(m.Id, struct{}{}, nil)
 		}()
+	case protocol.TypeThreadAnswer:
+		var req protocol.ThreadAnswer
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go a.reply(m.Id, struct{}{}, a.threadAnswer(req))
+	case protocol.TypeThreadCompact, protocol.TypeThreadUndo:
+		var req protocol.ThreadRef
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go func() {
+			if m.Type == protocol.TypeThreadCompact {
+				a.reply(m.Id, struct{}{}, a.threadCompact(req))
+			} else {
+				a.reply(m.Id, struct{}{}, a.threadUndo(req))
+			}
+		}()
+	case protocol.TypeThreadUpdate:
+		var req protocol.ThreadUpdate
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go func() {
+			res, err := a.threadUpdate(req)
+			a.reply(m.Id, res, err)
+		}()
+	case protocol.TypeAgentOptions:
+		var req protocol.AgentOptionsRequest
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go a.reply(m.Id, discoverAgentOptions(req), nil)
+	default:
+		// Unknown requests get an error reply so a newer hub doesn't wait
+		// for its timeout.
+		if m.Id != 0 && m.Type != protocol.TypeResult {
+			a.reply(m.Id, nil, fmt.Errorf("unsupported request %q", m.Type))
+		}
 	}
 }
 

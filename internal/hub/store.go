@@ -78,7 +78,18 @@ CREATE TABLE IF NOT EXISTS threads (
 	pr            TEXT NOT NULL DEFAULT '',
 	usage         TEXT NOT NULL DEFAULT '',
 	automation_id TEXT NOT NULL DEFAULT '',
-	resume_id     TEXT NOT NULL DEFAULT ''
+	resume_id     TEXT NOT NULL DEFAULT '',
+	effort        TEXT NOT NULL DEFAULT '',
+	fast          INTEGER NOT NULL DEFAULT 0,
+	mode          TEXT NOT NULL DEFAULT '',
+	pinned        INTEGER NOT NULL DEFAULT 0,
+	archived      INTEGER NOT NULL DEFAULT 0,
+	folder        TEXT NOT NULL DEFAULT '',
+	parent_id     TEXT NOT NULL DEFAULT '',
+	fork_pending  INTEGER NOT NULL DEFAULT 0,
+	fork_at       TEXT NOT NULL DEFAULT '',
+	fork_context  TEXT NOT NULL DEFAULT '',
+	agent_meta    TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS threads_updated_at ON threads(updated_at);
 CREATE TABLE IF NOT EXISTS thread_messages (
@@ -134,6 +145,9 @@ func OpenStore(path string) (*Store, error) {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
 	s := &Store{db: db}
+	if err := s.migrate(); err != nil {
+		return nil, fmt.Errorf("migrating schema: %w", err)
+	}
 	if err := s.seedPresets(); err != nil {
 		return nil, err
 	}
@@ -141,6 +155,58 @@ func OpenStore(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// addedColumns are columns introduced after a table first shipped. CREATE
+// TABLE IF NOT EXISTS leaves existing tables alone, so migrate adds whichever
+// are missing.
+var addedColumns = []struct{ table, column, def string }{
+	{"threads", "effort", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "fast", "INTEGER NOT NULL DEFAULT 0"},
+	{"threads", "mode", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "pinned", "INTEGER NOT NULL DEFAULT 0"},
+	{"threads", "archived", "INTEGER NOT NULL DEFAULT 0"},
+	{"threads", "folder", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "parent_id", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "fork_pending", "INTEGER NOT NULL DEFAULT 0"},
+	{"threads", "fork_at", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "fork_context", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "agent_meta", "TEXT NOT NULL DEFAULT ''"},
+}
+
+func (s *Store) migrate() error {
+	existing := map[string]map[string]bool{}
+	for _, c := range addedColumns {
+		cols := existing[c.table]
+		if cols == nil {
+			cols = map[string]bool{}
+			rows, err := s.db.Query(`SELECT name FROM pragma_table_info(?)`, c.table)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var name string
+				if err := rows.Scan(&name); err != nil {
+					rows.Close()
+					return err
+				}
+				cols[name] = true
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return err
+			}
+			existing[c.table] = cols
+		}
+		if cols[c.column] {
+			continue
+		}
+		if _, err := s.db.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.def); err != nil {
+			return fmt.Errorf("adding %s.%s: %w", c.table, c.column, err)
+		}
+		cols[c.column] = true
+	}
+	return nil
+}
 
 func (s *Store) seedPresets() error {
 	var n int
