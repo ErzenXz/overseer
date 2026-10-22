@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ArrowRight, ArrowUpRight, Bell, Robot, ShieldCheck, Stack } from "@phosphor-icons/react";
 import { mount } from "../components/Layout";
+import { HeroInstall } from "../components/InstallCommand";
 import { Morph } from "../components/Morph";
 import { Shot } from "../components/Shot";
 import { REPO } from "../lib/site";
@@ -199,7 +200,9 @@ function Home() {
         <img src="/launch/logo-512.png" alt="" width={88} height={88} className="cta__icon" />
         <h2 id="cta-title" className="title">Bring Your Agents</h2>
         <p className="lead lead--center">Install the hub, add your machines, and stop losing track of what your agents are doing.</p>
-        <div className="cta__code"><span className="t-dim"># on the computer that stays on most</span>{"\n"}<span className="t-accent">$</span> curl -fsSL https://overseer.sh/install.sh | sh{"\n"}<span className="t-dim"># then add each machine from Machines → Add machine</span></div>
+        <p className="text-sm text-ink-3">On the computer that stays on most, choose your platform:</p>
+        <HeroInstall />
+        <p className="text-sm text-ink-3">Then add each machine from Machines → Add machine.</p>
         <div className="actions actions--center">
           <a href="/download/" className="button button--primary">Get Started</a>
           <a href="/features/" className="button">See Every Screen<ArrowRight size={15} /></a>
