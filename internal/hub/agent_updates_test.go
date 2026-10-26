@@ -192,7 +192,7 @@ func TestAgentUpdateCommands(t *testing.T) {
 
 	unix := func(agent string) string { return agentUpdateCommand(agent, "linux") }
 	for agent, want := range map[string][]string{
-		"claude":   {`"$B" update`, "brew upgrade --cask claude-code", "npm install -g @anthropic-ai/claude-code@latest", "sudo apt upgrade claude-code"},
+		"claude":   {`"$B" update`, "brew upgrade --cask claude-code", `npm install -g --prefix "${R%%/lib/node_modules/*}"`, "sudo apt upgrade claude-code"},
 		"codex":    {"brew list codex", "brew upgrade codex", "npm ls -g @openai/codex", "npm install -g @openai/codex@latest", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"},
 		"gemini":   {"npm install -g @google/gemini-cli@latest", `npm install --prefix "$P" @google/gemini-cli@latest`, `.overseer/tools`},
 		"opencode": {"opencode upgrade"},
@@ -601,7 +601,8 @@ func TestClaudeUpdateFollowsTheInstall(t *testing.T) {
 	}
 	cases := []struct{ name, target, want string }{
 		{"native", ".local/share/claude/versions/2.1.0", "NATIVE update"},
-		{"npm", "lib/node_modules/@anthropic-ai/claude-code/cli.js", "NPM install -g @anthropic-ai/claude-code@latest"},
+		{"npm global", "lib/node_modules/@anthropic-ai/claude-code/cli.js", "NPM install -g --prefix {home} @anthropic-ai/claude-code@latest"},
+		{"npm local prefix", ".overseer/tools/node_modules/@anthropic-ai/claude-code/cli.js", "NPM install --prefix {home}/.overseer/tools @anthropic-ai/claude-code@latest"},
 		{"homebrew stable", "Caskroom/claude-code/2.1.0/claude", "BREW upgrade --cask claude-code"},
 		{"homebrew latest", "Caskroom/claude-code@latest/2.1.0/claude", "BREW upgrade --cask claude-code@latest"},
 	}
@@ -620,8 +621,10 @@ func TestClaudeUpdateFollowsTheInstall(t *testing.T) {
 			cmd := exec.Command("sh", "-c", script)
 			cmd.Env = []string{"HOME=" + home, "PATH=" + bin + ":" + tools + ":/usr/bin:/bin"}
 			out, err := cmd.CombinedOutput()
-			if err != nil || strings.TrimSpace(string(out)) != c.want {
-				t.Fatalf("%v: %q, want %q", err, out, c.want)
+			real, _ := filepath.EvalSymlinks(home) // the prefix comes from the resolved path
+			want := strings.ReplaceAll(c.want, "{home}", real)
+			if err != nil || strings.TrimSpace(string(out)) != want {
+				t.Fatalf("%v: %q, want %q", err, out, want)
 			}
 		})
 	}

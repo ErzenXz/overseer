@@ -323,16 +323,21 @@ const toolsPrefixUnix = `"$HOME/.overseer/tools"`
 
 var agentUpdateUnix = map[string]string{
 	// Update the copy of Claude Code that is on PATH, the one Overseer runs,
-	// the way it was installed: Homebrew cask, the Overseer tools prefix, a
-	// global npm package, or the native installer's own updater. A Linux
+	// the way it was installed: Homebrew cask, the npm prefix that owns it
+	// (global or Overseer's tools folder), or the native installer's own
+	// updater. A Linux
 	// package needs root, so say how instead.
 	"claude": `B=$(command -v claude) || { echo "claude is not on PATH"; exit 1; }; ` +
 		`R=$(readlink -f "$B" 2>/dev/null || realpath "$B" 2>/dev/null || echo "$B"); ` +
 		`case "$R" in ` +
 		`*/Caskroom/claude-code@latest/*) brew upgrade --cask claude-code@latest;; ` +
 		`*/Caskroom/claude-code/*) brew upgrade --cask claude-code;; ` +
-		`"$HOME"/.overseer/tools/*) npm install --prefix "$HOME/.overseer/tools" @anthropic-ai/claude-code@latest;; ` +
-		`*/node_modules/*) npm install -g @anthropic-ai/claude-code@latest;; ` +
+		// npm: update the prefix that owns this copy, not whichever npm is
+		// active (an nvm npm next to ~/.npm-global, say). A global layout
+		// is <prefix>/lib/node_modules; a local one (Overseer's tools
+		// folder) is <prefix>/node_modules.
+		`*/lib/node_modules/*) npm install -g --prefix "${R%%/lib/node_modules/*}" @anthropic-ai/claude-code@latest;; ` +
+		`*/node_modules/*) npm install --prefix "${R%%/node_modules/*}" @anthropic-ai/claude-code@latest;; ` +
 		`/usr/*) if command -v dpkg >/dev/null 2>&1 && dpkg -S "$R" >/dev/null 2>&1; then echo "Claude Code was installed with apt. Update it with: sudo apt update && sudo apt upgrade claude-code"; exit 3; ` +
 		`elif command -v rpm >/dev/null 2>&1 && rpm -qf "$R" >/dev/null 2>&1; then echo "Claude Code was installed with dnf. Update it with: sudo dnf upgrade claude-code"; exit 3; ` +
 		`elif command -v apk >/dev/null 2>&1 && apk info --who-owns "$R" >/dev/null 2>&1; then echo "Claude Code was installed with apk. Update it with: apk update && apk upgrade claude-code"; exit 3; ` +
