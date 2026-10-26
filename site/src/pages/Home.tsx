@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ArrowRight, ArrowUpRight, Bell, Robot, ShieldCheck, Stack } from "@phosphor-icons/react";
+import { ArrowRight, ArrowUpRight, Bell, Clock, Desktop, Robot, ShieldCheck, Stack } from "@phosphor-icons/react";
 import { mount } from "../components/Layout";
 import { HeroInstall } from "../components/InstallCommand";
 import { Morph } from "../components/Morph";
@@ -84,30 +84,44 @@ function Cli() {
 const FEATURES: { icon: ReactNode; title: string; body: string; checks: string[]; link: [string, string] }[] = [
   {
     icon: <Stack size={20} />,
-    title: "Sessions That Keep Running",
-    body: "Agents run on the machine, not in your browser. Close the tab, open it on your phone, and every session is where you left it.",
-    checks: ["Claude Code, Codex, Gemini, Devin and any ACP agent", "Fork, undo, steer or queue a follow-up", "Pin, folder and archive in the sidebar"],
+    title: "Persistent Agent Sessions",
+    body: "Sessions run on the machine, not in your browser. Close the tab, open Overseer on your phone, and the agent is still working where you left it.",
+    checks: ["Claude Code, Codex, Gemini CLI, OpenCode, Devin and any ACP agent", "Fork a session, undo a step, steer it or queue a follow-up", "Pin, group in folders and archive sessions"],
     link: ["Sessions", "/features/#sessions"],
   },
   {
     icon: <Bell size={20} />,
-    title: "Know Which Ones Need You",
-    body: "Every session is working, waiting, done or failed. The ones waiting on you stand out, and you answer them right in the thread.",
-    checks: ["Approve risky commands inline", "Notifications when an agent finishes", "Plan limits before you hit them"],
+    title: "Approvals, Status and Usage",
+    body: "Each session shows as working, waiting, done or failed. When an agent wants to run a command, you allow once, always allow or reject it inline.",
+    checks: ["Per-session access from read-only to full access", "Notification when an agent finishes", "Context window and Claude and Codex plan limits"],
     link: ["Approvals & usage", "/features/#sessions"],
   },
   {
     icon: <Robot size={20} />,
-    title: "Every Agent, Found for You",
-    body: "Install an agent on any machine and it shows up, with its own models, thinking levels and modes. Skills and plugins for all of them in one place.",
-    checks: ["40+ agents from the ACP registry", "One skill, shared across agents", "Plugin marketplaces with clear consent"],
+    title: "Agents, Skills and Plugins",
+    body: "Agents installed on a machine appear automatically, each with its own models, thinking levels, fast mode and permission modes.",
+    checks: ["Install and sign in to agent CLIs from Machines → Setup", "See and toggle skills, plugins, subagents, hooks and MCP servers", "Browse and install from the Claude Code and Codex marketplaces"],
     link: ["Agents & skills", "/features/#agents"],
   },
   {
+    icon: <Desktop size={20} />,
+    title: "Preview, Shell and Desktop",
+    body: "Open the machine next to the chat. When the agent starts a dev server, the page appears in the Preview tab and updates as the agent edits.",
+    checks: ["Live preview with hot reload, also on your phone", "Terminal, full remote desktop, files, changes and plan", "Live CPU, memory and disk for every machine"],
+    link: ["Workspace", "/features/#workspace"],
+  },
+  {
+    icon: <Clock size={20} />,
+    title: "Automations and PR Review",
+    body: "Schedule a prompt to run on its own, and see your open GitHub pull requests with an agent one click away.",
+    checks: ["Cron schedules: dependency updates, failing CI, security audits, a morning digest", "Pick the agent, model and mode for each automation", "Review pull requests through the GitHub CLI on your machine"],
+    link: ["Automations", "/features/#automate"],
+  },
+  {
     icon: <ShieldCheck size={20} />,
-    title: "Your Machines, Your Keys",
-    body: "Machines dial out to a hub you run. No inbound ports, no Overseer cloud, and every agent uses the login already on its machine.",
-    checks: ["Live previews of dev servers, kept private", "Remote shell and desktop, never exposed", "Verified updates with one-click rollback"],
+    title: "Self-Hosted and Private",
+    body: "You run the hub. Machines connect out to it, and every agent keeps using the login already on its own machine.",
+    checks: ["No inbound ports and no Overseer cloud", "Reach the hub over Tailscale, Cloudflare Tunnel or built-in HTTPS", "Checksum-verified updates with one-click rollback"],
     link: ["Security", "/security/"],
   },
 ];
@@ -118,10 +132,11 @@ function Home() {
       {/* Hero */}
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero__copy">
-          <h1 id="hero-title" className="display rise">Every coding agent.<br />Every machine.</h1>
+          <h1 id="hero-title" className="display rise">Run coding agents<br />on all your computers.</h1>
           <p className="lead rise" style={{ animationDelay: "80ms" }}>
-            Overseer is a control room for your coding agents. Run Claude Code, Codex, Gemini and Devin on all your
-            computers, and see which ones are working, which need you, and which are done, from one tab.
+            Overseer is a self-hosted web app. Start Claude Code, Codex, Gemini CLI, Devin or any ACP agent on any
+            machine, then approve commands, read diffs, open the shell and desktop, and watch the live preview, from
+            your laptop or your phone.
           </p>
           <div className="actions rise mt-2" style={{ animationDelay: "160ms" }}>
             <a href="/download/" className="button button--primary">Get Started</a>
@@ -137,8 +152,8 @@ function Home() {
 
       {/* Showcase */}
       <section className="section-head" aria-labelledby="showcase-title">
-        <h2 id="showcase-title" className="title">Every Agent, One Tab</h2>
-        <p className="lead lead--center">A Codex session builds a site on your studio machine, and the preview shows up beside the chat. The sidebar tells you which session needs you.</p>
+        <h2 id="showcase-title" className="title">Chat, Preview and Sessions in One View</h2>
+        <p className="lead lead--center">A Codex session builds a site on a remote machine. The live preview sits beside the chat, and the sidebar marks every session as working, waiting for approval, done or failed.</p>
       </section>
       <section className="showcase" aria-label="Overseer, full screen">
         <Reveal className="stage">
@@ -154,8 +169,8 @@ function Home() {
 
       {/* CLI */}
       <section className="section-head" aria-labelledby="cli-title">
-        <h2 id="cli-title" className="title">Drive It From the Shell</h2>
-        <p className="lead lead--center">List machines, start sessions, type into them and read their output, from your shell or from an agent over MCP.</p>
+        <h2 id="cli-title" className="title">A CLI and an MCP Server</h2>
+        <p className="lead lead--center">overseer fleet lists machines, starts sessions, sends input and reads output. Add overseer mcp to Claude Code and it can launch and supervise worker agents on your other machines.</p>
       </section>
       <section className="cli-stage" aria-label="Overseer CLI">
         <div className="cli-stage__rays" />
@@ -167,8 +182,8 @@ function Home() {
       {/* Light band */}
       <div className="light">
         <section className="section-head" aria-labelledby="features-title">
-          <h2 id="features-title" className="title">Built for Many Agents at Once</h2>
-          <p className="lead lead--center">One tab for every task in flight, on every machine, and a clear answer to the question that matters: who needs you right now?</p>
+          <h2 id="features-title" className="title">What You Can Do in Overseer</h2>
+          <p className="lead lead--center">Run sessions, approve commands, manage agents and skills, use each machine's shell and desktop, and schedule recurring prompts.</p>
         </section>
         <div className="features">
           {FEATURES.map((feature) => (
@@ -184,8 +199,8 @@ function Home() {
           ))}
         </div>
         <div className="section-head pb-12" style={{ paddingTop: 88 }}>
-          <h2 className="title">The Real Thing</h2>
-          <p className="lead lead--center">Screenshots straight from the app.</p>
+          <h2 className="title">Screenshots From the App</h2>
+          <p className="lead lead--center">Skills shared across agents, an approval prompt, context and plan limits, and a machine's live stats.</p>
         </div>
         <div className="shots-row">
           <Reveal><Shot theme="light" name="skills" alt="Skills and plugins shared by Codex, Claude Code and Devin" /></Reveal>
@@ -198,8 +213,8 @@ function Home() {
       {/* CTA */}
       <section className="cta" aria-labelledby="cta-title">
         <img src="/launch/logo-512.png" alt="" width={88} height={88} className="cta__icon" />
-        <h2 id="cta-title" className="title">Bring Your Agents</h2>
-        <p className="lead lead--center">Install the hub, add your machines, and stop losing track of what your agents are doing.</p>
+        <h2 id="cta-title" className="title">Install the Hub, Add Your Machines</h2>
+        <p className="lead lead--center">Free and open source. One binary for macOS, Linux and Windows. Machines join with one pasted command.</p>
         <p className="text-sm text-ink-3">On the computer that stays on most, choose your platform:</p>
         <HeroInstall />
         <p className="text-sm text-ink-3">Then add each machine from Machines → Add machine.</p>

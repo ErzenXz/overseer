@@ -5,8 +5,11 @@ import { limitTone, limitsFor, resetsIn, usePlanLimits } from '../usageLimits'
 import { useAgentOptions } from '../agentOptions'
 import type { AgentCommand, Device, FsListing, Thread } from '../types'
 import { AgentPicker, ModePicker, nextMode } from './AgentPicker'
+import { AttachmentChips, DropOverlay, isNativeImage, useAttachments } from './attachments'
 import Icon from './Icon'
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from './Menu'
+import { Menu, MenuItem, MenuSeparator } from './Menu'
+import { PickTime, SendLaterItems } from './SendMenu'
+import type { LaterChoice } from '../schedule'
 
 export interface ComposerSettings {
   deviceId: string
@@ -41,6 +44,8 @@ export default function Composer({
   lockAgent,
   autoFocus,
   context,
+  target,
+  blocked,
   initialText = '',
   agentOptional,
   draft,
@@ -48,6 +53,7 @@ export default function Composer({
   usage,
   onCompact,
   imageSupport,
+  onSchedule,
 }: {
   placeholder: string
   devices: Device[]
@@ -60,6 +66,10 @@ export default function Composer({
   autoFocus?: boolean
   // context renders a strip attached under the box (machine, folder…).
   context?: ReactNode
+  // target sits beside Send: where the message will run (see TargetPicker).
+  target?: ReactNode
+  // blocked stops sending (the chosen machine is offline) without hiding why.
+  blocked?: boolean
   initialText?: string
   // agentOptional hides the agent, model and access controls (terminal mode).
   agentOptional?: boolean
@@ -71,19 +81,23 @@ export default function Composer({
   onCompact?: () => void
   // imageSupport sends pasted or attached images to the agent natively.
   imageSupport?: boolean
+  // onSchedule adds the Send-later menu: the message is saved and the hub starts it later.
+  onSchedule?: (text: string, images: { path: string }[] | undefined, when: LaterChoice) => Promise<void> | void
 }) {
   const [text, setText] = useState(initialText)
-  const [images, setImages] = useState<{ path: string; name: string }[]>([])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [listening, setListening] = useState(false)
-  const [uploading, setUploading] = useState(false)
+  const [picking, setPicking] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const area = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const recognition = useRef<{ stop: () => void } | null>(null)
   const options = useAgentOptions(settings.deviceId, settings.agent)
   const device = devices.find((item) => item.id === settings.deviceId)
+  const attach = useAttachments({ device, cwd: settings.cwd, enabled: !!device && !agentOptional })
+  // Claude and Codex always take images natively; ACP agents say so when they start.
+  const nativeImages = imageSupport || settings.agent === 'claude' || settings.agent === 'codex'
   const speechSupported = typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)
   const slashQuery = /^\/[\w:-]*$/.test(text) ? text.slice(1).toLowerCase() : null
   // The agent's own commands run natively ("/review"); built-ins expand to prompts.
@@ -108,15 +122,23 @@ export default function Composer({
   }, [text])
   useEffect(() => () => recognition.current?.stop(), [])
 
-  const submit = async () => {
-    const value = text.trim()
-    if ((!value && !agentOptional) || sending) return
+  const submit = async (later?: LaterChoice) => {
+    if (attach.uploading || sending || blocked) return
+    if (attach.failed) { setError('Retry or remove the attachments that failed'); return }
+    // Images go to the agent natively; other files are named by path in the text.
+    const ready = attach.items.filter((item) => item.status === 'done' && item.path)
+    const images = nativeImages ? ready.filter(isNativeImage) : []
+    const refs = ready.filter((item) => !images.includes(item)).map((item) => (/\s/.test(item.path ?? '') ? `@"${item.path}"` : `@${item.path}`))
+    const value = [text.trim(), refs.join('\n')].filter(Boolean).join('\n\n')
+    if (!value && !images.length && !agentOptional) return
     setSending(true)
     setError('')
     try {
-      await onSubmit(value, images.length ? images.map(({ path }) => ({ path })) : undefined)
+      const sent = images.length ? images.map((item) => ({ path: item.path as string })) : undefined
+      if (later && onSchedule) await onSchedule(value, sent, later)
+      else await onSubmit(value, sent)
       setText('')
-      setImages([])
+      attach.clear()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not send')
     } finally {
@@ -160,30 +182,9 @@ export default function Composer({
     }
   }
 
-  // Files go to the machine the agent runs on, so the agent can read them.
-  const upload = async (file: File) => {
-    if (!device) return
-    setUploading(true)
-    setError('')
-    try {
-      const dir = `${settings.cwd || '~'}/.overseer/uploads`
-      const form = new FormData()
-      form.append('file', file, file.name || `pasted-${Date.now()}.png`)
-      const res = await fetch(`/api/devices/${device.id}/fs/upload?dir=${encodeURIComponent(dir)}`, { method: 'POST', body: form })
-      if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error)
-      const path = `${dir}/${file.name || 'pasted.png'}`
-      if (imageSupport && (file.type.startsWith('image/') || !file.name)) setImages((current) => [...current, { path, name: file.name || 'pasted.png' }])
-      else insert(`@${path}`)
-    } catch (cause) {
-      setError(cause instanceof Error ? `Upload failed: ${cause.message}` : 'Upload failed')
-    } finally {
-      setUploading(false)
-    }
-  }
-
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const file = Array.from(event.clipboardData.files)[0]
-    if (file) { event.preventDefault(); upload(file) }
+    const files = Array.from(event.clipboardData.files)
+    if (files.length && attach.enabled) { event.preventDefault(); attach.add(files) }
   }
 
   const toggleDictation = () => {
@@ -204,8 +205,9 @@ export default function Composer({
     setListening(true)
   }
 
-  const canSend = (agentOptional || !!text.trim()) && !sending && !!settings.deviceId
-  const stopping = busy && onStop && !text.trim()
+  const hasAttachments = attach.items.length > 0
+  const canSend = (agentOptional || !!text.trim() || hasAttachments) && !sending && !attach.uploading && !blocked && !!settings.deviceId
+  const stopping = busy && onStop && !text.trim() && !hasAttachments
 
   return (
     <div className={`composer-wrap ${context ? 'has-context' : ''}`}>
@@ -219,16 +221,8 @@ export default function Composer({
             ))}
           </div>
         )}
-        {images.length > 0 && (
-          <div className="composer-attachments">
-            {images.map((image) => (
-              <span key={image.path} className="attachment-chip">
-                <Icon name="image" size={14} />{image.name}
-                <button type="button" aria-label={`Remove ${image.name}`} onClick={() => setImages((current) => current.filter((item) => item.path !== image.path))}><Icon name="close" size={12} /></button>
-              </span>
-            ))}
-          </div>
-        )}
+        <AttachmentChips items={attach.items} onRemove={attach.remove} onRetry={attach.retry} />
+        {attach.dragging && <DropOverlay />}
         <textarea
           ref={area}
           rows={1}
@@ -248,15 +242,21 @@ export default function Composer({
           >
             {(close) => (
               <>
-                <MenuItem icon="paperclip" label={uploading ? 'Uploading…' : 'Attach a file'} disabled={!device || uploading} onClick={() => { close(); fileInput.current?.click() }} />
+                <MenuItem icon="paperclip" label={attach.uploading ? 'Uploading…' : 'Attach a file'} disabled={!attach.enabled} onClick={() => { close(); fileInput.current?.click() }} />
                 <MenuItem icon="slash" label="Commands" end={<span className="kbd">/</span>} onClick={() => { close(); insert('/', true) }} />
                 <MenuSeparator />
                 <MenuItem icon="git-branch" label="Work on a new branch" onClick={() => { close(); insert('Do this on a new git branch and commit when done.') }} />
                 <MenuItem icon="pull-request" label="Open a PR when done" onClick={() => { close(); insert('When finished, push the branch and open a pull request.') }} />
+                {onSchedule && !agentOptional && (
+                  <>
+                    <MenuSeparator />
+                    <SendLaterItems deviceId={settings.deviceId} agent={settings.agent} model={settings.model} disabled={!canSend} close={close} onLater={(choice) => submit(choice)} onPick={() => setPicking(true)} />
+                  </>
+                )}
               </>
             )}
           </Menu>
-          <input ref={fileInput} type="file" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) upload(file); event.target.value = '' }} />
+          <input ref={fileInput} type="file" multiple hidden onChange={(event) => { attach.add(Array.from(event.target.files ?? [])); event.target.value = '' }} />
           {!agentOptional && (
             <>
               <AgentPicker settings={settings} onSettings={onSettings} lockAgent={lockAgent} />
@@ -265,6 +265,7 @@ export default function Composer({
           )}
           <span className="grow" />
           {!agentOptional && <UsageMeter usage={usage} deviceId={settings.deviceId} agent={settings.agent} onCompact={onCompact} />}
+          {target}
           {speechSupported && (
             <button type="button" className={`ctl ctl-icon ${listening ? 'recording' : ''}`} aria-label={listening ? 'Stop dictation' : 'Dictate'} title={listening ? 'Stop dictation' : 'Dictate'} onClick={toggleDictation}>
               <Icon name={listening ? 'wave' : 'mic'} size={16} />
@@ -273,14 +274,15 @@ export default function Composer({
           {stopping ? (
             <button type="button" className="send-round" aria-label="Stop the agent" title="Stop" onClick={onStop}><Icon name="stop" size={13} /></button>
           ) : (
-            <button type="submit" className="send-round" aria-label="Send" title="Send (Enter)" disabled={!canSend}>
+            <button type="submit" className="send-round" aria-label="Send" title={attach.uploading ? 'Waiting for uploads' : 'Send (Enter)'} disabled={!canSend}>
               {sending ? <span className="spinner" style={{ borderColor: 'transparent', borderTopColor: 'currentColor' }} /> : <Icon name="arrow-up" size={17} strokeWidth={2.1} />}
             </button>
           )}
         </div>
       </form>
+      {picking && <PickTime onClose={() => setPicking(false)} onPick={(at) => { setPicking(false); submit({ kind: 'time', at }) }} />}
       {context && <div className="composer-context">{context}</div>}
-      {error && <p className="px-4 pt-2 text-[13px] text-danger" role="alert">{error}</p>}
+      {(error || attach.notice) && <p className="px-4 pt-2 text-[13px] text-danger" role="alert">{error || attach.notice}</p>}
     </div>
   )
 }
@@ -297,6 +299,8 @@ function UsageMeter({ usage, deviceId, agent, onCompact }: { usage?: Thread['usa
   const windows = plan?.windows ?? []
   const context = usage?.contextWindow && usage.contextTokens ? { used: usage.contextTokens, total: usage.contextWindow } : null
   if (!context && !windows.length) return null
+  // With no session yet the ring only shows up when a plan limit is getting high.
+  if (!context && Math.max(...windows.map((item) => item.usedPercent)) < 60) return null
   // The ring shows context when known, else the tightest plan window.
   const ratio = context ? Math.min(1, context.used / context.total) : Math.min(1, Math.max(...windows.map((item) => item.usedPercent)) / 100)
   const r = 7
@@ -364,60 +368,6 @@ interface SpeechLike {
   onerror: () => void
   start: () => void
   stop: () => void
-}
-
-// ContextStrip sits on top of the composer on the new-session page: where the
-// agent will run (machine) and in which folder.
-export function ContextStrip({ devices, settings, onSettings, recents, hideFolder }: { devices: Device[]; settings: ComposerSettings; onSettings: (next: ComposerSettings) => void; recents: string[]; hideFolder?: boolean }) {
-  const device = devices.find((item) => item.id === settings.deviceId)
-  return (
-    <>
-      <Menu
-        placement="bottom-start"
-        width={270}
-        trigger={<button type="button" className="ctx-btn" title="Machine"><Icon name="monitor" size={15} /><span>{device?.name ?? 'Choose machine'}</span><Icon name="chevron-down" size={12} className="ctl-chev" /></button>}
-      >
-        {(close) => (
-          <>
-            <MenuLabel>Run on</MenuLabel>
-            {devices.length === 0 && <p className="menu-empty">No machines yet.</p>}
-            {devices.map((item) => (
-              <MenuItem key={item.id} icon={<span className={`dot ${item.online ? 'dot-green' : ''}`} style={{ margin: '0 5px' }} />} label={item.name} end={item.online ? (item.isHub ? 'hub' : item.os) : 'offline'} disabled={!item.online} checked={item.id === settings.deviceId} onClick={() => { onSettings({ ...settings, deviceId: item.id, cwd: '' }); close() }} />
-            ))}
-          </>
-        )}
-      </Menu>
-      {!hideFolder && (
-        <>
-          <span className="ctx-sep">/</span>
-          <Menu
-            placement="bottom-start"
-            width={360}
-            trigger={<button type="button" className="ctx-btn" title={settings.cwd || 'Home folder'}><Icon name="folder" size={15} /><span>{settings.cwd ? shortPath(settings.cwd) : 'Home'}</span><Icon name="chevron-down" size={12} className="ctl-chev" /></button>}
-          >
-            {(close) => (
-              <>
-                {recents.length > 0 && (
-                  <>
-                    <MenuLabel>Recent</MenuLabel>
-                    {recents.map((folder) => <MenuItem key={folder} icon="folder" label={folder} checked={folder === settings.cwd} onClick={() => { onSettings({ ...settings, cwd: folder }); close() }} />)}
-                    <MenuSeparator />
-                  </>
-                )}
-                <MenuLabel>Browse {devices.find((item) => item.id === settings.deviceId)?.name ?? ''}</MenuLabel>
-                <FolderPicker deviceId={settings.deviceId} value={settings.cwd} onPick={(cwd) => { onSettings({ ...settings, cwd }); close() }} />
-              </>
-            )}
-          </Menu>
-        </>
-      )}
-    </>
-  )
-}
-
-export function shortPath(path: string) {
-  const parts = path.replace(/\/+$/, '').split('/')
-  return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : path
 }
 
 // FolderPicker browses the machine's filesystem through the hub.

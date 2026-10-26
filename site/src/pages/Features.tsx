@@ -68,8 +68,8 @@ const GROUPS: { id: string; label: string; title: string; items: { shot: string;
 function Features() {
   return (
     <>
-      <PageHeader label="Features" title={<>Every screen, <span className="text-ink-4">as it really is.</span></>}>
-        These are screenshots of the app itself. Nothing on this page is a mockup.
+      <PageHeader label="Features" title={<>Sessions, previews, agents, <span className="text-ink-4">machines and automations.</span></>}>
+        Every feature below is shown with a screenshot of the app itself. Nothing on this page is a mockup.
       </PageHeader>
       <div className="rule" />
       <nav aria-label="Sections" className="frame flex gap-1 overflow-x-auto px-4 py-3 [scrollbar-width:none] sm:px-8">
@@ -101,7 +101,7 @@ function Features() {
       <div className="rule" />
       <section className="frame">
         <div className="section flex flex-wrap items-center justify-between gap-6 py-12">
-          <h2 className="h-feature">Ready when you are.</h2>
+          <h2 className="h-feature">Install the hub and try it on your own machines.</h2>
           <a href="/download/" className="btn btn-dark">Download Overseer<ArrowRight size={15} /></a>
         </div>
       </section>

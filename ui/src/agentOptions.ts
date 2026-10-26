@@ -113,20 +113,32 @@ export function useAgentOptions(deviceId: string, agent: string): AgentOptions {
   return options
 }
 
-// useAgentsOn caches which agent CLIs exist on a machine.
+// useAgentsOn caches which agent CLIs exist on a machine, and whether each is
+// signed in. refreshAgents re-checks (after a sign-in, say) and updates every
+// view that shows the machine.
 const agentCache = new Map<string, DeviceAgent[]>()
+const agentListeners = new Set<(deviceId: string, items: DeviceAgent[]) => void>()
+
+export async function refreshAgents(deviceId: string): Promise<DeviceAgent[]> {
+  const items = await api.get<DeviceAgent[]>(`/api/devices/${deviceId}/agents?refresh=1`)
+  agentCache.set(deviceId, items)
+  agentListeners.forEach((listener) => listener(deviceId, items))
+  return items
+}
+
 export function useAgentsOn(deviceId: string) {
   const [agents, setAgents] = useState<DeviceAgent[] | null>(() => agentCache.get(deviceId) ?? null)
   useEffect(() => {
     if (!deviceId) return
     let alive = true
     setAgents(agentCache.get(deviceId) ?? null)
+    const listener = (id: string, items: DeviceAgent[]) => { if (alive && id === deviceId) setAgents(items) }
+    agentListeners.add(listener)
     api.get<DeviceAgent[]>(`/api/devices/${deviceId}/agents`).then((items) => {
       agentCache.set(deviceId, items)
       if (alive) setAgents(items)
     }).catch(() => { if (alive) setAgents([]) })
-    return () => { alive = false }
+    return () => { alive = false; agentListeners.delete(listener) }
   }, [deviceId])
   return agents
 }
-

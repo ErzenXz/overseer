@@ -205,7 +205,7 @@ func toolDefs() []map[string]any {
 		},
 		{
 			"name":        "create_session",
-			"description": "Create a persistent (tmux) session on a device, optionally starting a command in it — e.g. launch a coding agent like `claude` in a project directory. Returns immediately; use read_output to observe it.",
+			"description": "Create a persistent (tmux) session on a device, optionally starting a command in it — e.g. launch a coding agent like `claude` in a project directory. Returns immediately; use read_output to observe it. The worker runs with its own CLI's permissions on that device, not yours; pass a mode in the command (e.g. `claude --permission-mode plan`, `codex --sandbox read-only`) to keep it cautious. If a worker asks for approval, report it to the user instead of approving it yourself unless the user said you may.",
 			"inputSchema": obj(map[string]any{
 				"device":  device,
 				"name":    str("Session name (letters, digits, . _ -)"),

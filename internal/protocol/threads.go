@@ -127,6 +127,10 @@ type AgentInfo struct {
 	Id        string `json:"id"`
 	Installed bool   `json:"installed"`
 	Version   string `json:"version,omitempty"`
+	// Auth is "ok" or "signed-out" for agents whose CLI can say, else empty
+	// (unknown: never treated as signed out). Account names who is signed in.
+	Auth    string `json:"auth,omitempty"`
+	Account string `json:"account,omitempty"`
 }
 
 // AgentsDetect is the agents.detect request: the hub's catalog as the
@@ -152,6 +156,20 @@ type DesktopProbeResult struct {
 	Available bool   `json:"available"`
 	Port      int    `json:"port"`
 	Reason    string `json:"reason,omitempty"`
+
+	// Environment facts the hub uses to pick a one-click setup. All optional:
+	// older agents only send the fields above.
+	OS             string   `json:"os,omitempty"`
+	User           string   `json:"user,omitempty"`           // account the agent runs as (macOS sign-in name)
+	Session        string   `json:"session,omitempty"`        // linux: x11 | wayland | headless
+	Desktop        string   `json:"desktop,omitempty"`        // linux: XDG_CURRENT_DESKTOP, lower case
+	Display        string   `json:"display,omitempty"`        // linux x11: e.g. ":0"
+	XAuthority     string   `json:"xauthority,omitempty"`     // linux x11: the session's Xauthority file
+	WaylandDisplay string   `json:"waylandDisplay,omitempty"` // linux wayland: e.g. "wayland-0"
+	PackageManager string   `json:"packageManager,omitempty"` // linux: apt | dnf | yum | pacman | zypper
+	Systemd        bool     `json:"systemd,omitempty"`        // linux: a systemd user manager is available
+	Winget         bool     `json:"winget,omitempty"`         // windows
+	Installed      []string `json:"installed,omitempty"`      // VNC servers already on PATH (x11vnc, wayvnc)
 }
 
 // ThreadTool describes one tool call inside a thread.
@@ -162,6 +180,25 @@ type ThreadTool struct {
 	Input  string           `json:"input,omitempty"`
 	Output string           `json:"output,omitempty"`
 	Files  []ThreadToolFile `json:"files,omitempty"`
+	// Agent is set when the tool call runs a subagent (Claude's Task / Agent
+	// tool, Codex's spawned agents). Its own steps are separate tool events
+	// carrying ThreadEvent.ParentId. Older agents and hubs never send it.
+	Agent *ThreadAgent `json:"agent,omitempty"`
+}
+
+// ThreadAgent describes one subagent run. Non-empty fields replace the stored
+// ones; the run's state is the tool's Status.
+type ThreadAgent struct {
+	Type       string `json:"type,omitempty"`   // "Explore", "general-purpose", a Codex role
+	Name       string `json:"name,omitempty"`   // nickname, when the agent has one
+	Task       string `json:"task,omitempty"`   // one-line description of the job
+	Prompt     string `json:"prompt,omitempty"` // the full brief, clipped
+	Result     string `json:"result,omitempty"` // the subagent's final report
+	Model      string `json:"model,omitempty"`
+	Tools      int    `json:"tools,omitempty"`      // tool calls so far
+	Tokens     int64  `json:"tokens,omitempty"`     // tokens used so far
+	DurationMs int64  `json:"durationMs,omitempty"` // as reported by the agent, when it does
+	Background bool   `json:"background,omitempty"` // runs past the call that started it
 }
 
 // ThreadToolFile is one file touched by a tool call.
@@ -185,6 +222,8 @@ type ThreadApprovalRequest struct {
 	Detail   string           `json:"detail,omitempty"`
 	Options  []ApprovalOption `json:"options"`
 	Resolved string           `json:"resolved,omitempty"`
+	// AnsweredBy is the name of the person who answered, set by the hub.
+	AnsweredBy string `json:"answeredBy,omitempty"`
 }
 
 // ApprovalOption is one button on an approval request.
@@ -208,6 +247,9 @@ type ThreadEvent struct {
 	Turn       string                 `json:"turn,omitempty"`
 	DurationMs int64                  `json:"durationMs,omitempty"`
 	Question   *ThreadQuestion        `json:"question,omitempty"`
+	// ParentId is the id of the subagent tool message this step belongs to.
+	// Only the event that creates a message needs it.
+	ParentId string `json:"parentId,omitempty"`
 }
 
 // ThreadQuestion asks the user to pick options and/or type an answer.

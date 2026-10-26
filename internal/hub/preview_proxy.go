@@ -226,6 +226,27 @@ func (s *Server) newPreviewTransport() *http.Transport {
 	}
 }
 
+// previewCookieFor builds the preview session cookie. The Preview panel shows
+// a preview inside an iframe on the hub, and on localhost (or any host the
+// browser treats as a different site) that is a cross-site frame, where a Lax
+// cookie is silently dropped and the sign-in handoff loops forever. So over
+// HTTPS, and on localhost, which browsers allow Secure cookies on, it is
+// SameSite=None, partitioned per top-level site so it stays first-party-safe.
+func previewCookieFor(r *http.Request, ph previewHost, value string) *http.Cookie {
+	cookie := &http.Cookie{
+		Name: previewCookie, Value: value, Path: "/",
+		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		MaxAge: int(previewCookieTTL.Seconds()),
+	}
+	switch {
+	case requestScheme(r) == "https":
+		cookie.Secure, cookie.SameSite, cookie.Partitioned = true, http.SameSiteNoneMode, true
+	case ph.domain == "localhost":
+		cookie.Secure, cookie.SameSite = true, http.SameSiteNoneMode
+	}
+	return cookie
+}
+
 // servePreview handles every request whose Host is a preview origin.
 func (s *Server) servePreview(w http.ResponseWriter, r *http.Request, ph previewHost) {
 	rawQuery, token := withoutQueryParam(r.URL.RawQuery, previewTokenParam)
@@ -238,11 +259,7 @@ func (s *Server) servePreview(w http.ResponseWriter, r *http.Request, ph preview
 	// it from the address bar.
 	if _, hasToken := r.URL.Query()[previewTokenParam]; hasToken {
 		if s.previewAuth.consumeToken(token, ph.host) {
-			http.SetCookie(w, &http.Cookie{
-				Name: previewCookie, Value: s.previewAuth.mintCookie(ph.host), Path: "/",
-				HttpOnly: true, Secure: requestScheme(r) == "https", SameSite: http.SameSiteLaxMode,
-				MaxAge: int(previewCookieTTL.Seconds()),
-			})
+			http.SetCookie(w, previewCookieFor(r, ph, s.previewAuth.mintCookie(ph.host)))
 			authed = true
 		}
 		if authed {

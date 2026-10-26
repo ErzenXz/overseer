@@ -3,8 +3,11 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +35,7 @@ const (
 	detectVersions  = 8               // concurrent `--version` runs
 	versionTimeout  = 2 * time.Second // per `--version` run
 	detectBudget    = 6 * time.Second // after this, versions are skipped
+	authTimeout     = 3 * time.Second // per sign-in status check
 )
 
 var versionRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)?[0-9A-Za-z.+-]*`)
@@ -89,6 +93,9 @@ func detectAgentList(specs []protocol.AgentDetectSpec) []protocol.AgentInfo {
 			if left := time.Until(deadline); left > 0 {
 				out[i].Version = binaryVersion(path, min(versionTimeout, left))
 			}
+			if left := time.Until(deadline); left > 0 {
+				out[i].Auth, out[i].Account = agentAuth(out[i].Id, path, min(authTimeout, left))
+			}
 		}(i)
 	}
 	wg.Wait()
@@ -123,4 +130,81 @@ func binaryVersion(path string, timeout time.Duration) string {
 		return string(v)
 	}
 	return string(versionRe.Find(stderr.Bytes()))
+}
+
+// agentAuth asks an agent's own CLI whether it is signed in. Only agents with
+// a reliable status command are checked; anything unclear (a timeout, an old
+// CLI without the command) returns "" so the UI never claims "signed out"
+// without proof.
+func agentAuth(id, path string, timeout time.Duration) (state, account string) {
+	var args []string
+	switch id {
+	case "claude":
+		args = []string{"auth", "status"}
+	case "codex":
+		args = []string{"login", "status"}
+	default:
+		return "", ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	var stdout bytes.Buffer
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Stdout = &stdout
+	if id == "codex" {
+		cmd.Stderr = &stdout // codex prints its status to either
+	}
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		return "", ""
+	}
+	state, account = parseAuthStatus(id, stdout.String(), err == nil)
+	if state == "signed-out" && id == "claude" && os.Getenv("ANTHROPIC_API_KEY") != "" {
+		return "ok", "API key"
+	}
+	if state == "signed-out" && id == "codex" && os.Getenv("OPENAI_API_KEY") != "" {
+		return "ok", "API key"
+	}
+	return state, account
+}
+
+// parseAuthStatus reads one status command's output. exited0 is whether the
+// command succeeded.
+func parseAuthStatus(id, out string, exited0 bool) (state, account string) {
+	out = strings.TrimSpace(out)
+	switch id {
+	case "claude":
+		var status struct {
+			LoggedIn   *bool  `json:"loggedIn"`
+			Email      string `json:"email"`
+			AuthMethod string `json:"authMethod"`
+		}
+		if json.Unmarshal([]byte(out), &status) == nil && status.LoggedIn != nil {
+			if !*status.LoggedIn {
+				return "signed-out", ""
+			}
+			if status.Email != "" {
+				return "ok", status.Email
+			}
+			return "ok", status.AuthMethod
+		}
+	case "codex":
+		if exited0 {
+			if strings.Contains(strings.ToLower(out), "api key") {
+				return "ok", "API key"
+			}
+			if strings.Contains(strings.ToLower(out), "chatgpt") {
+				return "ok", "ChatGPT"
+			}
+			return "ok", ""
+		}
+		if strings.Contains(strings.ToLower(out), "not logged in") {
+			return "signed-out", ""
+		}
+		return "", ""
+	}
+	if !exited0 {
+		return "signed-out", ""
+	}
+	return "ok", ""
 }

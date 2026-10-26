@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 // FleetField is the hero background: Overseer's own architecture, drawn live.
-// A hub sits at the centre (the Orbit mark), machines ride slow orbits around
+// A hub sits at the centre (the approved Overseer mark), machines ride slow orbits around
 // it, and agent activity travels in as packets along curved links: grey while
 // working, amber when an agent needs approval, green when a PR is ready.
 // Canvas 2D, capped at 2x DPR, paused off-screen and in background tabs, and a
@@ -70,6 +70,9 @@ export function FleetField({ className = "", centerY = 0.66, labels = true, anch
       waiting: color("--amber-dot", "#e0a526"),
       done: color("--green", "#22c55e"),
     };
+
+    const mark = new Image();
+    mark.src = "/brand/overseer.png";
 
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let width = 0;
@@ -179,20 +182,14 @@ export function FleetField({ className = "", centerY = 0.66, labels = true, anch
       ctx.beginPath();
       ctx.arc(g.cx, g.cy, r * 7, 0, Math.PI * 2);
       ctx.fill();
-      // the Orbit mark: a ring, a core, and a satellite
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = `rgba(${ink}, 0.95)`;
-      ctx.beginPath();
-      ctx.arc(g.cx, g.cy, r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = `rgba(${ink}, 1)`;
-      ctx.beginPath();
-      ctx.arc(g.cx, g.cy, r * 0.38, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = color("--blue", "#3b82f6");
-      ctx.beginPath();
-      ctx.arc(g.cx + r * 0.72, g.cy - r * 0.72, r * 0.26, 0, Math.PI * 2);
-      ctx.fill();
+      if (mark.complete && mark.naturalWidth > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(g.cx - r * 1.4, g.cy - r * 1.4, r * 2.8, r * 2.8, r * 0.4);
+        ctx.clip();
+        ctx.drawImage(mark, g.cx - r * 1.4, g.cy - r * 1.4, r * 2.8, r * 2.8);
+        ctx.restore();
+      }
     };
 
     const frame = (now: number, dt: number) => {
@@ -305,8 +302,9 @@ export function FleetField({ className = "", centerY = 0.66, labels = true, anch
 
     resize();
     if (still) {
+      mark.onload = () => frame(0, 0);
       frame(0, 0);
-      return;
+      return () => { mark.onload = null; };
     }
 
     let raf = 0;

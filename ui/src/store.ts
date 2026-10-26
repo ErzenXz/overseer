@@ -1,11 +1,12 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { api, wsURL } from './api'
 import { mockEnabled, mockThreadStream } from './mock'
+import { HeldError, isHeld } from './held'
 import type { Access, Device, FleetSession, Thread, ThreadMessage } from './types'
 
 // A tiny shared cache: one fetch serves every component that subscribes, and
 // hub events trigger a refresh instead of each page polling on its own.
-function createResource<T>(path: string, intervalMs: number) {
+export function createResource<T>(path: string, intervalMs: number) {
   let value: T | null = null
   let error = ''
   let inflight: Promise<void> | null = null
@@ -127,10 +128,29 @@ export interface NewThread {
   fast?: boolean
   mode?: string
   title?: string
+  images?: { path: string }[]
+  // Idempotency key: the hub starts at most one session per key, so a retry
+  // after a lost connection can never run twice.
+  clientRequestId?: string
 }
 
+export const newRequestId = () => `r-${crypto.randomUUID().replace(/-/g, '')}`
+
+const START_TIMEOUT_MS = 20_000
+
 export async function createThread(input: NewThread) {
-  const thread = await api.post<Thread>('/api/threads', input)
+  const thread = await api.post<Thread>('/api/threads', input, START_TIMEOUT_MS)
+  if (isHeld(thread)) throw new HeldError(thread) // a guardrail saved it as a scheduled session
+  threadsResource.set((threads) => [thread, ...(threads ?? []).filter((item) => item.id !== thread.id)])
+  return thread
+}
+
+// findStarted asks the hub whether a start request with this key created a
+// session. null is a definite no; a throw means the hub was unreachable.
+export async function findStarted(requestId: string): Promise<Thread | null> {
+  const res = await api.get<{ found: boolean; thread?: Thread }>(`/api/sessions/by-request/${encodeURIComponent(requestId)}`)
+  if (!res.found || !res.thread) return null
+  const thread = res.thread
   threadsResource.set((threads) => [thread, ...(threads ?? []).filter((item) => item.id !== thread.id)])
   return thread
 }
@@ -165,6 +185,7 @@ export type StreamEvent =
   | { type: 'snapshot'; thread: Thread; messages: ThreadMessage[] }
   | { type: 'message'; message: ThreadMessage }
   | { type: 'thread'; thread: Thread }
+  | { type: 'presence'; users: { id: string; name: string }[] }
 
 export function openThreadStream(id: string, onEvent: (event: StreamEvent) => void, onStatus: (connected: boolean) => void): () => void {
   if (mockEnabled) {

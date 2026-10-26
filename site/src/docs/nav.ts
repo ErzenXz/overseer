@@ -25,17 +25,19 @@ export const DOC_GROUPS: DocGroup[] = [
   {
     title: "Using Overseer",
     pages: [
-      { slug: "sessions", title: "Sessions", description: "Start agent sessions, choose the model and mode, approve what runs, and steer agents while they work." },
-      { slug: "workspace", title: "Workspace & Previews", description: "The panel beside every session: live previews, shell, remote desktop, files, changes and plan." },
+      { slug: "sessions", title: "Sessions", description: "Start agent sessions, choose the model and mode, approve what runs, send later, continue in another agent and share a session." },
+      { slug: "workspace", title: "Workspace & Previews", description: "The panel beside every session: live previews, shell, remote desktop, files, changes with before and after screenshots, and plan." },
       { slug: "agents", title: "Agents & Skills", description: "Which agents Overseer finds, adding your own, and managing skills, plugins and MCP servers for all of them." },
-      { slug: "machines", title: "Machines", description: "Add computers to your hub, see their live stats, and install or sign in to agent CLIs on them." },
-      { slug: "automations", title: "Automations & Review", description: "Run prompts on a schedule with the model and mode you choose, and review pull requests with an agent." },
+      { slug: "machines", title: "Machines", description: "Add computers or one-click cloud servers to your hub, see their live stats, and install or sign in to agent CLIs on them." },
+      { slug: "automations", title: "Automations & Review", description: "Run prompts on a schedule, share them as recipes, turn labelled GitHub issues into pull requests, and review pull requests with an agent." },
+      { slug: "arena", title: "Agent Arena", description: "Give one task to several agents, compare their results side by side, and keep the best one." },
+      { slug: "mission", title: "Mission Control & Wrapped", description: "Watch every agent on one live wall, show it on a TV, and post a recap of what your agents got done." },
     ],
   },
   {
     title: "Automation",
     pages: [
-      { slug: "cli", title: "Command Line", description: "Drive your fleet from a shell: list machines, start sessions, type into them, read output and forward ports." },
+      { slug: "cli", title: "Command Line", description: "Drive your fleet from a shell: list machines, start sessions, type into them, read output, forward ports and watch it all with overseer top." },
       { slug: "mcp", title: "MCP & Agents", description: "Let Claude Code, Codex, ChatGPT or any MCP client run sessions on your machines through Overseer's MCP tools." },
     ],
   },
@@ -43,6 +45,7 @@ export const DOC_GROUPS: DocGroup[] = [
     title: "Reference",
     pages: [
       { slug: "remote-access", title: "Remote Access", description: "Reach your hub from anywhere over Tailscale, built-in HTTPS or your own reverse proxy." },
+      { slug: "teams", title: "Teams & Chat Apps", description: "Let more than one person use a hub with roles, invites and hand-offs, and answer agents from Telegram, Slack or Discord." },
       { slug: "updates", title: "Updates & Services", description: "How verified automatic updates and rollback work, and how to run the hub under your own service." },
       { slug: "shortcuts", title: "Keyboard Shortcuts", description: "Every keyboard shortcut in the Overseer web app." },
     ],

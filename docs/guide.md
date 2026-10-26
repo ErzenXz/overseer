@@ -228,6 +228,16 @@ overseer fleet read homelab build
 overseer fleet run homelab -- git status
 ```
 
+To watch your agents from the terminal, run `overseer top`: a live, htop-style
+view of every machine (CPU, memory, session counts) and every agent session
+(waiting first, then working, then recent) with its current step. Use ↑/↓ to
+select, Enter for details, `a` to answer a waiting approval, `s` to steer a
+session, `x` to stop its turn, `/` to filter, `o` to open it in the browser and
+`?` for help. `overseer status` prints a one-shot summary (`--json` for scripts,
+`--short` for a shell prompt) and always exits 0 when the hub answers. Both use
+the credentials saved by `overseer fleet login` and honour `NO_COLOR`; piped
+output is a plain table.
+
 ### Use it from ChatGPT, Claude, or any MCP client (remote MCP)
 
 The hub also serves the MCP tools over HTTP at `/mcp`, so any client that

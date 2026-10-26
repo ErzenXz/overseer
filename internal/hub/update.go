@@ -37,6 +37,27 @@ type updateManager struct {
 	status  updateStatus
 	latest  updater.Release
 	applied func()
+
+	// Release notes for the newest release, fetched once per tag and cached;
+	// failures are retried after notesRetry. notesMu is held while fetching so
+	// concurrent page loads share one request.
+	notesMu    sync.Mutex
+	notesTag   string
+	notesList  []updater.Entry
+	notesFail  time.Time // when the last fetch for failedTag failed
+	failedTag  string
+	fetchNotes func(ctx context.Context, repo, tag string) ([]updater.Entry, error)
+}
+
+const notesRetry = 5 * time.Minute
+
+// updateNotes is the "what's new" payload: notes for every release newer than
+// the running one, and the running release's own notes.
+type updateNotes struct {
+	CurrentVersion string          `json:"currentVersion"`
+	LatestVersion  string          `json:"latestVersion,omitempty"`
+	Newer          []updater.Entry `json:"newer"`
+	Current        *updater.Entry  `json:"current"`
 }
 
 func newUpdateManager(store *Store, version, repo string) *updateManager {
@@ -50,6 +71,7 @@ func newUpdateManager(store *Store, version, repo string) *updateManager {
 	managed := os.Getenv("OVERSEER_MANAGED") != ""
 	return &updateManager{
 		store: store, version: version, repo: repo,
+		fetchNotes: updater.Changelog,
 		status: updateStatus{
 			CurrentVersion:  version,
 			RollbackVersion: rollbackVersion,
@@ -63,11 +85,9 @@ func newUpdateManager(store *Store, version, repo string) *updateManager {
 func (m *updateManager) start(ctx context.Context, applied func()) {
 	m.mu.Lock()
 	m.applied = applied
-	managed := m.status.Managed
 	m.mu.Unlock()
-	if !managed {
-		return
-	}
+	// Unmanaged hubs check too (they just never install on their own), so the
+	// UI can tell people an update exists.
 	go func() {
 		// Give the listeners time to come up before the first network check.
 		timer := time.NewTimer(15 * time.Second)
@@ -135,6 +155,9 @@ func (m *updateManager) check(ctx context.Context, applyAutomatically bool) erro
 	m.status.UpdateAvailable = updater.IsNewer(release.Version, m.version)
 	shouldApply := applyAutomatically && m.status.Managed && m.status.AutoUpdate && m.status.UpdateAvailable
 	m.mu.Unlock()
+
+	// Warm the notes cache so opening "What's new" costs no request.
+	go m.notes(context.WithoutCancel(ctx))
 
 	if shouldApply {
 		return m.install(ctx)
@@ -235,4 +258,44 @@ func (m *updateManager) finishApply(err error) {
 	if err != nil {
 		m.status.Error = err.Error()
 	}
+}
+
+// notes returns the cached release notes, fetching them when the newest known
+// release changed. Dev and source builds (no stable version) get none.
+func (m *updateManager) notes(ctx context.Context) updateNotes {
+	m.mu.Lock()
+	tag := m.status.LatestVersion
+	m.mu.Unlock()
+	if tag == "" {
+		tag = m.version // no check yet: at least the running release's notes
+	}
+	out := updateNotes{CurrentVersion: m.version, LatestVersion: tag, Newer: []updater.Entry{}}
+	if !updater.IsStable(m.version) || !updater.IsStable(tag) {
+		return out
+	}
+
+	m.notesMu.Lock()
+	recentlyFailed := m.failedTag == tag && time.Since(m.notesFail) < notesRetry
+	if m.notesTag != tag && !recentlyFailed {
+		entries, err := m.fetchNotes(ctx, m.repo, tag)
+		if err != nil {
+			m.notesList, m.notesTag = nil, ""
+			m.failedTag, m.notesFail = tag, time.Now()
+		} else {
+			m.notesList, m.notesTag, m.failedTag = entries, tag, ""
+		}
+	}
+	entries := m.notesList
+	m.notesMu.Unlock()
+
+	for i := range entries {
+		switch {
+		case entries[i].Version == m.version:
+			e := entries[i]
+			out.Current = &e
+		case updater.IsNewer(entries[i].Version, m.version):
+			out.Newer = append(out.Newer, entries[i])
+		}
+	}
+	return out
 }

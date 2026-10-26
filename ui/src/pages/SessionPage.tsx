@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import SessionInfo from '../components/SessionInfo'
+import { ACTION_EVENT, type ShortcutAction } from '../lib/shortcuts'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { agentInfo, formatDuration, statusText } from '../agents'
+import { formatDuration, statusText } from '../agents'
 import { accessForKind, builtinOptions, modeOf } from '../agentOptions'
 import Composer, { type ComposerSettings } from '../components/Composer'
 import FileBrowser from '../components/FileBrowser'
-import Icon, { AgentMark } from '../components/Icon'
+import Icon from '../components/Icon'
 import { Menu, MenuItem, MenuSeparator } from '../components/Menu'
 import Terminal from '../components/Terminal'
+import ShareDialog from '../components/ShareDialog'
 import Transcript, { Diff, PlanCard } from '../components/Transcript'
 import VncViewer from '../components/VncViewer'
 import { SidebarToggle, useOwnHeader, useShell } from '../shell'
@@ -15,8 +18,14 @@ import { answerApproval, answerQuestion, cancelThread, compactThread, deleteThre
 import type { AgentCommand, ThreadCapabilities } from '../types'
 import type { MessageActions } from '../components/Transcript'
 import PreviewPanel, { type PreviewRequest } from '../components/PreviewPanel'
+import { ContinueChips, openContinueIn } from '../components/ContinueIn'
 import { PreviewLinkContext } from '../previews'
 import type { Thread, ThreadMessage } from '../types'
+import PresenceStack, { type Viewer } from '../components/Presence'
+import { HandOffDialog, HandoffBanner } from '../components/HandOff'
+import { useTeam } from '../teams'
+import BeforeAfter from '../components/BeforeAfter'
+import { IssueChip } from './AutopilotPage'
 
 type Tab = 'shell' | 'desktop' | 'preview' | 'files' | 'changes' | 'plan'
 
@@ -25,6 +34,8 @@ export default function SessionPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { toast, mobile } = useShell()
+  // The header has room for the machine, folder and branch from md up; below
+  // that they get their own line under it.
   const { value: devices } = useDevices()
   const [thread, setThread] = useState<Thread | null>(null)
   const [messages, setMessages] = useState<ThreadMessage[]>([])
@@ -44,6 +55,10 @@ export default function SessionPage() {
     setPanel('preview')
   }, [setPanel])
   const [renaming, setRenaming] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  const [handingOff, setHandingOff] = useState(false)
+  const [viewers, setViewers] = useState<Viewer[]>([])
+  const team = useTeam()
   const [draft, setDraft] = useState<{ text: string; id: number }>()
   const [caps, setCaps] = useState<ThreadCapabilities | null>(null)
   const [commands, setCommands] = useState<AgentCommand[]>([])
@@ -54,6 +69,7 @@ export default function SessionPage() {
   useEffect(() => {
     setThread(null)
     setMessages([])
+    setViewers([])
     setMissing(false)
     const timeout = window.setTimeout(() => setMissing((current) => current || false), 0)
     const stop = openThreadStream(id, (event) => {
@@ -63,6 +79,8 @@ export default function SessionPage() {
       } else if (event.type === 'thread') {
         setThread(event.thread)
         threadsResource.set((threads) => threads?.map((item) => item.id === event.thread.id ? event.thread : item) ?? threads)
+      } else if (event.type === 'presence') {
+        setViewers(event.users)
       } else if (event.type === 'message') {
         setMessages((current) => {
           const index = current.findIndex((message) => message.id === event.message.id)
@@ -172,6 +190,7 @@ export default function SessionPage() {
     onEdit: (text) => setDraft({ text, id: Date.now() }),
     onRetry: (text) => { send(text).catch((cause) => toast(cause instanceof Error ? cause.message : 'Could not send')) },
     onFork: caps?.fork ? (messageId) => { fork(messageId) } : undefined,
+    onContinueIn: thread ? (messageId) => openContinueIn(thread.id, messageId) : undefined,
     onAnswer: async (questionId, answers, text) => { if (thread) await answerQuestion(thread.id, questionId, answers, text) },
   }
   const updateSettings = async (next: ComposerSettings) => {
@@ -232,9 +251,24 @@ export default function SessionPage() {
   }
 
   const running = thread?.status === 'working' || thread?.status === 'starting'
+
+  // Keyboard shortcuts: the workspace tabs (Alt+1…6), show/hide, and stop.
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const action = (event as CustomEvent<ShortcutAction>).detail
+      if (action.name === 'stop') { if (thread && running) cancelThread(thread.id); return }
+      if (action.name !== 'panel') return
+      if (action.tab === 'close') setPanel('')
+      else if (action.tab === 'toggle') setPanel(panel ? '' : 'shell')
+      else setPanel(action.tab)
+    }
+    window.addEventListener(ACTION_EVENT, onAction)
+    return () => window.removeEventListener(ACTION_EVENT, onAction)
+  }, [panel, setPanel, thread, running])
   const device = devices?.find((item) => item.id === thread?.deviceId)
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1" ref={shell}>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="topbar">
         <SidebarToggle />
         {thread && renaming ? (
@@ -244,6 +278,7 @@ export default function SessionPage() {
         ) : (
           <button className="topbar-title hover:text-secondary" onDoubleClick={() => setRenaming(true)} title="Double-click to rename">{thread?.title ?? <span className="skeleton inline-block h-4 w-56" />}</button>
         )}
+        {thread && <IssueChip threadId={thread.id} />}
         {thread?.pr && (
           <a href={thread.pr.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[15px]" style={{ color: 'var(--purple)' }} title="Pull request">
             <Icon name={thread.pr.state === 'merged' ? 'git-merge' : 'pull-request'} size={17} />#{thread.pr.number}
@@ -252,14 +287,9 @@ export default function SessionPage() {
         {thread && running && <span className="badge"><span className="dot dot-blue dot-pulse" />{statusText[thread.status]}</span>}
         {thread?.status === 'waiting' && <span className="badge badge-amber">Needs approval</span>}
         {!connected && <span className="badge badge-amber" title="Reconnecting to the hub">Reconnecting…</span>}
-        <div className="topbar-actions">
-          {thread && (
-            <span className="mr-2 hidden items-center gap-2 text-[13.5px] text-muted md:flex">
-              <AgentMark agent={thread.agent} size={15} />{agentInfo(thread.agent).name}
-              <span className="text-faint">·</span>
-              <Link to={`/machines/${thread.deviceId}`} className="hover:text-ink">{thread.deviceName}</Link>
-            </span>
-          )}
+        <div className={`topbar-actions ${panel ? '' : 'topbar-actions-end'}`}>
+          {thread && <SessionInfo thread={thread} device={device} />}
+          <PresenceStack viewers={viewers} meId={team.me?.id} />
           <button className={`icon-btn ${expandAll ? 'icon-btn-active' : ''}`} aria-label={expandAll ? 'Collapse steps' : 'Expand all steps'} title={expandAll ? 'Collapse steps' : 'Expand all steps'} onClick={() => setExpandAll(!expandAll)}><Icon name="list-bullets" size={19} /></button>
           <Menu placement="bottom-end" width={250} trigger={<button className="icon-btn" aria-label="Session actions"><Icon name="more" size={19} /></button>}>
             {(close) => thread && (
@@ -267,8 +297,11 @@ export default function SessionPage() {
                 <MenuItem icon="edit" label="Rename" onClick={() => { close(); setRenaming(true) }} />
                 <MenuItem icon={thread.pinned ? 'pin-off' : 'pin'} label={thread.pinned ? 'Unpin' : 'Pin to top'} onClick={() => { close(); patchThread(thread.id, { pinned: !thread.pinned }).then(setThread).catch(() => {}) }} />
                 <MenuItem icon="link" label="Copy link" onClick={() => { close(); navigator.clipboard?.writeText(location.href); toast('Link copied') }} />
+                <MenuItem icon="external" label="Share…" description="A link anyone can watch" onClick={() => { close(); setSharing(true) }} />
+                {team.multi && <MenuItem icon="users" label="Hand off to…" description="Give this session to a teammate" onClick={() => { close(); setHandingOff(true) }} />}
                 <MenuSeparator />
                 {caps?.fork && <MenuItem icon="git-fork" label="New child session" description="Continue in a new session with this context" onClick={() => { close(); fork() }} />}
+                <MenuItem icon="arrow-up-right" label="Continue in another agent…" description="Hand this over when it is stuck or out of limit" onClick={() => { close(); openContinueIn(thread.id) }} />
                 {caps?.compact && <MenuItem icon="compress" label="Compact conversation" description="Summarise older turns to free context" disabled={running} onClick={() => { close(); compact() }} />}
                 {caps?.undo && <MenuItem icon="undo" label="Undo last turn" disabled={running} onClick={() => { close(); undo() }} />}
                 {(caps?.fork || caps?.compact || caps?.undo) && <MenuSeparator />}
@@ -288,14 +321,18 @@ export default function SessionPage() {
               </>
             )}
           </Menu>
-          <button className={`icon-btn ${panel ? 'icon-btn-active' : ''}`} aria-label={panel ? 'Hide workspace' : 'Show workspace'} title="Shell, desktop and files" onClick={() => setPanel(panel ? '' : 'shell')}><Icon name="panel-right" size={19} /></button>
         </div>
+        {!panel && <button className="icon-btn" aria-label="Show workspace" title="Shell, desktop and files" onClick={() => setPanel('shell')}><Icon name="panel-right" size={19} /></button>}
       </header>
 
-      <div className="thread-shell" ref={shell}>
+      {sharing && thread && <ShareDialog thread={thread} onClose={() => setSharing(false)} />}
+      {handingOff && thread && <HandOffDialog thread={thread} onClose={() => setHandingOff(false)} onDone={setThread} />}
+      {thread && <ContinueChips threadId={thread.id} version={messages.length} />}
+      <div className="thread-shell">
         <div className="thread-main">
           <div className="thread-scroll" ref={scroller} onScroll={onScroll}>
             <div className="thread-col">
+              {thread && <HandoffBanner thread={thread} />}
               {!thread ? (
                 <div className="space-y-5 pt-6">{[60, 90, 75].map((width) => <div key={width} className="skeleton h-5" style={{ width: `${width}%` }} />)}</div>
               ) : (
@@ -339,14 +376,16 @@ export default function SessionPage() {
             {device && !device.online && <p className="mt-2 text-center text-[13px] text-warning">{device.name} is offline. Messages are sent when it reconnects.</p>}
           </div>
         </div>
+      </div>
+      </div>
 
-        {panel && thread && (
+      {panel && thread && (
           <>
             <div className="resize-handle hidden lg:block" onPointerDown={startResize} role="separator" aria-orientation="vertical" aria-label="Resize workspace" />
             <aside className="workspace" style={{ width: `${panelWidth}%` }} aria-label="Workspace">
               <div className="workspace-tabs" role="tablist">
                 {([['shell', 'terminal', 'Shell'], ['preview', 'globe', 'Preview'], ['desktop', 'presentation', 'Desktop'], ['files', 'folder', 'Files'], ['changes', 'file-diff', `Changes${changes.length ? ` ${changes.length}` : ''}`], ['plan', 'list-checks', 'Plan']] as const).map(([key, icon, label]) => (
-                  <button key={key} role="tab" className="workspace-tab" aria-selected={panel === key} onClick={() => setPanel(key)}><Icon name={icon} size={16} />{label}</button>
+                  <button key={key} role="tab" className="workspace-tab" aria-selected={panel === key} onClick={() => setPanel(key)}><Icon name={icon} size={16} /><span className="workspace-tab-label">{label}</span></button>
                 ))}
                 <span className="flex-1" />
                 <button className="icon-btn" aria-label="Close workspace" onClick={() => setPanel('')}><Icon name="close" size={17} /></button>
@@ -358,6 +397,7 @@ export default function SessionPage() {
                 {panel === 'files' && <FileBrowser deviceId={thread.deviceId} initialPath={thread.cwd || '~'} compact />}
                 {panel === 'changes' && (
                   <div className="h-full overflow-y-auto p-4">
+                    <BeforeAfter threadId={thread.id} running={running} />
                     {changes.length === 0 ? <p className="empty-text p-6 text-center">No file changes yet.</p> : changes.map((file) => file.diff ? <Diff key={file.path} file={file} /> : (
                       <div key={file.path} className="diff"><div className="diff-head"><Icon name="file" size={14} /><span className="truncate">{file.path}</span><span className="ml-auto"><span className="plus">+{file.additions ?? 0}</span> <span className="minus">−{file.deletions ?? 0}</span></span></div></div>
                     ))}
@@ -373,7 +413,6 @@ export default function SessionPage() {
             </aside>
           </>
         )}
-      </div>
     </div>
   )
 }

@@ -1,8 +1,5 @@
-import { useId } from "react";
-
 /**
- * The Overseer mark and wordmark. This is the only place the logo is drawn,
- * so swapping the icon later is a one-file change (plus public/favicon.svg).
+ * The approved Overseer mark and wordmark.
  */
 export function LogoMark({
   size = 20,
@@ -11,36 +8,15 @@ export function LogoMark({
   size?: number;
   className?: string;
 }) {
-  // Orbit: a ring around the hub with one live agent in orbit. The ring
-  // follows the text colour; the blue satellite is cut out of it with a mask.
-  const mask = useId();
   return (
-    <svg
-      viewBox="196 188 640 640"
+    <img
+      src="/brand/overseer-rounded.png"
       width={size}
       height={size}
+      alt=""
       aria-hidden="true"
       className={className}
-    >
-      <defs>
-        <mask id={mask}>
-          <rect x="196" y="188" width="640" height="640" fill="#fff" />
-          <circle cx="724" cy="300" r="114" fill="#000" />
-        </mask>
-      </defs>
-      <g mask={`url(#${mask})`} fill="currentColor">
-        <circle
-          cx="500"
-          cy="524"
-          r="270"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="68"
-        />
-        <circle cx="500" cy="524" r="104" />
-      </g>
-      <circle cx="724" cy="300" r="74" fill="#3b82f6" />
-    </svg>
+    />
   );
 }
 

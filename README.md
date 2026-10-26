@@ -40,35 +40,66 @@ ports to open or SSH keys to set up.
 
 ## What you can do
 
-**Start a session.** Type what you want, pick a machine and folder, and send.
-Choose the agent, model, thinking level, fast mode and how much it may do on
-its own.
+**Start a session.** Type what you want and send. Under the box, pick the
+folder and the machine, or start straight from a GitHub repository and branch
+(it gets its own worktree, so your work is never touched). Choose the agent,
+model, thinking level, fast mode and how much it may do on its own. Attach
+files and images by pasting or dragging them in.
 
-<img src="docs/screenshots/models.png" alt="Choosing the agent, model and thinking level">
+<img src="docs/screenshots/new-session.png" alt="The new session page: a message box with the folder and machine chosen underneath">
 
-**Follow along.** Steps fold into “Worked for 2m”, edits show as diffs, and you
-approve, answer questions, steer, fork or undo right in the chat. Replies render
+**Follow along.** Steps fold into “Worked for 2m”, subagents show as their own
+tree, edits show as diffs, and you approve, answer questions, steer, fork or
+undo right in the chat, or from Telegram, Slack and Discord. Replies render
 tables, code, math and diagrams as they stream.
 
 <img src="docs/screenshots/session.png" alt="A session with a formatted reply">
 
+**Sign in without leaving Overseer.** It knows when Claude Code or Codex is
+signed out, opens the sign-in for you in a dialog, and turns a cryptic
+`401 unauthorized` into a clear card with a button.
+
+<img src="docs/screenshots/signin.png" alt="A failed session explaining that Codex needs to be signed in, with a Sign in button">
+
 **See what it builds, live.** When an agent starts a dev server, open the
 **Preview** tab and watch the site update as it works, from any device.
+Changes show before and after screenshots.
 [One-time setup](docs/guide.md#live-previews).
 
+<img src="docs/screenshots/preview.png" alt="A session with a live preview of the site it is building">
+
+**Race agents.** Give one task to several agents in the **Arena**. Each works in
+its own copy of the repo; compare the results and keep the winner.
+
+<img src="docs/screenshots/arena.png" alt="Agent Arena comparing the results of several agents on one task">
+
+**Watch everything.** **Mission control** is a live wall of every session,
+grouped by what needs you, with a TV mode. Share a replay or a live view of any
+session by link. `overseer top` does the same in a terminal.
+
+<img src="docs/screenshots/mission.png" alt="Mission control: every session as a tile, grouped by what needs you">
+
 **Use every machine.** Terminals, the full desktop, files and live stats for each
-computer, all from the browser.
+computer, from the browser. Add a Hetzner or DigitalOcean server in one step.
 
 <img src="docs/screenshots/machines.png" alt="All connected machines with live stats">
+
+**Plan around your limits.** See your real plan limits, send a session for later
+or for when a limit resets, hold or pause sessions before a subscription runs
+dry, and continue a stuck session in another agent.
 
 **Skills & plugins for every agent.** See and toggle the skills, plugins,
 commands, subagents, rules, hooks and MCP servers of Claude Code, Codex, Devin
 and more on each machine. Write a skill once and share it with all of them, or
 install plugins from their marketplaces.
 
-**And more:** your real plan limits, scheduled runs with the model of your
-choice, any ACP agent detected automatically, pull request review, light and
-dark themes, and a layout that works on your phone.
+**Work as a team.** Invite people with owner, member or viewer roles, hand
+sessions over, see who is looking, and keep an activity log.
+
+**And more:** automations on a schedule or from labelled GitHub issues, pull
+request review, any ACP agent detected automatically, keyboard shortcuts for
+everything (press `?`), light and dark themes, and a layout that works on your
+phone.
 
 <img src="docs/screenshots/dark.png" alt="Dark theme with the shell open beside a session">
 
@@ -80,8 +111,9 @@ dark themes, and a layout that works on your phone.
 | Codex | `codex app-server` |
 | Gemini CLI, OpenCode, Goose, Copilot CLI, Cursor and others | [Agent Client Protocol](https://agentclientprotocol.com) |
 
-Install and sign in to them from **Machines → Setup**. Your credentials stay on
-each machine.
+Install and sign in to them from **Machines → Setup** or the **Agents** tab of a
+machine. Your credentials stay on each machine. Overseer also keeps the agents
+themselves up to date, never interrupting a running session.
 
 ## Good to know
 

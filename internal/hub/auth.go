@@ -47,42 +47,70 @@ func verifyPassword(stored, password string) bool {
 
 type sessionManager struct {
 	mu       sync.Mutex
-	sessions map[string]time.Time // token -> expiry
+	sessions map[string]sessionEntry // token -> expiry and owner
+}
+
+// sessionEntry is one browser session. user is the id of the person it
+// belongs to ("" for a session made with create(), which acts as the owner).
+type sessionEntry struct {
+	exp  time.Time
+	user string
 }
 
 const sessionTTL = 30 * 24 * time.Hour
 
 func newSessionManager() *sessionManager {
-	return &sessionManager{sessions: map[string]time.Time{}}
+	return &sessionManager{sessions: map[string]sessionEntry{}}
 }
 
-func (m *sessionManager) create() string {
+func (m *sessionManager) create() string { return m.createFor("") }
+
+// createFor starts a session for one user.
+func (m *sessionManager) createFor(userID string) string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	token := hex.EncodeToString(b)
 	m.mu.Lock()
-	m.sessions[token] = time.Now().Add(sessionTTL)
+	m.sessions[token] = sessionEntry{exp: time.Now().Add(sessionTTL), user: userID}
 	m.mu.Unlock()
 	return token
 }
 
 func (m *sessionManager) valid(token string) bool {
+	_, ok := m.lookup(token)
+	return ok
+}
+
+// lookup returns the user id of a live session.
+func (m *sessionManager) lookup(token string) (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	exp, ok := m.sessions[token]
+	e, ok := m.sessions[token]
 	if !ok {
-		return false
+		return "", false
 	}
-	if time.Now().After(exp) {
+	if time.Now().After(e.exp) {
 		delete(m.sessions, token)
-		return false
+		return "", false
 	}
-	return true
+	return e.user, true
 }
 
 func (m *sessionManager) revoke(token string) {
 	m.mu.Lock()
 	delete(m.sessions, token)
+	m.mu.Unlock()
+}
+
+// revokeUser ends every session of a user, except the one named by keep
+// ("" keeps none). It is what disabling, removing and a password change use.
+func (m *sessionManager) revokeUser(userID, keep string) {
+	m.mu.Lock()
+	for token, e := range m.sessions {
+		if e.user == userID && token != keep {
+			delete(m.sessions, token)
+		}
+	}
 	m.mu.Unlock()
 }
 
@@ -139,18 +167,22 @@ func (r *rateLimiter) allow(remoteAddr string) bool {
 // via Authorization: Bearer (used by the CLI and MCP server).
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if c, err := r.Cookie(sessionCookie); err == nil && s.sessions.valid(c.Value) {
-			if !s.sameOriginWrite(r) {
-				httpError(w, http.StatusForbidden, "cross-origin request refused")
+		if c, err := r.Cookie(sessionCookie); err == nil {
+			if u, ok := s.sessionUser(c.Value); ok {
+				if !s.sameOriginWrite(r) {
+					httpError(w, http.StatusForbidden, "cross-origin request refused")
+					return
+				}
+				next(w, withUser(r, u))
 				return
 			}
-			next(w, r)
-			return
 		}
 		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 			token := strings.TrimPrefix(auth, "Bearer ")
 			if ok, _ := s.store.ValidApiToken(token); ok {
-				next(w, r)
+				// API tokens are only handed out by owners, and act with
+				// owner rights (the CLI and MCP server need them).
+				next(w, withUser(r, apiTokenUser))
 				return
 			}
 		}

@@ -2,10 +2,20 @@
 // to go back to the real hub. Disable without editing: localStorage
 // 'overseer:mock' = 'off' and reload.
 
-import { mockExec, mockThreadStream, setThreadsChangedHandler, threadRoute } from './mockThreads'
+import { mockExec, mockThreadStream as rawThreadStream, setThreadsChangedHandler, threadRoute } from './mockThreads'
+import { teamsMe, teamsRoute, withTeamStream } from './mockTeams'
+import { scheduleRoute, scheduleThreadStream, withSchedule } from './mockSchedule'
+import { desktopRoute } from './mockDesktop'
+import { wrappedRoute } from './mockWrapped'
 import { previewRoute } from './mockPreview'
 import { skillsRoute } from './mockSkills'
-import type { Device, FleetSession, FsListing, Preset, Project, Session, SetupOverview, Stats, UpdateStatus } from './types'
+import { githubRoute } from './mockGithub'
+import { autopilotRoute } from './mockAutopilot'
+import { chatRoute } from './mockChat'
+import { arenaRoute } from './mockArena'
+import { cloudRoute } from './mockCloud'
+import { shareRoute, mockShareStream } from './mockShare'
+import type { Device, FleetSession, FsListing, GitPathInfo, Preset, Project, Session, SetupOverview, Stats, UpdateNotes, UpdateStatus, ReleaseNotes } from './types'
 
 const STORAGE_KEY = 'overseer:mock'
 const AUTH_KEY = 'overseer:mock:auth'
@@ -18,7 +28,8 @@ if (import.meta.env.DEV) {
 }
 
 export const mockEnabled = import.meta.env.DEV && localStorage.getItem(STORAGE_KEY) !== 'off'
-export { mockThreadStream }
+export const mockThreadStream = withTeamStream(scheduleThreadStream(rawThreadStream))
+export { mockShareStream }
 
 let changeTimer: number | undefined
 setThreadsChangedHandler(() => {
@@ -29,6 +40,49 @@ setThreadsChangedHandler(() => {
 let authed = sessionStorage.getItem(AUTH_KEY) === '1'
 
 const now = () => Math.floor(Date.now() / 1000)
+
+const UPDATE_KEY = 'overseer:mock:installed'
+const mockReleases = () => {
+  const v050: ReleaseNotes = {
+    version: 'v0.5.0',
+    date: '2026-10-28',
+    intro: 'Pick exactly where a session runs, drop files into the composer, and get told when an agent is waiting for you.',
+    groups: [
+      { title: 'New', items: [
+        '**Where it runs.** One picker for the machine, folder and branch, with when each machine was last seen. Starting from a GitHub repo clones it for you.',
+        '**Drag, drop and paste attachments.** Drop files or paste screenshots into the composer; they upload before the agent starts.',
+        '**Needs you.** Sessions waiting on an approval or a question sit at the top of the sidebar, the tab title and icon show a count, and a gentle reminder comes after 5 and 30 minutes.',
+        '**One-click remote desktop.** Machines without a desktop get a setup button that installs and checks everything, with a clear message when something is missing.',
+        '**Update notice.** The sidebar tells you when a release is out and what it adds, and shows what changed after Overseer updates.',
+      ] },
+      { title: 'Improved', items: [
+        '**Safer session start.** If the hub can’t confirm a session started, Overseer checks before offering to retry, so a double click never starts two.',
+        'The composer keeps your draft and attachments when you switch machines.',
+      ] },
+    ],
+  }
+  const v041: ReleaseNotes = {
+    version: 'v0.4.1',
+    date: '2026-10-23',
+    groups: [{ title: 'Fixed', items: [
+      'Plan limits no longer show as zero on machines that were asleep during the last refresh.',
+      'Long `AGENTS.md` files no longer push the Skills page off screen.',
+    ] }],
+  }
+  const v040: ReleaseNotes = {
+    version: 'v0.4.0',
+    date: '2026-10-20',
+    intro: 'Skills and plugins for every agent in one place, your real plan limits, and every ACP agent found automatically.',
+    groups: [{ title: 'New', items: ['**Skills & plugins.** A new page shows what extends each agent on each machine.'] }],
+  }
+  return { v050, v041, v040 }
+}
+const mockUpdateNotes = (): UpdateNotes => {
+  const { v050, v041, v040 } = mockReleases()
+  const installedAt = Number(sessionStorage.getItem(UPDATE_KEY) ?? 0)
+  if (installedAt > 0 && Date.now() - installedAt > 5000) return { currentVersion: 'v0.5.0', latestVersion: 'v0.5.0', newer: [], current: v050 }
+  return { currentVersion: 'v0.4.0', latestVersion: 'v0.5.0', newer: [v050, v041], current: v040 }
+}
 const GB = 1024 ** 3
 
 const stats = (cpuPercent: number, cpuCores: number, memUsed: number, memTotal: number, diskUsed: number, diskTotal: number, rx: number, tx: number, load1: number, processes: number, uptime: number): Stats => ({
@@ -167,6 +221,7 @@ const tree: Record<string, FsListing['entries']> = {
   '/Users/erzen/Projects': [
     { name: 'LiveAgent', dir: true, size: 0, mode: 'drwxr-xr-x', modTime: now() - 120 },
     { name: 'storefront', dir: true, size: 0, mode: 'drwxr-xr-x', modTime: now() - 3600 },
+    ...['api-gateway', 'archive', 'billing-service', 'codex-harness', 'design-system', 'docs-site', 'infra', 'mobile-app', 'orbit-api', 'ops-scripts', 'takvimi', 'worker', 'web', 'website'].map((name, i) => ({ name, dir: true, size: 0, mode: 'drwxr-xr-x', modTime: now() - 86400 * (i + 2) })),
     { name: 'notes.md', dir: false, size: 3412, mode: '-rw-r--r--', modTime: now() - 86400 },
   ],
   '/Users/erzen/Projects/LiveAgent': [
@@ -179,8 +234,31 @@ const tree: Record<string, FsListing['entries']> = {
 }
 
 function listingFor(requested: string): FsListing {
-  const path = requested === '~' || requested === '' ? '/Users/erzen' : requested
+  const path = requested === '~' || requested === '' ? '/Users/erzen' : requested.startsWith('~/') ? `/Users/erzen/${requested.slice(2)}` : requested
   return { path, entries: tree[path] ?? [] }
+}
+
+// Folders the demo machines "have": where they live, which repo, which branch.
+const mockHomes: Record<string, string> = { macbook: '/Users/erzen', studio: '/home/erzen', homelab: '/home/erzen' }
+const mockRepos: Record<string, { branch: string; remote: string; dirty: number }> = {
+  'macbook:/Users/erzen/Projects/LiveAgent': { branch: 'user-feedback', remote: 'github.com/ErzenXz/overseer', dirty: 14 },
+  'macbook:/Users/erzen/Projects/takvimi': { branch: 'main', remote: 'github.com/ErzenXz/takvimi', dirty: 0 },
+  'studio:/home/erzen/code/overseer': { branch: 'main', remote: 'github.com/ErzenXz/overseer', dirty: 0 },
+  'studio:/home/erzen/Projects/codex-harness': { branch: 'main', remote: 'github.com/ErzenXz/codex-harness', dirty: 2 },
+  'studio:/home/erzen/Projects/archive': { branch: 'redesign-home', remote: 'github.com/ErzenXz/archive', dirty: 3 },
+  'studio:/home/erzen/Projects/storefront': { branch: 'main', remote: 'github.com/ErzenXz/storefront', dirty: 0 },
+  'homelab:/home/erzen/Projects/LiveAgent': { branch: 'release-1.4', remote: 'github.com/ErzenXz/overseer', dirty: 0 },
+  'homelab:/srv/api-gateway': { branch: 'main', remote: 'github.com/ErzenXz/api-gateway', dirty: 1 },
+  'homelab:/srv/worker': { branch: 'fix/leak', remote: 'github.com/ErzenXz/worker', dirty: 0 },
+}
+
+function mockGitInfo(deviceId: string, requested: string): GitPathInfo {
+  const home = mockHomes[deviceId] ?? '/home/demo'
+  const resolved = requested === '' || requested === '~' ? home : requested.startsWith('~/') ? `${home}${requested.slice(1)}` : requested
+  const repo = mockRepos[`${deviceId}:${resolved}`]
+  if (repo) return { path: requested, resolved, exists: true, isRepo: true, root: resolved, branch: repo.branch, remote: `https://${repo.remote}.git`, remoteKey: repo.remote, dirty: repo.dirty }
+  const exists = resolved === home || resolved === `${home}/Projects`
+  return { path: requested, resolved, exists, isRepo: false }
 }
 
 function json(data: unknown, status = 200) {
@@ -193,9 +271,9 @@ function device(id: string) {
 
 async function route(method: string, path: string, search: URLSearchParams, body: Record<string, unknown>): Promise<Response> {
   if (path === '/api/me') {
-    return json({ setupDone: true, authenticated: authed, version: '1.4.2-demo' })
+    return json({ setupDone: true, authenticated: authed, version: '1.4.2-demo', ...teamsMe(authed) })
   }
-  if (method === 'POST' && (path === '/api/login' || path === '/api/setup')) {
+  if (method === 'POST' && (path === '/api/login' || path === '/api/setup' || /^\/api\/invites\/[^/]+\/accept$/.test(path))) {
     authed = true
     sessionStorage.setItem(AUTH_KEY, '1')
     return json({ ok: true })
@@ -205,6 +283,11 @@ async function route(method: string, path: string, search: URLSearchParams, body
     sessionStorage.removeItem(AUTH_KEY)
     return json({ ok: true })
   }
+  // Shared links open without a login.
+  if (path.startsWith('/api/public/')) return (await shareRoute(method, path, body)) ?? json({ error: 'not found' }, 404)
+  // People, invites, the activity log and who holds each session (mockTeams.ts).
+  const teamsResponse = await teamsRoute(method, path, search, body, authed, withSchedule(threadRoute))
+  if (teamsResponse) return teamsResponse
   if (!authed) return json({ error: 'unauthorized' }, 401)
 
   if (method === 'GET' && path === '/api/usage/limits') {
@@ -222,10 +305,28 @@ async function route(method: string, path: string, search: URLSearchParams, body
       ] })
     return json({ accounts: [claude('macbook', 'MacBook Pro', 42, 68), codex('macbook', 'MacBook Pro', 18, 54), claude('studio', 'Studio', 77, 93), codex('studio', 'Studio', 9, 31), { deviceId: 'homelab', deviceName: 'Homelab', agent: 'claude', error: 'not signed in' }] })
   }
+  const chatResponse = chatRoute(method, path, body)
+  if (chatResponse) return chatResponse
+  const githubResponse = await githubRoute(method, path, search, body, { online: (id) => !!device(id)?.online, home: (id) => mockHomes[id] ?? '/home/demo', info: mockGitInfo })
+  if (githubResponse) return githubResponse
+  const arenaResponse = arenaRoute(method, path, body)
+  if (arenaResponse) return arenaResponse
+  const autopilotResponse = autopilotRoute(method, path, body)
+  if (autopilotResponse) return autopilotResponse
   const skillsResponse = skillsRoute(method, path, search, body)
   if (skillsResponse) return skillsResponse
+  const wrappedResponse = wrappedRoute(method, path, search)
+  if (wrappedResponse) return wrappedResponse
+  const desktopResponse = desktopRoute(method, path, body)
+  if (desktopResponse) return desktopResponse
   const previewResponse = previewRoute(method, path, body)
   if (previewResponse) return previewResponse
+  const shareResponse = await shareRoute(method, path, body)
+  if (shareResponse) return shareResponse
+  const cloudResponse = cloudRoute(method, path, body, devices)
+  if (cloudResponse) return cloudResponse
+  const scheduleResponse = await scheduleRoute(method, path, body, threadRoute)
+  if (scheduleResponse) return scheduleResponse
   const threadResponse = await threadRoute(method, path, body)
   if (threadResponse) return threadResponse
   const execMatch = path.match(/^\/api\/devices\/([^/]+)\/exec$/)
@@ -289,18 +390,28 @@ async function route(method: string, path: string, search: URLSearchParams, body
     return json({ ok: true })
   }
 
+  if (path === '/api/updates/notes') return json(mockUpdateNotes())
   if (path === '/api/updates' || /^\/api\/updates\/(check|install|rollback)$/.test(path)) {
+    // Demo: running v0.4.0 with v0.5.0 out. Installing flips to v0.5.0 for the
+    // rest of the browser session, so the "updated" notice can be seen too.
+    if (method === 'POST' && path === '/api/updates/install') {
+      sessionStorage.setItem(UPDATE_KEY, String(Date.now()))
+      return json({ ok: true }, 202)
+    }
+    const installedAt = Number(sessionStorage.getItem(UPDATE_KEY) ?? 0)
+    const updated = installedAt > 0 && Date.now() - installedAt > 5000
     const status: UpdateStatus = {
-      currentVersion: '1.4.2',
-      latestVersion: '1.4.2',
-      updateAvailable: false,
-      autoUpdate: true,
+      currentVersion: updated ? 'v0.5.0' : 'v0.4.0',
+      latestVersion: 'v0.5.0',
+      rollbackVersion: updated ? 'v0.4.0' : undefined,
+      updateAvailable: !updated,
+      autoUpdate: false,
       managed: true,
       checking: false,
-      applying: false,
+      applying: installedAt > 0 && !updated,
       lastChecked: now() - 180,
       fleetTotal: devices.length,
-      fleetOutdated: 1,
+      fleetOutdated: updated ? 0 : 1,
     }
     if (method === 'PATCH') return json({ ...status, autoUpdate: Boolean(body.autoUpdate) })
     return json(status)
@@ -311,6 +422,16 @@ async function route(method: string, path: string, search: URLSearchParams, body
       command: 'curl -fsSL http://localhost:4200/install/DEMO.sh | sh',
       windowsCommand: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm http://localhost:4200/install/DEMO.ps1 | iex"',
     })
+  }
+
+  const gitMatch = path.match(/^\/api\/devices\/([^/]+)\/git-info$/)
+  if (method === 'POST' && gitMatch) {
+    const id = decodeURIComponent(gitMatch[1])
+    if (!device(id)?.online) return json({ error: 'device is offline' }, 503)
+    // Each machine answers on its own time, so rows fill in one by one.
+    await new Promise((resolve) => setTimeout(resolve, { macbook: 60, studio: 420, homelab: 900 }[id] ?? 300))
+    const paths = Array.isArray(body.paths) ? body.paths.map(String) : []
+    return json({ home: mockHomes[id] ?? '/home/demo', paths: paths.map((requested) => mockGitInfo(id, requested)) })
   }
 
   const deviceMatch = path.match(/^\/api\/devices\/([^/]+)\/(sessions|setup|fs|fs\/download|fs\/upload)$/)

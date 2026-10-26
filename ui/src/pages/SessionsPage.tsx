@@ -4,6 +4,7 @@ import { agentCatalog, agentInfo, isUnread, relativeTime, threadStatusLabel } fr
 import Icon, { AgentMark } from '../components/Icon'
 import { Menu, MenuItem } from '../components/Menu'
 import { deleteThread, useDevices, useThreads } from '../store'
+import { OsMark } from '../components/DeviceMark'
 
 type Status = 'all' | 'active' | 'waiting' | 'done' | 'failed'
 
@@ -60,7 +61,7 @@ export default function SessionsPage() {
                 <div className="menu-sep" />
                 <div className="menu-label">Machine</div>
                 <MenuItem label="Any machine" checked={!machine} onClick={() => { setMachine(''); close() }} />
-                {(devices ?? []).map((device) => <MenuItem key={device.id} icon="monitor" label={device.name} checked={machine === device.id} onClick={() => { setMachine(device.id); close() }} />)}
+                {(devices ?? []).map((device) => <MenuItem key={device.id} icon={<OsMark os={device.os} size={16} />} label={device.name} checked={machine === device.id} onClick={() => { setMachine(device.id); close() }} />)}
               </>
             )}
           </Menu>

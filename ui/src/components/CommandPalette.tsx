@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { agentInfo, relativeTime } from '../agents'
 import { useDevices, usePref, useThreads } from '../store'
 import Icon, { AgentMark, type IconName } from './Icon'
+import { hintFor } from '../lib/shortcuts'
 
 interface Item {
   key: string
@@ -29,7 +30,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   const items = useMemo<Item[]>(() => [
-    { key: 'new', group: 'Actions', label: 'New session', hint: '⇧⌘O', icon: icon('plus'), run: go('/') },
+    { key: 'new', group: 'Actions', label: 'New session', hint: hintFor('new'), icon: icon('plus'), run: go('/') },
     { key: 'term', group: 'Actions', label: 'New terminal', icon: icon('terminal'), run: go('/?mode=terminal') },
     { key: 'auto', group: 'Actions', label: 'Create automation', icon: icon('automation'), run: go('/automations?create=1') },
     { key: 'add', group: 'Actions', label: 'Add a machine', icon: icon('user-plus'), run: go('/machines?add=1') },
@@ -47,12 +48,18 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
       { key: `d:${device.id}`, group: 'Machines', label: device.name, detail: device.online ? device.os : 'offline', icon: icon('monitor'), run: go(`/machines/${device.id}`) },
       ...(device.online ? [{ key: `v:${device.id}`, group: 'Machines', label: `${device.name} desktop`, detail: 'Remote desktop', icon: icon('presentation'), run: go(`/machines/${device.id}?tab=desktop`) }] : []),
     ]),
-    { key: 'p:auto', group: 'Go to', label: 'Automations', icon: icon('automation'), run: go('/automations') },
-    { key: 'p:review', group: 'Go to', label: 'Review', icon: icon('pull-request'), run: go('/review') },
-    { key: 'p:projects', group: 'Go to', label: 'Projects', icon: icon('book'), run: go('/projects') },
-    { key: 'p:customize', group: 'Go to', label: 'Customize — MCP servers and agents', icon: icon('customize'), run: go('/customize') },
-    { key: 'p:sessions', group: 'Go to', label: 'All sessions', icon: icon('list-bullets'), run: go('/sessions') },
-    { key: 'p:settings', group: 'Go to', label: 'Settings', icon: icon('settings'), run: go('/settings') },
+    { key: 'p:arena', group: 'Go to', label: 'Agent Arena', detail: 'Race agents on one task', hint: hintFor('go-v'), icon: icon('zap'), run: go('/arena') },
+    { key: 'p:skills', group: 'Go to', label: 'Skills & plugins', hint: hintFor('go-k'), icon: icon('sparkles'), run: go('/skills') },
+    { key: 'p:machines', group: 'Go to', label: 'Machines', hint: hintFor('go-m'), icon: icon('monitor'), run: go('/machines') },
+    { key: 'p:keys', group: 'Actions', label: 'Keyboard shortcuts', hint: hintFor('help'), icon: icon('keyboard'), run: go('/settings/shortcuts') },
+    { key: 'p:auto', group: 'Go to', label: 'Automations', hint: hintFor('go-a'), icon: icon('automation'), run: go('/automations') },
+    { key: 'p:review', group: 'Go to', label: 'Review', hint: hintFor('go-r'), icon: icon('pull-request'), run: go('/review') },
+    { key: 'p:mission', group: 'Go to', label: 'Mission control', hint: hintFor('go-o'), detail: 'Every agent on one screen', icon: icon('radio'), run: go('/mission') },
+    { key: 'p:wrapped', group: 'Go to', label: 'Agent Wrapped', hint: hintFor('go-w'), detail: 'Your week with agents', icon: icon('sparkles'), run: go('/wrapped') },
+    { key: 'p:projects', group: 'Go to', label: 'Projects', hint: hintFor('go-p'), icon: icon('book'), run: go('/projects') },
+    { key: 'p:customize', group: 'Go to', label: 'Customize — MCP servers and agents', hint: hintFor('go-c'), icon: icon('customize'), run: go('/customize') },
+    { key: 'p:sessions', group: 'Go to', label: 'All sessions', hint: hintFor('sessions'), icon: icon('list-bullets'), run: go('/sessions') },
+    { key: 'p:settings', group: 'Go to', label: 'Settings', hint: hintFor('settings'), icon: icon('settings'), run: go('/settings') },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [threads, devices, theme, dark])
 

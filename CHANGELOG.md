@@ -3,6 +3,120 @@
 What changed in each Overseer release. Installed hubs and machines update to
 the newest release on their own; see [Settings → General](docs/guide.md#keeping-devices-up-to-date).
 
+## v0.5.0 — 2026-10-26
+
+Teams, a race between agents, a live wall for everything running, start a
+session from any GitHub repo, sign in to agents without leaving Overseer, and a
+calmer app from top to bottom.
+
+### New
+- **Start from anywhere.** Pick the machine and folder under the composer, or
+  start straight from a GitHub repository and branch. Overseer clones it, or
+  checks it out in its own worktree, so what you were already working on is
+  never touched. Folders on a machine are found for you, and a machine that
+  drops off says when it was last seen. A start that fails or gets cut off can
+  be retried without creating the session twice.
+- **Attach files and images.** Pick, paste or drag them onto the composer.
+  Images go to agents that read them; other files land in the session's folder.
+- **Sign in to agents inside Overseer.** Overseer now checks whether Claude
+  Code and Codex are signed in. **Signed out** shows on the Agents tab and above
+  the composer, and **Sign in** opens a terminal in a dialog that notices when
+  it worked. An error like `unauthorized (401)` becomes a plain card with a
+  **Sign in** button and **Resume session**. Usage limits and network errors get
+  their own short explanations, with the original text under **Details**. When
+  no agent on a machine is ready, the new-session page walks you through the
+  first one.
+- **Agent Arena.** Give one task to several agents. Each races in its own copy
+  of the repo, you watch them side by side, compare what they changed, run a
+  check command on every result, and keep the winner.
+- **Mission control and Agent Wrapped.** A live wall of every session, grouped
+  by what needs you, with each machine's CPU and memory and a TV mode for a
+  spare screen. **Agent Wrapped** is a shareable recap of what your agents got
+  done.
+- **Share a session.** Send a link to a replay, or let someone watch live,
+  view only. Machine and folder names are hidden by default, secrets Overseer
+  recognises are masked, and links can expire or be revoked in **Settings →
+  Shared links**.
+- **Send later and guardrails.** Start a session tonight, tomorrow, at a time
+  you pick, or when your plan limit resets. Optional guardrails hold new
+  sessions at 90% of a weekly limit and pause running ones at 98%. Waiting
+  sessions sit in **Scheduled** and can be started, edited or cancelled.
+- **Continue in another agent.** When one agent is stuck or out of limit, hand
+  the session to another on the same machine and folder, with a handoff prompt
+  written from the conversation. Each session links to the other.
+- **Approve from chat.** Get approvals and finished sessions in Telegram, Slack
+  or Discord, answer them there, or send them to a webhook.
+- **Issue autopilot.** Label a GitHub issue and an agent works on it and opens a
+  pull request. Choose who may trigger it and see every run.
+- **Before and after.** The Changes tab captures screenshots of your running
+  app before and after a session's edits.
+- **Cloud machines.** Create a server at Hetzner Cloud or DigitalOcean from
+  **Machines → Add machine**. It installs the agent and the tools you pick and
+  joins your hub by itself.
+- **Recipes.** Share an automation as a link; open one to add it to your hub.
+- **Teams.** More than one person on a hub, with owner, member and viewer roles,
+  invites, who is looking at a session, hand-offs between people and an
+  activity log. Your existing password becomes the first owner (**Admin**).
+- **`overseer top`.** An htop-style view of every machine and session in your
+  terminal, plus `overseer status` for a one-line summary.
+- **Keyboard shortcuts everywhere.** Go to any page with a two-key chord, open
+  workspace tabs with Alt+1 to 6, stop an agent, and press **?** for the full
+  list. They also show in the command palette.
+- **One-click remote desktop setup.** Opening the Desktop tab on a machine that
+  isn't ready offers a guided install instead of an error.
+- **Alerts when an agent needs you.** A browser notification and the tab title
+  tell you when a session is waiting for an approval.
+- **Agent updates.** When a newer Claude Code, Codex, Gemini CLI or OpenCode is
+  out for a machine, a card under the Overseer update offers to update it. Each
+  agent updates itself the way it was installed. An agent that has a session
+  running is never touched: its update waits and starts by itself when the
+  session ends. Turn on **Update automatically** to keep them current in the
+  background.
+- **Update notice with the changelog.** A quiet card in the sidebar shows when
+  a new version is out and what changed in it.
+
+### Improved
+- **A calmer layout.** A slim icon rail and a sessions panel replace the long
+  sidebar. Spacing is the same everywhere, the green status dots are gone, and
+  machines show their real operating system.
+- **A simpler composer.** Agent, mode, usage and send sit in one row. The folder
+  and machine live in a tray under it, like the model menu. The agent, thinking
+  and mode menus fold down gracefully when the workspace panel is open.
+- **Easier-to-read sessions.** Steps are grouped under one line, with subagent
+  work shown as its own nested tree, and details open on request.
+- **Session header.** One **i** button holds the agent, machine, folder, branch
+  and pull request. With the workspace panel closed the actions sit on the
+  right; with it open they move next to the title and the panel runs to the
+  top of the page.
+- **Live previews.** Previews now load inside the panel (the sign-in cookie was
+  being dropped in the frame) and the picker lists only dev servers started in
+  the session's folder, not every port on the machine. Other servers sit behind
+  one **Other servers** row.
+- **Docs.** Twelve pages written from the guide, including Arena, Mission
+  control, Teams and chat apps, and Keyboard shortcuts.
+- **A new logo and icons** across the app, the site and the install page.
+- Delegated agents (the MCP `create_session` tool) now explain what a
+  delegated session can and can't do.
+
+### Fixed
+- Images and files could not be uploaded to a session.
+- The workspace terminal no longer logs an error when it is resized.
+- Opening the workspace panel no longer squeezes the composer's mode menu down
+  to an icon.
+- The same error repeated by an agent now shows once instead of several times.
+
+### Security
+- Shared session links are read only, hide machine details by default and can
+  be revoked. Preview and shared pages are sent with strict frame and content
+  rules.
+- Every action on a team hub is attributed to a person in the activity log.
+
+### Upgrading
+- Everyone signs in again once, because the hub restarts to update. Existing
+  hubs get an owner called **Admin** from your current password; rename it in
+  **Settings → People**.
+- Nothing needs to change on your machines; they update with the hub.
+
 ## v0.4.0 — 2026-10-20
 
 Skills and plugins for every agent in one place, your real plan limits, every

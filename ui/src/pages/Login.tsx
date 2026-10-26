@@ -6,13 +6,16 @@ import { mockEnabled } from '../mock'
 
 export default function Login({
   setupDone,
+  multiUser = false,
   onSuccess,
 }: {
   setupDone: boolean
+  multiUser?: boolean // several people on this hub: sign in with a name too
   onSuccess: () => void
 }) {
   // Installers print a link with ?setup=CODE so the one-time code fills itself.
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get('setup') ?? '')
+  const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
@@ -28,7 +31,7 @@ export default function Login({
     }
     setBusy(true)
     try {
-      await api.post(setupDone ? '/api/login' : '/api/setup', setupDone ? { password } : { password, code })
+      await api.post(setupDone ? '/api/login' : '/api/setup', setupDone ? (multiUser ? { name: name.trim(), password } : { password }) : { password, code })
       if (!setupDone) history.replaceState(null, '', location.pathname)
       // A preview link opened while signed out comes back here with
       // ?next=/api/previews/auth?return=…; carry on to the preview.
@@ -36,7 +39,7 @@ export default function Login({
       if (next.startsWith('/api/previews/auth?')) { location.assign(next); return }
       onSuccess()
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) setError('Incorrect password. Try again.')
+      if (err instanceof ApiError && err.status === 401) setError(multiUser ? 'Incorrect name or password. Try again.' : 'Incorrect password. Try again.')
       else if (err instanceof ApiError && err.status === 403) setError('That setup code isn’t right. It’s in the installer output and the hub’s log.')
       else setError(err instanceof ApiError ? err.message : 'Couldn’t reach your hub. Try again.')
     } finally {
@@ -54,7 +57,7 @@ export default function Login({
           </div>
           <h1>{setupDone ? 'Sign in' : 'Create a password'}</h1>
           <p className="login-subtitle">
-            {setupDone ? 'Enter your password to continue.' : 'Choose the administrator password for this hub.'}
+            {setupDone ? (multiUser ? 'Enter your name and password to continue.' : 'Enter your password to continue.') : 'Choose the administrator password for this hub.'}
           </p>
           <form onSubmit={submit} aria-busy={busy}>
             {!setupDone && (
@@ -66,13 +69,21 @@ export default function Login({
                 <p className="login-help">Shown by the installer and in the hub’s log. It keeps anyone else on your network from claiming this hub first.</p>
               </div>
             )}
+            {setupDone && multiUser && (
+              <div className="login-field">
+                <label htmlFor="login-name">Name</label>
+                <div className="login-input">
+                  <input id="login-name" name="username" value={name} onChange={(event) => setName(event.target.value)} autoComplete="username" autoFocus required disabled={busy} spellCheck={false} />
+                </div>
+              </div>
+            )}
             <PasswordField
               id="password"
               label="Password"
               value={password}
               onChange={setPassword}
               autoComplete={setupDone ? 'current-password' : 'new-password'}
-              autoFocus={setupDone || !!code}
+              autoFocus={(setupDone && !multiUser) || !!code}
               minLength={setupDone ? undefined : 8}
               disabled={busy}
             />

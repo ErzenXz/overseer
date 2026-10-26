@@ -8,6 +8,9 @@ import type { ComposerSettings } from '../components/Composer'
 import Icon, { AgentMark, type IconName } from '../components/Icon'
 import { Menu, MenuItem, MenuSeparator, Switch } from '../components/Menu'
 import Modal from '../components/Modal'
+import { AutopilotEntry } from './AutopilotPage'
+import { ShareRecipeModal } from '../components/RecipeShare'
+import { extraTemplates, recipeFromAutomation, templateRecipe, type Recipe } from '../recipes'
 import { useShell } from '../shell'
 import { createThread, useDevices } from '../store'
 import type { Access, Automation } from '../types'
@@ -32,6 +35,7 @@ const templates: Template[] = [
   { name: 'Update coding agents', category: 'Fleet', icon: 'bot', tags: ['Machine'], schedule: '0 4 * * *', description: 'Nightly, Overseer updates Claude Code, Codex and Gemini CLI on this machine so every agent is current.', prompt: 'Update the installed coding agent CLIs on this machine (claude, codex, gemini) to their latest versions using the install method each one was installed with. Report old and new versions.' },
   { name: 'Keep the README honest', category: 'Maintenance', icon: 'book', tags: ['Git'], schedule: '0 10 * * 5', description: 'Weekly, Overseer checks that install and run instructions in the README still work and fixes them if not.', prompt: 'Follow the README install and run instructions in a clean temp checkout. If any step fails or is out of date, fix the README and open a pull request.' },
   { name: 'Release notes draft', category: 'CI/CD & Release', icon: 'git-commit', tags: ['GitHub'], schedule: '0 16 * * 5', description: 'Every Friday, Overseer drafts release notes from merged pull requests since the last tag.', prompt: 'Draft release notes from pull requests merged since the latest git tag. Group into Features, Fixes and Internal. Save to RELEASE_NOTES.md without committing.' },
+  ...extraTemplates,
 ]
 
 const categories = ['All', 'Maintenance', 'CI/CD & Release', 'Security', 'Fleet'] as const
@@ -56,6 +60,7 @@ export function describeCron(cron: string) {
   if (dom === '*' && mon === '*' && dow === '*' && time) return `Every day at ${time}`
   if (dom === '*' && mon === '*' && dow === '1-5' && time) return `Weekdays at ${time}`
   if (dom === '*' && mon === '*' && /^\d$/.test(dow) && time) return `${days[Number(dow)]} at ${time}`
+  if (/^\d+$/.test(dom) && mon === '*' && dow === '*' && time) return `Monthly on day ${dom} at ${time}`
   return cron
 }
 
@@ -66,6 +71,7 @@ export default function AutomationsPage() {
   const [category, setCategory] = useState<(typeof categories)[number]>('All')
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
+  const [sharing, setSharing] = useState<Recipe | null>(null)
   const [editing, setEditing] = useState<Partial<Automation> | null>(null)
   const [params, setParams] = useSearchParams()
   const { value: devices } = useDevices()
@@ -112,6 +118,7 @@ export default function AutomationsPage() {
       <div className="page">
         <h1 className="page-title">Automations</h1>
         <p className="page-sub">Bring Overseer into your recurring and event-driven workflows</p>
+        <AutopilotEntry />
         <div className="page-toolbar">
           <div className="pill-tabs" role="tablist">
             <button role="tab" className="pill-tab" aria-selected={tab === 'active'} onClick={() => setTab('active')}>Active <span className="count">{active.length}</span></button>
@@ -129,6 +136,7 @@ export default function AutomationsPage() {
             {(close) => (
               <>
                 <MenuItem icon="edit" label="From scratch" onClick={() => { close(); setEditing({}) }} />
+                <MenuItem icon="link" label="From a link…" onClick={() => { close(); navigate('/automations/import') }} />
                 <MenuSeparator />
                 {templates.slice(0, 5).map((item) => <MenuItem key={item.name} icon={item.icon} label={item.name} onClick={() => { close(); setEditing(fromTemplate(item)) }} />)}
               </>
@@ -157,6 +165,7 @@ export default function AutomationsPage() {
                   {(close) => (
                     <>
                       <MenuItem icon="edit" label="Edit" onClick={() => { close(); setEditing(item) }} />
+                      <MenuItem icon="link" label="Share as link" onClick={() => { close(); setSharing(recipeFromAutomation(item)) }} />
                       <MenuItem icon="trash" label="Delete" danger onClick={() => { close(); remove(item) }} />
                     </>
                   )}
@@ -181,15 +190,19 @@ export default function AutomationsPage() {
           </div>
           <div className="grid-cards">
             {suggested.map((item) => (
-              <button key={item.name} className="tpl-card" onClick={() => setEditing(fromTemplate(item))}>
-                <span className="tpl-card-title"><Icon name={item.icon} size={19} className="text-muted" />{item.name}</span>
-                <span className="tpl-card-desc">{item.description}</span>
-                <span className="tpl-card-tags">{item.tags.map((tag) => <span key={tag} className="chip">{tag}</span>)}<span className="chip">{describeCron(item.schedule)}</span></span>
-              </button>
+              <div key={item.name} className="cl-tpl">
+                <button className="tpl-card" onClick={() => setEditing(fromTemplate(item))}>
+                  <span className="tpl-card-title"><Icon name={item.icon} size={19} className="text-muted" />{item.name}</span>
+                  <span className="tpl-card-desc">{item.description}</span>
+                  <span className="tpl-card-tags">{item.tags.map((tag) => <span key={tag} className="chip">{tag}</span>)}<span className="chip">{describeCron(item.schedule)}</span></span>
+                </button>
+                <button className="icon-btn cl-tpl-share" aria-label={`Share ${item.name} as link`} title="Share as link" onClick={() => setSharing(templateRecipe(item))}><Icon name="link" size={16} /></button>
+              </div>
             ))}
           </div>
         </section>
       </div>
+      {sharing && <ShareRecipeModal recipe={sharing} onClose={() => setSharing(null)} />}
       {editing && <AutomationEditor initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
     </div>
   )

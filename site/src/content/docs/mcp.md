@@ -42,6 +42,18 @@ Any other client that runs stdio MCP servers can use the command `overseer mcp`.
 
 `list_devices` is a best-effort snapshot to help choose a machine before `create_session`. Values a machine couldn't report are marked unavailable rather than shown as zero, and load averages aren't available on Windows.
 
+## What delegated agents can do
+
+When a lead agent starts a worker with `create_session`, the worker is an ordinary terminal session on that machine, running the command the lead chose, such as `claude` or `codex`. Know these four things before you hand over a token:
+
+- **Workers get their own CLI's permissions, not the lead's.** Restrictions on the lead, like a plan or read-only mode, do not carry over. A worker starts with whatever that CLI does by default on that machine, plus any flags in its command.
+- **The lead can answer the worker's prompts.** If a worker asks "allow this command?", the lead can reply with `send_input`. So a worker's approvals are only as careful as the lead. If you want to approve things yourself, tell the lead to stop and report instead of answering, and open the session in Overseer to answer it.
+- **The token is the boundary.** An API token can run commands and write files on every machine through `run_command` and `write_file`. There is no read-only or per-machine token yet.
+- **Everything stays visible.** Workers show up in Overseer's session list on their machine, so you can watch, steer or stop them like any other session.
+
+> [!TIP]
+> To keep a worker cautious, put the mode in its command, for example `claude --permission-mode plan` or `codex --sandbox read-only`, and ask the lead to report back before making changes.
+
 ## Remote MCP
 
 The hub also serves the same tools over HTTP at `/mcp`, so clients with remote MCP connectors, such as ChatGPT, Claude and Cursor, can drive your fleet directly.

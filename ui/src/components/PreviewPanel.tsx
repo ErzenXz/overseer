@@ -31,8 +31,15 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
   const [loading, setLoading] = useState(true)
   const { toast } = useShell()
 
+  const [showOther, setShowOther] = useState(false)
+
+  // Only this session's servers by default: ones started in its folder (all of
+  // them when there is no session, as on the machine page). A
+  // machine runs plenty of other things (tunnels, databases, other projects).
   const web = useMemo(() => (ports ?? []).filter((item) => item.http), [ports])
-  const other = useMemo(() => (ports ?? []).filter((item) => !item.http), [ports])
+  const mine = useMemo(() => (cwd ? web.filter((item) => inFolder(item.cwd, cwd)) : web), [web, cwd])
+  const others = useMemo(() => web.filter((item) => !mine.includes(item)), [web, mine])
+  const quiet = useMemo(() => (ports ?? []).filter((item) => !item.http), [ports])
   const current = ports?.find((item) => item.port === port)
 
   // Open what was asked for (a localhost link in a reply), else pick the
@@ -44,10 +51,9 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
     setDraft(request.path)
   }, [request?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (port !== null || !web.length) return
-    const mine = cwd ? web.find((item) => item.cwd && (item.cwd === cwd || item.cwd.startsWith(`${cwd}/`))) : undefined
-    setPort((mine ?? web[0]).port)
-  }, [web, port, cwd])
+    if (port !== null || !mine.length) return
+    setPort(mine[0].port)
+  }, [mine, port])
 
   const src = current?.previewUrl ? previewHref(current.previewUrl, path) : ''
   useEffect(() => { setLoading(true) }, [src, reload])
@@ -57,6 +63,10 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
 
   if (!online) return <Empty icon="monitor" title={`${deviceName} is offline`} text="Previews come back when the machine reconnects." />
   if (config && !config.domain) return <SetupHelp deviceName={deviceName} port={port ?? web[0]?.port ?? 5173} />
+
+  const entry = (item: PortInfo, icon: 'globe' | 'plug', close: () => void) => (
+    <MenuItem key={item.port} icon={icon} label={`:${item.port}${item.title ? `  ${item.title}` : ''}`} description={describe(item)} checked={item.port === port} onClick={() => { close(); setPort(item.port); go('/') }} />
+  )
 
   return (
     <div className="preview">
@@ -74,20 +84,20 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
         >
           {(close) => (
             <>
-              <MenuLabel>On {deviceName}</MenuLabel>
-              {web.length === 0 && <div className="menu-label normal-case">Nothing is serving yet</div>}
-              {web.map((item) => (
-                <MenuItem key={item.port} icon="globe" label={`:${item.port}${item.title ? `  ${item.title}` : ''}`} description={describe(item)} checked={item.port === port} onClick={() => { close(); setPort(item.port); go('/') }} />
-              ))}
-              {other.length > 0 && (
-                <>
-                  <MenuSeparator />
-                  <MenuLabel>Other listening ports</MenuLabel>
-                  {other.map((item) => (
-                    <MenuItem key={item.port} icon="plug" label={`:${item.port}`} description={describe(item)} checked={item.port === port} onClick={() => { close(); setPort(item.port); go('/') }} />
-                  ))}
-                </>
+              <MenuLabel>From this session</MenuLabel>
+              {mine.length === 0 && <div className="menu-label normal-case">No server started here yet</div>}
+              {mine.map((item) => entry(item, 'globe', close))}
+              {others.length + quiet.length > 0 && <MenuSeparator />}
+              {others.length + quiet.length > 0 && (
+                <MenuItem
+                  icon={showOther ? 'chevron-up' : 'chevron-down'}
+                  label={showOther ? `Hide other servers on ${deviceName}` : `Other servers on ${deviceName}`}
+                  end={showOther ? undefined : <span className="text-faint">{others.length + quiet.length}</span>}
+                  onClick={() => setShowOther(!showOther)}
+                />
               )}
+              {showOther && others.map((item) => entry(item, 'globe', close))}
+              {showOther && quiet.map((item) => entry(item, 'plug', close))}
             </>
           )}
         </Menu>
@@ -121,10 +131,24 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
         ) : !port ? (
           <Empty
             icon="radio"
-            title={`Nothing is serving on ${deviceName} yet`}
-            text="Start a dev server in the Shell or ask the agent to, and it appears here on its own."
+            title="No dev server from this session yet"
+            text="Start one in the Shell or ask the agent to, and it appears here on its own."
             spinner
-          />
+          >
+            {others.length > 0 && (
+              <div className="preview-others">
+                <button type="button" className="text-link text-[13px]" onClick={() => setShowOther(!showOther)}>
+                  {showOther ? 'Hide' : 'Show'} {others.length} other {others.length === 1 ? 'server' : 'servers'} on {deviceName}
+                </button>
+                {showOther && others.slice(0, 8).map((item) => (
+                  <button key={item.port} type="button" className="preview-other" onClick={() => { setPort(item.port); go('/') }}>
+                    <span className="font-medium">:{item.port}</span>
+                    <span className="truncate text-faint">{item.title || describe(item)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Empty>
         ) : !src ? (
           <Empty icon="plug" title={`:${port} isn’t answering HTTP`} text="It may still be starting, or it’s not a web server." spinner />
         ) : (
@@ -144,16 +168,27 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
   )
 }
 
+// inFolder reports whether a server runs in the session's folder or one inside
+// it (a Vite app in ui/).
+function inFolder(serverCwd: string | undefined, sessionCwd: string | undefined) {
+  if (!serverCwd || !sessionCwd) return false
+  const a = serverCwd.replace(/\/+$/, '')
+  const b = sessionCwd.replace(/\/+$/, '')
+  if (!a || !b) return false
+  return a === b || a.startsWith(`${b}/`)
+}
+
 function describe(item: PortInfo) {
   return [item.process, item.cwd?.replace(/^\/(Users|home)\/[^/]+/, '~')].filter(Boolean).join(' · ') || item.address
 }
 
-function Empty({ icon, title, text, spinner }: { icon: 'radio' | 'plug' | 'monitor'; title: string; text?: string; spinner?: boolean }) {
+function Empty({ icon, title, text, spinner, children }: { icon: 'radio' | 'plug' | 'monitor'; title: string; text?: string; spinner?: boolean; children?: React.ReactNode }) {
   return (
     <div className="preview-empty">
       <span className="preview-empty-icon">{spinner ? <span className="preview-pulse" /> : null}<Icon name={icon} size={20} /></span>
       <p className="font-medium text-ink">{title}</p>
       {text && <p className="max-w-[320px] text-[13px] text-muted">{text}</p>}
+      {children}
     </div>
   )
 }

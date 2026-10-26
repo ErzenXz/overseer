@@ -184,6 +184,7 @@ func (ts *threadService) pushThread(id string) {
 	if t, err := ts.s.store.ThreadById(id); err == nil && t != nil {
 		ts.push(id, map[string]any{"type": "thread", "thread": t})
 	}
+	ts.s.chat.onThread(id) // chat apps: finished / failed
 	ts.changed(id, false)
 }
 
@@ -257,6 +258,7 @@ func (ts *threadService) appendEvent(id string, ev protocol.ThreadEvent) *Thread
 		return nil
 	}
 	ts.pushMessage(id, msg)
+	ts.s.chat.onMessage(id, msg) // chat apps: approvals and questions
 	if bumped, _ := ts.s.store.TouchThread(id, now.Unix()); bumped {
 		ts.pushThread(id)
 	}
@@ -606,19 +608,35 @@ func (ts *threadService) applySettings(id string) {
 // --- creation (shared by the API and automations) ---
 
 type threadInput struct {
-	DeviceId     string       `json:"deviceId"`
-	Agent        string       `json:"agent"`
-	Command      string       `json:"command"`
-	Cwd          string       `json:"cwd"`
-	Prompt       string       `json:"prompt"`
-	Model        string       `json:"model"`
-	Access       string       `json:"access"`
-	Effort       string       `json:"effort"`
-	Fast         bool         `json:"fast"`
-	Mode         string       `json:"mode"`
-	Title        string       `json:"title"`
-	Images       promptImages `json:"images"`
-	AutomationId string       `json:"-"`
+	DeviceId        string       `json:"deviceId"`
+	Agent           string       `json:"agent"`
+	Command         string       `json:"command"`
+	Cwd             string       `json:"cwd"`
+	Prompt          string       `json:"prompt"`
+	Model           string       `json:"model"`
+	Access          string       `json:"access"`
+	Effort          string       `json:"effort"`
+	Fast            bool         `json:"fast"`
+	Mode            string       `json:"mode"`
+	Title           string       `json:"title"`
+	Images          promptImages `json:"images"`
+	ClientRequestId string       `json:"clientRequestId"` // idempotency key: one key never starts two sessions
+	AutomationId    string       `json:"-"`
+	CreatedBy       string       `json:"-"` // teams: the user who started it (users.go)
+}
+
+// validClientRequestId accepts the random ids browsers generate: 8-64
+// characters of letters, digits, '-' and '_'.
+func validClientRequestId(id string) bool {
+	if len(id) < 8 || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // promptImages accepts the contract's [{path}] list.
@@ -663,6 +681,7 @@ func (in *threadInput) validate(agents *agentCatalog) string {
 	in.Effort = strings.TrimSpace(in.Effort)
 	in.Mode = strings.TrimSpace(in.Mode)
 	in.Title = strings.TrimSpace(in.Title)
+	in.ClientRequestId = strings.TrimSpace(in.ClientRequestId)
 	if in.Access == "" {
 		in.Access = "edits"
 	}
@@ -687,6 +706,8 @@ func (in *threadInput) validate(agents *agentCatalog) string {
 		return validImages(in.Images)
 	case len(in.Cwd) > maxProjectPath || strings.ContainsRune(in.Cwd, 0):
 		return "cwd is invalid"
+	case in.ClientRequestId != "" && !validClientRequestId(in.ClientRequestId):
+		return "clientRequestId must be 8-64 letters, digits, - or _"
 	}
 	if in.Agent != "acp" {
 		in.Command = ""
@@ -727,6 +748,7 @@ func (s *Server) createThread(in threadInput) (*Thread, error) {
 		Id: randomToken()[:16], Title: title, DeviceId: in.DeviceId, Agent: in.Agent, Command: in.Command,
 		Cwd: in.Cwd, Model: in.Model, Access: access, Effort: in.Effort, Fast: in.Fast, Mode: in.Mode,
 		Status: "starting", CreatedAt: now, UpdatedAt: now, LastReadAt: now, AutomationId: in.AutomationId,
+		RequestId: in.ClientRequestId, CreatedBy: in.CreatedBy,
 	}
 	if err := s.store.CreateThread(t); err != nil {
 		return nil, err
@@ -762,6 +784,26 @@ func (s *Server) handleCreateThread(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, msg)
 		return
 	}
+	// A retried start (same key) returns the session the first try created.
+	// The lock covers lookup and create, so two racing tries cannot both
+	// create one.
+	if in.ClientRequestId != "" {
+		s.startMu.Lock()
+		defer s.startMu.Unlock()
+		existing, err := s.store.ThreadByRequestId(in.ClientRequestId)
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if existing != nil {
+			w.Header().Set("Idempotent-Replayed", "true")
+			writeJSON(w, existing)
+			return
+		}
+	}
+	if s.holdNewSession(w, in) { // a guardrail may hold it until the limit resets (schedule.go)
+		return
+	}
 	if !s.validateProjectDevice(w, in.DeviceId) {
 		return
 	}
@@ -770,12 +812,33 @@ func (s *Server) handleCreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rememberPublicURL(r)
+	in.CreatedBy = userFrom(r).ID
 	t, err := s.createThread(in)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.audit(r, "session.start", t.Title, "")
 	writeJSON(w, t)
+}
+
+// handleSessionByRequest answers "did my start request create a session?"
+// after a lost connection. found:false is a definite no: the lookup waits for
+// any start still in flight with the same key.
+func (s *Server) handleSessionByRequest(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	if !validClientRequestId(key) {
+		httpError(w, http.StatusBadRequest, "invalid request id")
+		return
+	}
+	s.startMu.Lock()
+	t, err := s.store.ThreadByRequestId(key)
+	s.startMu.Unlock()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"found": t != nil, "thread": t})
 }
 
 // threadFromPath loads the {id} thread or writes a 404.
@@ -988,17 +1051,10 @@ func (s *Server) handleThreadApproval(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "approvalId and optionId are required")
 		return
 	}
-	c := s.registry.get(t.DeviceId)
-	if c == nil {
-		httpError(w, http.StatusServiceUnavailable, "device is offline")
-		return
-	}
-	ctx, cancel := deviceCtx()
-	defer cancel()
-	err := c.requestInto(ctx, protocol.TypeThreadApproval,
-		protocol.ThreadApproval{ThreadId: t.Id, ApprovalId: req.ApprovalId, OptionId: req.OptionId}, nil)
-	if err != nil {
-		httpError(w, http.StatusConflict, err.Error())
+	// Shared with the chat apps (chat.go), so a Telegram answer takes the
+	// same path as a click.
+	if status, err := s.sendApproval(t, req.ApprovalId, req.OptionId); err != nil {
+		httpError(w, status, err.Error())
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
@@ -1045,6 +1101,7 @@ func (s *Server) handleThreadWS(w http.ResponseWriter, r *http.Request) {
 	// duplicates are harmless because messages are full folded records.
 	sub := s.threads.subscribe(id)
 	defer s.threads.unsubscribe(id, sub)
+	defer s.presenceJoin(id, userFrom(r))() // who is watching, pushed to the others (presence.go)
 	if t, err = s.store.ThreadById(id); err != nil || t == nil {
 		return
 	}

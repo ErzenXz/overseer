@@ -4,6 +4,8 @@ import { deleteThread, forkThread, patchThread, terminalsResource, usePref, useT
 import { useShell } from '../shell'
 import type { FleetSession, Thread } from '../types'
 import { MenuItem, MenuLabel, MenuSeparator, Submenu } from './Menu'
+import { openContinueIn } from './ContinueIn'
+import { DeviceMark } from './DeviceMark'
 
 // One list of actions for a session, shared by the row's "…" button and its
 // right-click menu so both always match.
@@ -47,6 +49,7 @@ export function ThreadMenuItems({ thread, close, onRename }: { thread: Thread; c
       <MenuSeparator />
       <MenuItem icon="edit" label="Rename" onClick={() => { close(); onRename() }} />
       <MenuItem icon="git-fork" label="New child session" onClick={run(async () => { const child = await forkThread(thread.id); navigate(`/sessions/${child.id}`) })} />
+      <MenuItem icon="arrow-up-right" label="Continue in another agent…" onClick={() => { close(); openContinueIn(thread.id) }} />
       <MenuItem icon="copy" label="Copy session link" onClick={run(() => navigator.clipboard?.writeText(`${location.origin}/sessions/${thread.id}`), 'Link copied')} />
       <Submenu icon="arrow-up-right" label="Open" width={220}>
         <MenuItem icon="terminal" label="Shell" onClick={openWith('shell')} />
@@ -54,7 +57,7 @@ export function ThreadMenuItems({ thread, close, onRename }: { thread: Thread; c
         <MenuItem icon="folder" label="Files" onClick={openWith('files')} />
         <MenuItem icon="file-diff" label="Changes" onClick={openWith('changes')} />
         <MenuSeparator />
-        <MenuItem icon="monitor" label={thread.deviceName} description="The machine it runs on" to={`/machines/${thread.deviceId}`} onClick={close} />
+        <MenuItem icon={<DeviceMark deviceId={thread.deviceId} size={16} />} label={thread.deviceName} description="The machine it runs on" to={`/machines/${thread.deviceId}`} onClick={close} />
         {thread.pr && <MenuItem icon="pull-request" label={`Pull request #${thread.pr.number}`} href={thread.pr.url} onClick={close} />}
       </Submenu>
       <MenuItem icon={unread ? 'mail-check' : 'mail'} label={unread ? 'Mark read' : 'Mark unread'} onClick={run(() => patchThread(thread.id, { read: unread }))} />

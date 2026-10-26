@@ -96,6 +96,7 @@ func loadPromptImages(cwd string, paths []string) ([]promptImage, error) {
 	home, _ := os.UserHomeDir()
 	var out []promptImage
 	for _, p := range paths {
+		p = expandHome(p)
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(cwd, p)
 		}

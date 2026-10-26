@@ -138,6 +138,10 @@ func IsNewer(candidate, current string) bool {
 	return false
 }
 
+// IsStable reports whether v is a release version (vMAJOR.MINOR.PATCH), as
+// opposed to a dev or source build.
+func IsStable(v string) bool { return isStableVersion(v) }
+
 func isStableVersion(v string) bool {
 	_, ok := parseVersion(v)
 	return ok

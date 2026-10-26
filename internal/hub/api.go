@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ErzenXz/overseer/internal/protocol"
@@ -54,29 +56,25 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearSetupCode()
-	s.issueSession(w, r)
+	// The new admin password is the first owner (users.go).
+	if err := s.store.migrateUsers(); err != nil {
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	owner, _ := s.store.PrimaryOwner()
+	if owner == nil {
+		httpError(w, http.StatusInternalServerError, "could not create the owner account")
+		return
+	}
+	s.issueSessionFor(w, r, owner.ID)
+	s.auditAs(owner.ID, owner.Name, "setup", "", "")
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// handleLogin signs a person in: password only on a one-person hub, name and
+// password once there are more (users.go).
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.loginRL.allow(r.RemoteAddr) {
-		httpError(w, http.StatusTooManyRequests, "too many attempts, try again in a minute")
-		return
-	}
-	var req struct {
-		Password string `json:"password"`
-	}
-	if err := readJSON(r, &req); err != nil {
-		httpError(w, http.StatusBadRequest, "bad request")
-		return
-	}
-	stored, err := s.store.Setting("password_hash")
-	if err != nil || stored == "" || !verifyPassword(stored, req.Password) {
-		httpError(w, http.StatusUnauthorized, "wrong password")
-		return
-	}
-	s.issueSession(w, r)
-	writeJSON(w, map[string]bool{"ok": true})
+	s.handleLoginUsers(w, r)
 }
 
 func (s *Server) issueSession(w http.ResponseWriter, r *http.Request) {
@@ -102,15 +100,19 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // handleMe reports auth/setup state so the UI knows which screen to show.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	stored, _ := s.store.Setting("password_hash")
-	authed := false
-	if c, err := r.Cookie(sessionCookie); err == nil && s.sessions.valid(c.Value) {
-		authed = true
+	var user *User
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		if u, ok := s.sessionUser(c.Value); ok {
+			user = &u
+		}
 	}
-	writeJSON(w, map[string]any{
+	out := map[string]any{
 		"setupDone":     stored != "",
-		"authenticated": authed,
+		"authenticated": user != nil,
 		"version":       s.opts.Version,
-	})
+	}
+	s.teamMe(out, user) // who is signed in, and whether login needs a name
+	writeJSON(w, out)
 }
 
 // --- enrollment ---
@@ -266,6 +268,15 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, status)
+}
+
+// handleUpdateNotes serves the cached changelog entries for releases newer
+// than the running one (and the running release's own), for the "What's new"
+// dialog. The first call after a restart may fetch them (bounded by a timeout).
+func (s *Server) handleUpdateNotes(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	writeJSON(w, s.updates.notes(ctx))
 }
 
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
@@ -732,20 +743,33 @@ func (s *Server) handleFsUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 	name := header.Filename
-	if name == "" || strings.ContainsAny(name, "/\\") {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
 		httpError(w, http.StatusBadRequest, "bad filename")
 		return
 	}
 	target := strings.TrimRight(dir, "/") + "/" + name
 
+	// The agent confirms with the final path (it expands "~"); older agents
+	// confirm with nothing and the requested path stands.
 	done := make(chan string, 1)
+	var saved atomic.Value
+	finish := func(errMsg string) {
+		select {
+		case done <- errMsg:
+		default: // already answered; never block the connection's read loop
+		}
+	}
 	ch := c.openChannel(&hubChannel{
 		onControl: func(m protocol.Msg) {
 			switch m.Type {
 			case protocol.TypeFsEOF:
-				done <- ""
+				var res protocol.FsTransfer
+				if json.Unmarshal(m.Data, &res) == nil && res.Path != "" {
+					saved.Store(res.Path)
+				}
+				finish("")
 			case protocol.TypeFsErr, protocol.TypeTermExit:
-				done <- m.Error
+				finish(m.Error)
 			}
 		},
 	})
@@ -758,6 +782,16 @@ func (s *Server) handleFsUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	buf := make([]byte, 64*1024)
 	for {
+		select {
+		case errMsg := <-done:
+			// The device refused the upload (bad folder, disk full): stop sending.
+			if errMsg == "" {
+				errMsg = "device closed the upload early"
+			}
+			httpError(w, http.StatusBadGateway, errMsg)
+			return
+		default:
+		}
 		n, rerr := file.Read(buf)
 		if n > 0 {
 			if err := c.sendBinary(ch, buf[:n]); err != nil {
@@ -788,6 +822,9 @@ func (s *Server) handleFsUpload(w http.ResponseWriter, r *http.Request) {
 	case <-time.After(60 * time.Second):
 		httpError(w, http.StatusGatewayTimeout, "device did not confirm upload")
 		return
+	}
+	if p, ok := saved.Load().(string); ok {
+		target = p
 	}
 	writeJSON(w, map[string]string{"path": target})
 }

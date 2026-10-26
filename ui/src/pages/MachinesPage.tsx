@@ -3,11 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api, formatBytes } from '../api'
 import { agentInfo, relativeTime } from '../agents'
 import AddDeviceModal from '../components/AddDeviceModal'
+import { CloudBadge, CloudMachineModal, CloudStatus } from '../components/CloudMachine'
+import { useCloudByDevice } from '../cloud'
 import Icon from '../components/Icon'
 import { Menu, MenuItem, MenuSeparator } from '../components/Menu'
 import { devicesResource, terminalsResource, useDevices, useTerminals, useThreads } from '../store'
 import { metricMissing, type Device } from '../types'
 import SetupPage from './SetupPage'
+import { OsMark } from '../components/DeviceMark'
 
 type Tab = 'machines' | 'terminals' | 'setup'
 
@@ -27,8 +30,10 @@ export default function MachinesPage() {
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as Tab) || 'machines'
   const [adding, setAdding] = useState(params.get('add') === '1')
+  const [cloudOpen, setCloudOpen] = useState(false)
   const [query, setQuery] = useState('')
   const { value: devices, error } = useDevices()
+  const cloudByDevice = useCloudByDevice(devices)
   const { value: terminals } = useTerminals()
   const { value: threads } = useThreads()
 
@@ -64,6 +69,7 @@ export default function MachinesPage() {
             {(close) => (
               <>
                 <MenuItem icon="user-plus" label="Connect a machine" description="One command on macOS, Linux or Windows" onClick={() => { close(); setAdding(true) }} />
+                <MenuItem icon="server" label="New cloud machine" description="Hetzner or DigitalOcean, set up for you" onClick={() => { close(); setCloudOpen(true) }} />
                 <MenuItem icon="setup" label="Install agents on a machine" onClick={() => { close(); setTab('setup') }} />
                 <MenuSeparator />
                 <MenuItem icon="book" label="How desktops work" href="https://github.com/ErzenXz/overseer#remote-desktop" onClick={close} />
@@ -71,6 +77,8 @@ export default function MachinesPage() {
             )}
           </Menu>
         </div>
+
+        {tab === 'machines' && <CloudStatus />}
 
         {error && !devices && <div className="error-banner mt-6">Couldn’t reach the hub: {error}<button onClick={() => devicesResource.refresh()}>Retry</button></div>}
 
@@ -93,11 +101,12 @@ export default function MachinesPage() {
                 const running = busy(device.id)
                 return (
                   <Link key={device.id} to={`/machines/${device.id}`} className="list-row">
-                    <span className="tile-icon"><Icon name={device.os === 'darwin' ? 'laptop' : device.os === 'windows' ? 'monitor' : 'server'} size={19} /></span>
+                    <span className="tile-icon"><OsMark os={device.os} size={19} /></span>
                     <div className="min-w-0 flex-1">
                       <div className="list-row-title flex items-center gap-2">
                         <span className="truncate">{device.name}</span>
                         {device.isHub && <span className="badge">Hub</span>}
+                        {cloudByDevice.get(device.id) && <CloudBadge machine={cloudByDevice.get(device.id)!} />}
                         {running > 0 && <span className="badge"><span className="dot dot-blue dot-pulse" />{running} active</span>}
                       </div>
                       <div className="list-row-sub flex items-center gap-1.5">
@@ -148,6 +157,7 @@ export default function MachinesPage() {
 
         {tab === 'setup' && <div className="mt-8"><SetupPage /></div>}
       </div>
+      {cloudOpen && <CloudMachineModal onClose={() => { setCloudOpen(false); devicesResource.refresh() }} />}
       {adding && <AddDeviceModal onClose={() => { setAdding(false); if (params.get('add')) setParams({}); devicesResource.refresh() }} />}
     </div>
   )

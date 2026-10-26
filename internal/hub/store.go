@@ -16,6 +16,11 @@ type Store struct {
 	db *sql.DB
 }
 
+// extraSchemas holds more CREATE TABLE IF NOT EXISTS statements, added from
+// each feature's own file with init() { extraSchemas = append(extraSchemas, x) }
+// so features don't all edit the one schema above.
+var extraSchemas []string
+
 const schema = `
 CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
@@ -150,9 +155,19 @@ func OpenStore(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
+	// Features keep their own tables in their own files (see extraSchemas).
+	for _, extra := range extraSchemas {
+		if _, err := db.Exec(extra); err != nil {
+			return nil, fmt.Errorf("applying schema: %w", err)
+		}
+	}
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		return nil, fmt.Errorf("migrating schema: %w", err)
+	}
+	// One session per client request id: a retried start finds the first one.
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS threads_request_id ON threads(request_id) WHERE request_id != ''`); err != nil {
+		return nil, fmt.Errorf("indexing request ids: %w", err)
 	}
 	if err := s.seedPresets(); err != nil {
 		return nil, err
@@ -177,6 +192,12 @@ var addedColumns = []struct{ table, column, def string }{
 	{"threads", "fork_at", "TEXT NOT NULL DEFAULT ''"},
 	{"threads", "fork_context", "TEXT NOT NULL DEFAULT ''"},
 	{"threads", "agent_meta", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "request_id", "TEXT NOT NULL DEFAULT ''"},
+	{"threads", "created_by", "TEXT NOT NULL DEFAULT ''"},   // teams: who started it (user id)
+	{"threads", "assignee", "TEXT NOT NULL DEFAULT ''"},     // teams: who it is with now
+	{"threads", "handoff_by", "TEXT NOT NULL DEFAULT ''"},   // teams: last hand-off, from
+	{"threads", "handoff_note", "TEXT NOT NULL DEFAULT ''"}, // teams: last hand-off, note
+	{"threads", "handoff_at", "INTEGER NOT NULL DEFAULT 0"}, // teams: last hand-off, when
 	{"automations", "effort", "TEXT NOT NULL DEFAULT ''"},
 	{"automations", "fast", "INTEGER NOT NULL DEFAULT 0"},
 	{"automations", "mode", "TEXT NOT NULL DEFAULT ''"},
