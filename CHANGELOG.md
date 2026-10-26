@@ -3,6 +3,23 @@
 What changed in each Overseer release. Installed hubs and machines update to
 the newest release on their own; see [Settings → General](docs/guide.md#keeping-devices-up-to-date).
 
+## v0.5.2 — Unreleased
+
+Claude Code installed with apt now really updates, and previews explain
+themselves when their address doesn't reach your hub.
+
+### Fixed
+- **Claude Code from apt, dnf or apk updates for real.** Overseer upgrades the
+  package itself when the agent runs as root or `sudo` needs no password.
+  Otherwise the agent-update row offers **Update in terminal**: it opens the
+  upgrade in a terminal on that machine for your password, then checks the
+  version again.
+- **Previews that “refused to connect”.** The Preview panel now checks that a
+  preview address reaches your hub before showing it. When it doesn't (most
+  often a Cloudflare Tunnel without a route for `*.your-domain`, which shows
+  as error 1033), it says what to change instead of showing the browser's
+  error page.
+
 ## v0.5.1 — 2026-10-26
 
 Agent updates that work however Claude Code was installed.

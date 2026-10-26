@@ -309,6 +309,15 @@ func TestPreviewProxyEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("reachability probe needs no sign-in", func(t *testing.T) {
+		resp := pc.get(previewHost, previewProbePath, nil)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/gif" || !bytes.Equal(body, previewProbeGIF) {
+			t.Fatalf("probe: %d %q %d bytes", resp.StatusCode, resp.Header.Get("Content-Type"), len(body))
+		}
+	})
+
 	var session string
 	t.Run("auth handoff", func(t *testing.T) {
 		// 1. No cookie: off to the hub for a token.

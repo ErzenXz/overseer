@@ -510,7 +510,10 @@ export async function threadRoute(method: string, path: string, body: Record<str
     { id: 'opencode', name: 'OpenCode', protocol: 'acp' }, { id: 'goose', name: 'Goose', protocol: 'acp' }, { id: 'copilot', name: 'Copilot CLI', protocol: 'acp' }, { id: 'cursor', name: 'Cursor Agent', protocol: 'acp' },
   ])
   if (path === '/api/agent-updates' && (method === 'GET' || method === 'POST')) {
-    if (method === 'POST') for (const item of agentUpdateDemo) if (!item.startedAt && (!body.deviceId || body.deviceId === item.deviceId) && (!body.agent || body.agent === item.agent)) item.startedAt = Date.now()
+    if (method === 'POST' && body.recheck) {
+      const item = agentUpdateDemo.find((entry) => entry.deviceId === body.deviceId && entry.agent === body.agent)
+      if (item) item.rechecked = true
+    } else if (method === 'POST') for (const item of agentUpdateDemo) if ((!item.startedAt || item.apt) && (!body.deviceId || body.deviceId === item.deviceId) && (!body.agent || body.agent === item.agent)) item.startedAt = Date.now()
     return json(agentUpdatesNow())
   }
   if (path === '/api/agent-updates/settings' && method === 'PUT') { agentAuto = !!body.auto; return json(agentUpdatesNow()) }
@@ -666,18 +669,22 @@ function demoCommands(agent: string) {
 // it would for real, including waiting for a machine whose agent has a session
 // running (Codex on the homelab) and finishing a few seconds later.
 let agentAuto = false
-const agentUpdateDemo: { deviceId: string; agent: string; name: string; current: string; latest: string; busy: number; startedAt?: number }[] = [
+const agentUpdateDemo: { deviceId: string; agent: string; name: string; current: string; latest: string; busy: number; startedAt?: number; apt?: boolean; rechecked?: boolean }[] = [
   { deviceId: 'macbook', agent: 'claude', name: 'Claude Code', current: '2.1.4', latest: '2.2.0', busy: 0 },
   { deviceId: 'studio', agent: 'claude', name: 'Claude Code', current: '2.1.4', latest: '2.2.0', busy: 1 },
   { deviceId: 'homelab', agent: 'codex', name: 'Codex', current: '0.61.0', latest: '0.63.1', busy: 0 },
   { deviceId: 'macbook', agent: 'gemini', name: 'Gemini CLI', current: '0.12.0', latest: '0.14.2', busy: 0 },
+  // Installed with apt on a machine without passwordless sudo.
+  { deviceId: 'homelab', agent: 'claude', name: 'Claude Code', current: '2.1.4', latest: '2.2.0', busy: 0, apt: true },
 ]
 
 function agentUpdatesNow() {
   const now = Date.now()
   const items = agentUpdateDemo.map((item) => {
     const base = { deviceId: item.deviceId, deviceName: deviceNames[item.deviceId] ?? item.deviceId, agent: item.agent, name: item.name, latest: item.latest, busy: item.busy }
+    if (item.apt && item.rechecked) return { ...base, current: item.latest, busy: 0, state: 'updated' as const, updatedAt: Math.floor(now / 1000) }
     if (!item.startedAt) return { ...base, current: item.current, state: 'available' as const }
+    if (item.apt) return { ...base, current: item.current, state: 'failed' as const, message: 'Installed with a Linux package, so it needs your password', command: 'sudo apt-get update && sudo apt-get install --only-upgrade claude-code' }
     const age = now - item.startedAt
     const wait = item.busy > 0 ? 7000 : 0
     if (age < wait) return { ...base, current: item.current, state: 'queued' as const }

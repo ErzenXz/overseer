@@ -2351,3 +2351,5 @@ button.wk-note:hover { color: var(--text-2); }
 .au-auto { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
 .au-auto > span { display: flex; flex-direction: column; gap: 1px; }
 .au-auto > span > span { color: var(--text-3); font-size: 13px; }
+.au-row { flex-wrap: wrap; row-gap: 8px; }
+.au-text { min-width: 170px; }
