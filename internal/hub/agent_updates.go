@@ -90,6 +90,8 @@ type agentUpdateItem struct {
 
 func (it agentUpdateItem) key() string { return agentUpdateKey(it.DeviceId, it.Agent) }
 
+type agentHeld struct{ current, latest string }
+
 func agentUpdateKey(deviceId, agent string) string { return deviceId + "/" + agent }
 
 // agentUpdateDevice is an online device as the updates see it.
@@ -125,6 +127,11 @@ type agentUpdateState struct {
 	snaps     map[string]*agentUpdateSnap // online devices' last detections
 	scannedAt time.Time
 	latest    map[string]agentLatest
+	// held: device/agent pairs whose own updater said they are up to date
+	// although the registry has something newer (a machine on Claude Code's
+	// stable channel, say). They aren't offered again until either version
+	// moves.
+	held map[string]agentHeld
 
 	scanMu     sync.Mutex // one detection pass at a time
 	fetchMu    sync.Mutex // one registry pass at a time
@@ -315,7 +322,27 @@ func agentUpdateCommand(agent, osName string) string {
 const toolsPrefixUnix = `"$HOME/.overseer/tools"`
 
 var agentUpdateUnix = map[string]string{
-	"claude": `claude update`,
+	// Update the copy of Claude Code that is on PATH, the one Overseer runs,
+	// the way it was installed: Homebrew cask, the npm prefix that owns it
+	// (global or Overseer's tools folder), or the native installer's own
+	// updater. A Linux
+	// package needs root, so say how instead.
+	"claude": `B=$(command -v claude) || { echo "claude is not on PATH"; exit 1; }; ` +
+		`R=$(readlink -f "$B" 2>/dev/null || realpath "$B" 2>/dev/null || echo "$B"); ` +
+		`case "$R" in ` +
+		`*/Caskroom/claude-code@latest/*) brew upgrade --cask claude-code@latest;; ` +
+		`*/Caskroom/claude-code/*) brew upgrade --cask claude-code;; ` +
+		// npm: update the prefix that owns this copy, not whichever npm is
+		// active (an nvm npm next to ~/.npm-global, say). A global layout
+		// is <prefix>/lib/node_modules; a local one (Overseer's tools
+		// folder) is <prefix>/node_modules.
+		`*/lib/node_modules/*) npm install -g --prefix "${R%%/lib/node_modules/*}" @anthropic-ai/claude-code@latest;; ` +
+		`*/node_modules/*) npm install --prefix "${R%%/node_modules/*}" @anthropic-ai/claude-code@latest;; ` +
+		`/usr/*) if command -v dpkg >/dev/null 2>&1 && dpkg -S "$R" >/dev/null 2>&1; then echo "Claude Code was installed with apt. Update it with: sudo apt update && sudo apt upgrade claude-code"; exit 3; ` +
+		`elif command -v rpm >/dev/null 2>&1 && rpm -qf "$R" >/dev/null 2>&1; then echo "Claude Code was installed with dnf. Update it with: sudo dnf upgrade claude-code"; exit 3; ` +
+		`elif command -v apk >/dev/null 2>&1 && apk info --who-owns "$R" >/dev/null 2>&1; then echo "Claude Code was installed with apk. Update it with: apk update && apk upgrade claude-code"; exit 3; ` +
+		`else "$B" update; fi;; ` +
+		`*) "$B" update;; esac`,
 	// Update the way Codex was installed: Homebrew, a global npm package, or
 	// else the official installer again.
 	"codex": `if command -v brew >/dev/null 2>&1 && brew list codex >/dev/null 2>&1; then brew upgrade codex; ` +
@@ -525,7 +552,8 @@ func (s *Server) agentUpdateItems() []agentUpdateItem {
 		for _, sp := range agentUpdateSpecs {
 			current := snap.versions[sp.id]
 			latest := u.latest[sp.id].version
-			if current == "" || u.items[agentUpdateKey(id, sp.id)] != nil || !agentVersionOlder(current, latest) {
+			key := agentUpdateKey(id, sp.id)
+			if current == "" || u.items[key] != nil || !agentVersionOlder(current, latest) || u.held[key] == (agentHeld{current, latest}) {
 				continue
 			}
 			out = append(out, agentUpdateItem{DeviceId: id, DeviceName: snap.dev.name, Agent: sp.id, Name: sp.name,
@@ -664,11 +692,39 @@ func (s *Server) runAgentUpdate(it agentUpdateItem) {
 	switch {
 	case now == "":
 		s.finishAgentUpdate(it, updFailed, it.Current, "Updated, but the new version could not be read")
+	case now == it.Current && agentUpdaterUpToDate(res):
+		// Its own updater says this is the newest it should have: a machine
+		// on a slower release channel. Not a failure, and not offered again
+		// until a newer release reaches it.
+		s.holdAgentUpdate(it, now)
+		s.finishAgentUpdate(it, updUpdated, now, "Already the newest on this machine's update channel")
 	case now == it.Current:
-		s.finishAgentUpdate(it, updFailed, it.Current, "Still on "+now+" after updating")
+		msg := "Still on " + now + " after updating"
+		if out := agentUpdateFailure(res); !strings.HasPrefix(out, "The update command failed") {
+			msg += ". The updater said: " + out
+		}
+		s.finishAgentUpdate(it, updFailed, it.Current, msg)
 	default:
 		s.finishAgentUpdate(it, updUpdated, now, "")
 	}
+}
+
+// agentUpdaterUpToDate reports whether an updater's output says there was
+// nothing newer to install ("Claude Code is up to date (2.1.304)",
+// "Claude is up to date!", npm's "up to date").
+func agentUpdaterUpToDate(res protocol.ExecResult) bool {
+	out := strings.ToLower(ansiRe.ReplaceAllString(res.Stdout+"\n"+res.Stderr, ""))
+	return strings.Contains(out, "up to date") || strings.Contains(out, "up-to-date") || strings.Contains(out, "already installed")
+}
+
+func (s *Server) holdAgentUpdate(it agentUpdateItem, current string) {
+	u := &s.agentUpd
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.held == nil {
+		u.held = map[string]agentHeld{}
+	}
+	u.held[it.key()] = agentHeld{current, it.Latest}
 }
 
 // updateAgentSnap folds a fresh detection into the device's entry.
