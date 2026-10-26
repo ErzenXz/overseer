@@ -42,6 +42,13 @@ The preview domain is taken from the hub's address. Change it in **Settings → 
 overseer serve --preview-domain example.com
 ```
 
+### "Refused to connect"
+
+Before showing a preview, the panel checks that its address reaches your hub. If it doesn't, you get an explanation instead of the browser's error page. The usual cause is a wildcard address that isn't routed to Overseer:
+
+- **Cloudflare Tunnel:** in Zero Trust → Networks → Tunnels, open the tunnel that serves Overseer and add a public hostname `*.example.com` pointing at the same service. The `*.example.com` DNS record must be that tunnel's CNAME. Cloudflare error 1033 means it points at a tunnel that isn't running.
+- **Your own proxy:** send `*.example.com` to the same place as Overseer, with a certificate that covers it.
+
 ### No domain?
 
 Forward the port to your own computer instead:

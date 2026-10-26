@@ -57,6 +57,7 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
 
   const src = current?.previewUrl ? previewHref(current.previewUrl, path) : ''
   useEffect(() => { setLoading(true) }, [src, reload])
+  const reach = usePreviewReach(current?.previewUrl, reload)
 
   const go = (value: string) => { const next = value.trim() || '/'; setPath(next.startsWith('/') ? next : `/${next}`); setDraft(next.startsWith('/') ? next : `/${next}`); setReload((value) => value + 1) }
   const copy = (text: string, done: string) => navigator.clipboard?.writeText(text).then(() => toast(done)).catch(() => {})
@@ -151,6 +152,10 @@ export default function PreviewPanel({ deviceId, deviceName, online, cwd, reques
           </Empty>
         ) : !src ? (
           <Empty icon="plug" title={`:${port} isn’t answering HTTP`} text="It may still be starting, or it’s not a web server." spinner />
+        ) : reach === 'checking' ? (
+          <Empty icon="radio" title="Connecting to the preview…" spinner />
+        ) : reach === 'unreachable' ? (
+          <Unreachable url={current!.previewUrl!} deviceName={deviceName} port={port} onRetry={() => setReload((value) => value + 1)} />
         ) : (
           <div className="preview-frame" style={{ width: widths[viewport] }}>
             {loading && <div className="preview-loading"><span className="spinner" /></div>}
@@ -176,6 +181,61 @@ function inFolder(serverCwd: string | undefined, sessionCwd: string | undefined)
   const b = sessionCwd.replace(/\/+$/, '')
   if (!a || !b) return false
   return a === b || a.startsWith(`${b}/`)
+}
+
+// usePreviewReach loads a tiny image that every preview address of this hub
+// serves before sign-in. If it doesn't load, the address never reached the
+// hub (no wildcard DNS, a tunnel without a route for it), and framing it
+// would only show the browser's or the proxy's error page.
+function usePreviewReach(previewUrl: string | undefined, attempt: number): 'checking' | 'ok' | 'unreachable' {
+  const origin = useMemo(() => {
+    if (!previewUrl || previewUrl.startsWith('blob:')) return ''
+    try { return new URL(previewUrl).origin } catch { return '' }
+  }, [previewUrl])
+  const [state, setState] = useState<{ key: string; value: 'ok' | 'unreachable' } | null>(null)
+  const key = `${origin}#${attempt}`
+  useEffect(() => {
+    if (!origin) return
+    let alive = true
+    const img = new Image()
+    const timer = window.setTimeout(() => { if (alive) setState({ key, value: 'unreachable' }) }, 8000)
+    img.onload = () => { if (alive) { window.clearTimeout(timer); setState({ key, value: 'ok' }) } }
+    img.onerror = () => { if (alive) { window.clearTimeout(timer); setState({ key, value: 'unreachable' }) } }
+    img.src = `${origin}/__overseer/reachable.gif?t=${Date.now()}`
+    return () => { alive = false; window.clearTimeout(timer) }
+  }, [origin, key])
+  if (!origin) return 'ok'
+  return state?.key === key ? state.value : 'checking'
+}
+
+function Unreachable({ url, deviceName, port, onRetry }: { url: string; deviceName: string; port: number; onRetry: () => void }) {
+  const { toast } = useShell()
+  const host = (() => { try { return new URL(url).host } catch { return url } })()
+  const wildcard = `*.${host.split('.').slice(1).join('.')}`
+  const command = forwardCommand(deviceName, port)
+  return (
+    <div className="h-full overflow-y-auto p-6">
+      <div className="mx-auto max-w-[460px] space-y-4">
+        <div className="flex items-center gap-2 text-[15px] font-medium text-ink"><Icon name="globe" size={18} />This preview address doesn’t reach your hub</div>
+        <p className="text-[13.5px] text-secondary"><code className="code-inline">{host}</code> didn’t answer as Overseer, so the browser would only show an error page. The dev server is fine; the address in front of it isn’t routed to your hub yet.</p>
+        <ul className="list-disc space-y-1.5 pl-5 text-[13.5px] text-secondary">
+          <li><b>Cloudflare Tunnel:</b> in Zero Trust → Networks → Tunnels, open the tunnel that serves Overseer and add a public hostname <code className="code-inline">{wildcard}</code> pointing at the same service. The DNS record for <code className="code-inline">{wildcard}</code> must be that tunnel’s CNAME; Cloudflare error 1033 means it points at a tunnel that isn’t running.</li>
+          <li><b>Your own proxy or DNS:</b> send <code className="code-inline">{wildcard}</code> to the same place as Overseer, with a certificate that covers it.</li>
+        </ul>
+        <div className="flex gap-2">
+          <button type="button" className="btn btn-dark btn-sm" onClick={onRetry}>Check again</button>
+          <a className="btn btn-outline btn-sm" href={url} target="_blank" rel="noreferrer">Open the address</a>
+        </div>
+        <div className="card p-3">
+          <p className="mb-2 text-[13px] text-muted">Meanwhile, open it on your own computer:</p>
+          <button type="button" className="preview-command" onClick={() => { navigator.clipboard?.writeText(command).then(() => toast('Command copied')).catch(() => {}) }}>
+            <code>{command}</code><Icon name="copy" size={14} />
+          </button>
+          <p className="mt-2 text-[12.5px] text-faint">Then visit http://localhost:{port}</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function describe(item: PortInfo) {
