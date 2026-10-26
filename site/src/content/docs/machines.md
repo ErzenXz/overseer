@@ -90,6 +90,22 @@ Each agent signs in on the machine it runs on. Overseer asks the agent's own com
 
 Codex uses a device code, so it works on a machine with no browser. Claude Code and Codex report their status; for other agents Overseer shows **Ready** and offers **Sign in** without claiming either way.
 
+### Share a sign-in with your other machines
+
+Signing in to the same agent on every machine gets old. **Settings → Sign-ins** keeps one Claude Code and one Codex sign-in on your hub and hands it to the machines you pick. Only owners can see or change it, and the secret never comes back to the browser.
+
+- **Claude Code** uses a long-lived token, the way Anthropic documents for machines without a browser. On any computer with a browser, run `claude setup-token`, approve it, and paste the token (it starts with `sk-ant-oat`). It lasts a year and works with Pro, Max, Team and Enterprise plans. It can only run the model, so Remote Control and claude.ai connectors still need a normal sign-in. Overseer passes it to Claude Code as `CLAUDE_CODE_OAUTH_TOKEN` for the sessions it starts; an `ANTHROPIC_API_KEY` already set on a machine still wins.
+- **Codex** copies `~/.codex/auth.json` from a machine where Codex is signed in, the way the Codex docs describe for headless machines. If that machine keeps Codex's login in the system keychain there is no file to copy; set `cli_auth_credentials_store = "file"` in `~/.codex/config.toml` and sign in again.
+
+Each machine in the list shows whether it uses the shared sign-in, is signed in on its own, or isn't signed in. **Use it here** applies it; **Replace** swaps out a machine's own sign-in after asking. Overseer backs up a Codex sign-in file before replacing it.
+
+Turn on **Use it on new machines** and a machine that joins with that agent installed but not signed in gets the sign-in by itself. A machine that is already signed in is never changed automatically.
+
+> [!WARNING]
+> Codex renews its sign-in while it works. With the same sign-in copied to several machines, a renewal on one can sign another out. If that happens, sign that machine in on its own with a device code, or use an API key for machines that run unattended. Claude Code's token isn't renewed, so sharing it doesn't have this problem.
+
+**Stop sharing** removes the sign-in from your hub. Choose **Stop sharing and sign machines out** to also remove it from the machines where Overseer put it; a Codex file is only removed if it is still the one Overseer wrote.
+
 ## Remove a machine
 
 On the machine, run:

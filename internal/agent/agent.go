@@ -530,6 +530,11 @@ func (a *Agent) dispatch(m protocol.Msg) {
 			}
 		}
 		go a.reply(m.Id, readUsageLimits(req), nil)
+	case protocol.TypeLoginRead, protocol.TypeLoginApply, protocol.TypeLoginRemove:
+		go func() {
+			res, err := handleLogin(m.Type, m.Data) // logins.go
+			a.reply(m.Id, res, err)
+		}()
 	case protocol.TypeExtList, protocol.TypeExtItem, protocol.TypeExtToggle, protocol.TypeExtUninstall,
 		protocol.TypeExtInstall, protocol.TypeExtCatalog, protocol.TypeSkillCreate, protocol.TypeSkillShare:
 		go func() {

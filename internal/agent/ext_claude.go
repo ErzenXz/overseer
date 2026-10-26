@@ -78,7 +78,7 @@ func claudeControl(ctx context.Context, bin, cwd string, subtypes []string) (map
 		}
 		dir, cleanup = d, c
 	}
-	proc, err := startAgentProcess(bin, claudeUsageArgs, dir, agentEnv())
+	proc, err := startAgentProcess(bin, claudeUsageArgs, dir, claudeProcEnv())
 	if err != nil {
 		cleanup()
 		return nil, err

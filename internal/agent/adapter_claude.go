@@ -165,7 +165,7 @@ func (c *claudeAdapter) start(ctx context.Context) (string, error) {
 	// Claude can fork a whole session (--fork-session) but not cut it at an
 	// earlier turn: that falls back to a fresh session.
 	c.forkFallback = c.cfg.Fork && (c.cfg.ResumeId == "" || c.cfg.ForkAt != "")
-	proc, err := startAgentProcess(path, claudeArgs(c.cfg, c.settings()), c.cfg.Cwd, agentEnv())
+	proc, err := startAgentProcess(path, claudeArgs(c.cfg, c.settings()), c.cfg.Cwd, claudeProcEnv())
 	if err != nil {
 		return "", err
 	}

@@ -509,6 +509,38 @@ export async function threadRoute(method: string, path: string, body: Record<str
     { id: 'claude', name: 'Claude Code', protocol: 'native' }, { id: 'codex', name: 'Codex', protocol: 'native' }, { id: 'gemini', name: 'Gemini CLI', protocol: 'acp' },
     { id: 'opencode', name: 'OpenCode', protocol: 'acp' }, { id: 'goose', name: 'Goose', protocol: 'acp' }, { id: 'copilot', name: 'Copilot CLI', protocol: 'acp' }, { id: 'cursor', name: 'Cursor Agent', protocol: 'acp' },
   ])
+  if (path === '/api/shared-logins' && method === 'GET') return json({ items: sharedDemo })
+  if (path === '/api/shared-logins' && method === 'POST') {
+    const now = nowSec()
+    if (body.agent === 'claude') {
+      const token = String(body.token ?? '').trim()
+      if (!/^sk-ant-oat\S{30,}$/.test(token)) return json({ error: 'That doesn’t look like a token from claude setup-token. It starts with sk-ant-oat.' }, 400)
+      sharedDemo = [...sharedDemo.filter((item) => item.agent !== 'claude'), { agent: 'claude', name: 'Claude Code', kind: 'oauth-token', account: '', sourceDevice: '', createdAt: now, expiresAt: now + 365 * 86400, auto: true, applied: [] }]
+    } else if (body.agent === 'codex') {
+      const id = String(body.deviceId ?? '')
+      if (id === 'homelab' && !demoSignedIn.has('homelab:codex')) return json({ error: 'Codex isn’t signed in on Homelab, so there is nothing to copy.' }, 400)
+      sharedDemo = [...sharedDemo.filter((item) => item.agent !== 'codex'), { agent: 'codex', name: 'Codex', kind: 'auth-file', account: 'you@example.com', sourceDevice: deviceNames[id] ?? id, createdAt: now, expiresAt: 0, auto: false, applied: [] }]
+    } else return json({ error: 'Only Claude Code and Codex sign-ins can be shared' }, 400)
+    return json({ items: sharedDemo })
+  }
+  const sharedMatch = path.match(/^\/api\/shared-logins\/(claude|codex)(\/apply)?$/)
+  if (sharedMatch) {
+    const agent = sharedMatch[1]
+    const item = sharedDemo.find((entry) => entry.agent === agent)
+    if (method === 'DELETE') { sharedDemo = sharedDemo.filter((entry) => entry.agent !== agent); return json({ items: sharedDemo }) }
+    if (!item) return json({ error: 'Nothing is shared for that agent yet' }, 404)
+    if (method === 'PUT') { item.auto = !!body.auto; return json({ items: sharedDemo }) }
+    if (method === 'POST' && sharedMatch[2]) {
+      const results = (body.deviceIds as string[] ?? []).map((id) => {
+        const deviceName = deviceNames[id] ?? id
+        if (id === 'office') return { deviceId: id, deviceName, state: 'failed', message: 'Offline' }
+        item.applied = [...item.applied.filter((entry) => entry.deviceId !== id), { deviceId: id, deviceName, appliedAt: nowSec(), state: 'ok' }]
+        demoSignedIn.add(`${id}:${agent}`)
+        return { deviceId: id, deviceName, state: 'ok' }
+      })
+      return json({ results, items: sharedDemo })
+    }
+  }
   if (path === '/api/agent-updates' && (method === 'GET' || method === 'POST')) {
     if (method === 'POST' && body.recheck) {
       const item = agentUpdateDemo.find((entry) => entry.deviceId === body.deviceId && entry.agent === body.agent)
@@ -537,7 +569,7 @@ export async function threadRoute(method: string, path: string, body: Record<str
     const versions: Record<string, string> = { claude: '2.1.4', codex: '0.61.0', gemini: '0.12.0', opencode: '1.0.40', devin: '3000.11.3', kimi: '1.4.0' }
     const here = (agent: string) => (installed[id] ?? []).includes(agent)
     // Codex is signed out on the homelab; the others that can say are signed in.
-    const auth = (agent: string): Partial<DeviceAgent> => !here(agent) || (agent !== 'claude' && agent !== 'codex') ? {} : agent === 'codex' && id === 'homelab' ? { auth: 'signed-out' as const } : { auth: 'ok' as const, account: agent === 'claude' ? 'erzen@example.com' : 'ChatGPT' }
+    const auth = (agent: string): Partial<DeviceAgent> => !here(agent) || (agent !== 'claude' && agent !== 'codex') ? {} : agent === 'codex' && id === 'homelab' && !demoSignedIn.has('homelab:codex') ? { auth: 'signed-out' as const } : { auth: 'ok' as const, account: agent === 'claude' ? 'erzen@example.com' : 'ChatGPT' }
     return json([...demoCatalog.map((agent) => agent.id), ...customAgents.map((agent) => agent.id)].map((agent) => ({ id: agent, installed: here(agent), version: here(agent) ? versions[agent] : undefined, ...auth(agent) })))
   }
   if (agentsMatch && agentsMatch[2] === 'desktop') {
@@ -693,3 +725,13 @@ function agentUpdatesNow() {
   })
   return { auto: agentAuto, checkedAt: Math.floor(now / 1000), items }
 }
+
+// Demo shared sign-ins: Claude Code's token is shared and used on two
+// machines; Codex isn't shared yet (and is signed out on the homelab).
+const demoSignedIn = new Set<string>()
+let sharedDemo: { agent: string; name: string; kind: string; account: string; sourceDevice: string; createdAt: number; expiresAt: number; auto: boolean; applied: { deviceId: string; deviceName: string; appliedAt: number; state: string; message?: string }[] }[] = [
+  { agent: 'claude', name: 'Claude Code', kind: 'oauth-token', account: '', sourceDevice: '', createdAt: nowSec() - 86400 * 12, expiresAt: nowSec() + 86400 * 353, auto: true, applied: [
+    { deviceId: 'studio', deviceName: 'Studio', appliedAt: nowSec() - 86400 * 12, state: 'ok' },
+    { deviceId: 'homelab', deviceName: 'Homelab', appliedAt: nowSec() - 86400 * 3, state: 'ok' },
+  ] },
+]

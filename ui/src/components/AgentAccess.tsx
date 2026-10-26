@@ -4,6 +4,7 @@ import { agentInfo } from '../agents'
 import { refreshAgents, useAgentsOn } from '../agentOptions'
 import { classifyAgentError, loginCommand, startLogin } from '../lib/agentAuth'
 import { sendPrompt, terminalsResource } from '../store'
+import { applySharedLogin, isSharedAgent, sharedLoginsResource } from '../sharedLogins'
 import type { DeviceAgent } from '../types'
 import Icon, { AgentMark } from './Icon'
 import Modal from './Modal'
@@ -22,16 +23,35 @@ export function SignInDialog({ deviceId, deviceName, agent, onClose, onSignedIn 
   onSignedIn?: () => void
 }) {
   const info = agentInfo(agent)
+  const { value: sharedList } = sharedLoginsResource.use()
+  const shared = isSharedAgent(agent) ? sharedList?.items.find((item) => item.agent === agent) : undefined
+  const [mode, setMode] = useState<'choose' | 'terminal'>('choose')
   const [session, setSession] = useState('')
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  const [applying, setApplying] = useState(false)
   const started = useRef(false)
+  const terminal = !shared || mode === 'terminal'
 
   useEffect(() => {
-    if (started.current) return
+    if (!terminal || started.current) return
     started.current = true
     startLogin(deviceId, agent).then((name) => { setSession(name); terminalsResource.refresh() }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not start the sign-in'))
-  }, [deviceId, agent])
+  }, [deviceId, agent, terminal])
+
+  const useShared = async () => {
+    setError('')
+    setApplying(true)
+    try {
+      const [result] = await applySharedLogin(agent as 'claude' | 'codex', [deviceId], true)
+      if (result?.state === 'ok') {
+        await refreshAgents(deviceId).catch(() => {}) // so the Agents tab and notices see it at once
+        setDone(true)
+        onSignedIn?.()
+      } else setError(result?.message || 'It didn’t work. Sign in on this machine instead.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'It didn’t work') }
+    setApplying(false)
+  }
 
   // Re-check every few seconds; the CLI knows when the login went through.
   useEffect(() => {
@@ -53,7 +73,21 @@ export function SignInDialog({ deviceId, deviceName, agent, onClose, onSignedIn 
       footer={<button className="btn btn-dark" onClick={onClose}>{done ? 'Done' : 'Close'}</button>}
     >
       <div className="aa-dialog">
-        {done ? (
+        {!done && !terminal ? (
+          <div className="aa-choose">
+            <button type="button" className="aa-choice" disabled={applying} onClick={useShared}>
+              <span className="aa-choice-icon"><Icon name="key" size={18} /></span>
+              <span><b>Use your shared sign-in</b><span>{shared!.account ? `${shared!.account} · ` : ''}the one saved in Settings → Sign-ins. One click, no browser.</span></span>
+              {applying ? <span className="spinner" /> : <Icon name="chevron" size={16} />}
+            </button>
+            <button type="button" className="aa-choice" disabled={applying} onClick={() => setMode('terminal')}>
+              <span className="aa-choice-icon"><Icon name="terminal" size={18} /></span>
+              <span><b>Sign in on {deviceName}</b><span>Run {info.name}’s own sign-in in a terminal here.</span></span>
+              <Icon name="chevron" size={16} />
+            </button>
+            {error && <p className="text-[13px] text-danger">{error}</p>}
+          </div>
+        ) : done ? (
           <div className="aa-success"><span className="aa-check"><Icon name="check" size={20} /></span><p className="font-medium text-ink">Signed in to {info.name} on {deviceName}</p><p className="text-[13px] text-muted">You can close this and carry on.</p></div>
         ) : (
           <>
@@ -141,7 +175,7 @@ function AgentRow({ deviceId, deviceName, state }: { deviceId: string; deviceNam
   return (
     <div className="aa-row">
       <span className="aa-row-mark"><AgentMark agent={state.id} size={20} /></span>
-      <span className="aa-row-text"><b>{info.name}</b><span>{state.auth === 'ok' ? `Signed in${state.account ? ` as ${state.account}` : ''}` : state.auth === 'signed-out' ? 'Not signed in' : 'Installed'}</span></span>
+      <span className="aa-row-text"><b>{info.name}</b><span>{state.auth === 'ok' ? `Signed in${state.account ? (state.account.includes('@') ? ` as ${state.account}` : ` with ${state.account}`) : ''}` : state.auth === 'signed-out' ? 'Not signed in' : 'Installed'}</span></span>
       {state.auth === 'signed-out' && <SignInButton deviceId={deviceId} deviceName={deviceName} agent={state.id} primary />}
     </div>
   )

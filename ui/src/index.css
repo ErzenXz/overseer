@@ -2351,5 +2351,41 @@ button.wk-note:hover { color: var(--text-2); }
 .au-auto { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
 .au-auto > span { display: flex; flex-direction: column; gap: 1px; }
 .au-auto > span > span { color: var(--text-3); font-size: 13px; }
+
+/* Settings → Sign-ins, and the shared choice in the sign-in dialog. */
+.si2 { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+.si2-card { border: 1px solid var(--border); border-radius: 16px; background: var(--bg); }
+.si2-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.si2-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.si2-head p { margin: 2px 0 0; color: var(--text-3); font-size: 13px; }
+.si2-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--bg-hover); flex-shrink: 0; }
+.si2-body { padding: 16px 18px; }
+.si2-steps { margin: 0 0 14px; padding-left: 18px; list-style: decimal; color: var(--text-2); font-size: 14px; line-height: 1.9; }
+.si2-code { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 6px; background: var(--bg-hover); font: 13px var(--font-mono); color: var(--text); vertical-align: 1px; }
+.si2-code:hover { background: var(--bg-active); }
+.si2-text { margin: 0 0 14px; color: var(--text-2); font-size: 14px; line-height: 1.55; }
+.si2-paste { display: flex; gap: 8px; }
+.si2-paste .input { flex: 1; min-width: 0; height: 38px; }
+.si2-error { margin: 8px 0 0; color: var(--red); font-size: 13px; }
+.si2-note { margin: 12px 0 0; color: var(--text-3); font-size: 13px; line-height: 1.5; }
+.si2-warn { display: flex; gap: 10px; margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--amber-bg); color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.si2-warn svg { flex-shrink: 0; margin-top: 2px; color: var(--amber); }
+.si2-warn p { margin: 0; }
+.si2-warn b { color: var(--text); font-weight: 600; }
+.si2-machines { display: flex; flex-direction: column; }
+.si2-row { display: flex; align-items: center; gap: 12px; min-height: 52px; border-top: 1px solid var(--border); }
+.si2-row:first-child { border-top: 0; }
+.si2-row-text { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; font-size: 14px; }
+.si2-row-text > span { color: var(--text-3); font-size: 13px; }
+.si2-bad { color: var(--red) !important; }
+.si2-auto { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 14px; }
+.si2-auto > span { display: flex; flex-direction: column; gap: 1px; }
+.si2-auto > span > span { color: var(--text-3); font-size: 13px; }
+.aa-choose { display: flex; flex-direction: column; gap: 8px; }
+.aa-choice { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; text-align: left; font-size: 14px; color: var(--text); }
+.aa-choice:hover:not(:disabled) { background: var(--bg-hover); }
+.aa-choice > span:nth-child(2) { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.aa-choice > span:nth-child(2) > span { color: var(--text-3); font-size: 13px; }
+.aa-choice-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--bg-hover); flex-shrink: 0; }
 .au-row { flex-wrap: wrap; row-gap: 8px; }
 .au-text { min-width: 170px; }

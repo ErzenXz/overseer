@@ -22,6 +22,7 @@ export const settingsSections: SettingsSection[] = [
   { id: 'shares', title: 'Shared links', description: 'Replays and live links to your sessions', icon: 'link', group: 'hub' },
   { id: 'usage', title: 'Usage & Limits', description: 'Plan limits, tokens and cost across your agents', icon: 'gauge', group: 'hub' },
   { id: 'agents', title: 'Agents', description: 'Coding agent CLIs installed on each machine', icon: 'bot', group: 'products' },
+  { id: 'signins', title: 'Sign-ins', description: 'Use one Claude Code and Codex sign-in on every machine', icon: 'key', group: 'products' },
   { id: 'automations', title: 'Schedules', description: 'Recurring and event-driven agent runs', icon: 'automation', group: 'products' },
   { id: 'mcp', title: 'MCP servers', description: 'Tools every agent gets on every machine', icon: 'layers', group: 'products' },
   { id: 'review', title: 'Review', description: 'Pull requests from your GitHub account', icon: 'pull-request', group: 'products' },

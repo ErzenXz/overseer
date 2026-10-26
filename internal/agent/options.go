@@ -69,7 +69,7 @@ func discoverClaude(ctx context.Context) (protocol.AgentOptions, error) {
 	defer cleanup()
 	args := []string{"--print", "--input-format", "stream-json", "--output-format", "stream-json",
 		"--verbose", "--permission-prompt-tool", "stdio"}
-	proc, err := startAgentProcess(path, args, dir, agentEnv())
+	proc, err := startAgentProcess(path, args, dir, claudeProcEnv())
 	if err != nil {
 		return protocol.AgentOptions{}, err
 	}
