@@ -192,7 +192,7 @@ func TestAgentUpdateCommands(t *testing.T) {
 
 	unix := func(agent string) string { return agentUpdateCommand(agent, "linux") }
 	for agent, want := range map[string][]string{
-		"claude":   {`"$B" update`, "brew upgrade --cask claude-code", `npm install -g --prefix "${R%%/lib/node_modules/*}"`, "sudo apt upgrade claude-code"},
+		"claude":   {`"$B" update`, "brew upgrade --cask claude-code", `npm install -g --prefix "${R%%/lib/node_modules/*}"`, "apt-get install -y --only-upgrade claude-code", "sudo -n true", "OVERSEER_NEEDS_TERMINAL:"},
 		"codex":    {"brew list codex", "brew upgrade codex", "npm ls -g @openai/codex", "npm install -g @openai/codex@latest", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"},
 		"gemini":   {"npm install -g @google/gemini-cli@latest", `npm install --prefix "$P" @google/gemini-cli@latest`, `.overseer/tools`},
 		"opencode": {"opencode upgrade"},
@@ -771,5 +771,91 @@ func TestAgentUpdateBusyCountsRunningSessions(t *testing.T) {
 	}
 	if n, _ := srv.agentUpdateBusy("d2", "claude"); n != 0 {
 		t.Fatalf("other device busy = %d", n)
+	}
+}
+
+func TestAgentTerminalCommand(t *testing.T) {
+	needs := protocol.ExecResult{ExitCode: 3, Stdout: "some output\n" + agentNeedsTerminal + "apt\n"}
+	if cmd, ok := agentTerminalCommand("claude", needs); !ok || cmd != claudePackageCommands["apt"] {
+		t.Fatalf("apt: %q %v", cmd, ok)
+	}
+	for _, res := range []protocol.ExecResult{
+		{Stdout: agentNeedsTerminal + "rm -rf /"}, // never a command from the device
+		{Stdout: "plain failure"},
+	} {
+		if cmd, ok := agentTerminalCommand("claude", res); ok {
+			t.Fatalf("%q gave %q", res.Stdout, cmd)
+		}
+	}
+	if _, ok := agentTerminalCommand("codex", needs); ok {
+		t.Fatal("only Claude Code has package commands")
+	}
+}
+
+// Without root or passwordless sudo, a packaged Claude Code fails with the
+// command to run in a terminal; after the person runs it, a recheck clears it.
+func TestAgentUpdateNeedsTerminalThenRecheck(t *testing.T) {
+	e := newUpdEnv(t)
+	res := protocol.ExecResult{ExitCode: 3, Stdout: agentNeedsTerminal + "apt\n"}
+	e.execRes.Store(&res)
+	e.post(map[string]string{})
+	it := e.wait("failed")
+	if it.Command != claudePackageCommands["apt"] || !strings.Contains(it.Message, "password") {
+		t.Fatalf("failed item: %+v", it)
+	}
+	v := "2.0.0" // they ran it by hand
+	e.detected.Store(&v)
+	body := e.post(map[string]any{"deviceId": e.device, "agent": "claude", "recheck": true})
+	if len(body.Items) != 0 {
+		t.Fatalf("after recheck: %+v", body.Items)
+	}
+	if st, _ := e.do(e.owner, "POST", "/api/agent-updates", map[string]any{"recheck": true}); st != 400 {
+		t.Fatalf("recheck without a target: %d", st)
+	}
+}
+
+// The package branch of the Claude Code script: as a person without
+// passwordless sudo it asks for a terminal; with it, it upgrades the package.
+func TestClaudeUpdatePackageBranch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix shell script")
+	}
+	run := func(t *testing.T, sudoWorks bool) (string, int) {
+		t.Helper()
+		home := t.TempDir()
+		real, _ := filepath.EvalSymlinks(home)
+		tools := filepath.Join(home, "fakebin")
+		write := func(path, body string) {
+			os.MkdirAll(filepath.Dir(path), 0o755)
+			if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write(filepath.Join(tools, "dpkg"), `exit 0`)
+		write(filepath.Join(tools, "id"), `echo 1000`)
+		if sudoWorks {
+			write(filepath.Join(tools, "sudo"), `[ "$1" = "-n" ] && shift; [ "$1" = "true" ] && exit 0; exec "$@"`)
+		} else {
+			write(filepath.Join(tools, "sudo"), `exit 1`)
+		}
+		write(filepath.Join(tools, "apt-get"), `echo "APT $*"`)
+		target := filepath.Join(home, "usr/bin/claude-real")
+		write(target, `echo "NATIVE $*"`)
+		bin := filepath.Join(home, "bin")
+		os.MkdirAll(bin, 0o755)
+		os.Symlink(target, filepath.Join(bin, "claude"))
+		// Point the package branch at this fake /usr.
+		script := strings.Replace(agentUpdateCommand("claude", "linux"), "/usr/*)", real+"/usr/*)", 1)
+		cmd := exec.Command("sh", "-c", script)
+		cmd.Env = []string{"HOME=" + home, "PATH=" + bin + ":" + tools + ":/usr/bin:/bin"}
+		out, _ := cmd.CombinedOutput()
+		return strings.TrimSpace(string(out)), cmd.ProcessState.ExitCode()
+	}
+	if out, code := run(t, false); code != 3 || out != agentNeedsTerminal+"apt" {
+		t.Fatalf("no sudo: %d %q", code, out)
+	}
+	out, code := run(t, true)
+	if code != 0 || !strings.Contains(out, "APT update") || !strings.Contains(out, "APT install -y --only-upgrade claude-code") {
+		t.Fatalf("passwordless sudo: %d %q", code, out)
 	}
 }

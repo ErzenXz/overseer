@@ -20,6 +20,9 @@ export interface AgentUpdate {
   busy: number
   message?: string
   updatedAt?: number
+  // Set when updating needs a person (a Linux package and a password): the
+  // command to run in a terminal on that machine.
+  command?: string
 }
 
 export interface AgentUpdates {
@@ -42,7 +45,7 @@ export function useAgentUpdates() {
   return value
 }
 
-export async function updateAgents(target: { deviceId?: string; agent?: string } = {}) {
+export async function updateAgents(target: { deviceId?: string; agent?: string; recheck?: boolean } = {}) {
   const next = await api.post<AgentUpdates>('/api/agent-updates', target)
   agentUpdatesResource.set(() => next)
 }

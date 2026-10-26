@@ -84,6 +84,11 @@ type agentUpdateItem struct {
 	Busy       int    `json:"busy"`
 	Message    string `json:"message,omitempty"`
 	UpdatedAt  int64  `json:"updatedAt,omitempty"`
+	// Command is set when the update needs a person: a Linux package that
+	// needs root on a machine without passwordless sudo. The page runs it in
+	// a terminal there, where they can type their password. It always comes
+	// from the fixed commands below, never from the device.
+	Command string `json:"command,omitempty"`
 
 	os string // the device's OS, for choosing the command
 }
@@ -321,6 +326,33 @@ func agentUpdateCommand(agent, osName string) string {
 
 const toolsPrefixUnix = `"$HOME/.overseer/tools"`
 
+// agentNeedsTerminal starts the line an update prints when it needs root
+// and has no way to get it unattended; the package manager follows.
+const agentNeedsTerminal = "OVERSEER_NEEDS_TERMINAL:"
+
+// claudePackageCommands are what a person runs, with their password, to
+// upgrade a Claude Code that a Linux package manager installed.
+var claudePackageCommands = map[string]string{
+	"apt": "sudo apt-get update && sudo apt-get install --only-upgrade claude-code",
+	"dnf": "sudo dnf upgrade --refresh claude-code",
+	"apk": "sudo apk update && sudo apk upgrade claude-code",
+}
+
+// agentTerminalCommand reports the command to run in a terminal when an
+// update's output says it needs a password, from the fixed list above.
+func agentTerminalCommand(agent string, res protocol.ExecResult) (string, bool) {
+	if agent != "claude" {
+		return "", false
+	}
+	for _, line := range strings.Split(res.Stdout+"\n"+res.Stderr, "\n") {
+		if pm, ok := strings.CutPrefix(strings.TrimSpace(line), agentNeedsTerminal); ok {
+			cmd, known := claudePackageCommands[strings.TrimSpace(pm)]
+			return cmd, known
+		}
+	}
+	return "", false
+}
+
 var agentUpdateUnix = map[string]string{
 	// Update the copy of Claude Code that is on PATH, the one Overseer runs,
 	// the way it was installed: Homebrew cask, the npm prefix that owns it
@@ -338,10 +370,19 @@ var agentUpdateUnix = map[string]string{
 		// folder) is <prefix>/node_modules.
 		`*/lib/node_modules/*) npm install -g --prefix "${R%%/lib/node_modules/*}" @anthropic-ai/claude-code@latest;; ` +
 		`*/node_modules/*) npm install --prefix "${R%%/node_modules/*}" @anthropic-ai/claude-code@latest;; ` +
-		`/usr/*) if command -v dpkg >/dev/null 2>&1 && dpkg -S "$R" >/dev/null 2>&1; then echo "Claude Code was installed with apt. Update it with: sudo apt update && sudo apt upgrade claude-code"; exit 3; ` +
-		`elif command -v rpm >/dev/null 2>&1 && rpm -qf "$R" >/dev/null 2>&1; then echo "Claude Code was installed with dnf. Update it with: sudo dnf upgrade claude-code"; exit 3; ` +
-		`elif command -v apk >/dev/null 2>&1 && apk info --who-owns "$R" >/dev/null 2>&1; then echo "Claude Code was installed with apk. Update it with: apk update && apk upgrade claude-code"; exit 3; ` +
-		`else "$B" update; fi;; ` +
+		// A Linux package: upgrade it as root when the agent is root or
+		// sudo needs no password; otherwise name the package manager so
+		// the page can run its command in a terminal for a password.
+		`/usr/*) PM=; if command -v dpkg >/dev/null 2>&1 && dpkg -S "$R" >/dev/null 2>&1; then PM=apt; ` +
+		`elif command -v rpm >/dev/null 2>&1 && rpm -qf "$R" >/dev/null 2>&1; then PM=dnf; ` +
+		`elif command -v apk >/dev/null 2>&1 && apk info --who-owns "$R" >/dev/null 2>&1; then PM=apk; fi; ` +
+		`if [ -z "$PM" ]; then "$B" update; exit $?; fi; ` +
+		`if [ "$(id -u)" = 0 ]; then S=; elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then S="sudo -n"; ` +
+		`else echo "` + agentNeedsTerminal + `$PM"; exit 3; fi; ` +
+		`case "$PM" in ` +
+		`apt) L=/etc/apt/sources.list.d/claude-code.list; if [ -f "$L" ]; then $S apt-get update -o Dir::Etc::sourcelist="$L" -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0; else $S apt-get update; fi && $S env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade claude-code;; ` +
+		`dnf) $S dnf -y --refresh upgrade claude-code;; ` +
+		`apk) $S apk update && $S apk upgrade claude-code;; esac;; ` +
 		`*) "$B" update;; esac`,
 	// Update the way Codex was installed: Homebrew, a global npm package, or
 	// else the official installer again.
@@ -674,6 +715,11 @@ func (s *Server) runAgentUpdate(it agentUpdateItem) {
 		s.finishAgentUpdate(it, updFailed, it.Current, err.Error())
 		return
 	case res.ExitCode != 0:
+		if cmd, ok := agentTerminalCommand(it.Agent, res); ok {
+			it.Command = cmd
+			s.finishAgentUpdate(it, updFailed, it.Current, "Installed with a Linux package, so it needs your password")
+			return
+		}
 		s.finishAgentUpdate(it, updFailed, it.Current, agentUpdateFailure(res))
 		return
 	}
@@ -707,6 +753,25 @@ func (s *Server) runAgentUpdate(it agentUpdateItem) {
 	default:
 		s.finishAgentUpdate(it, updUpdated, now, "")
 	}
+}
+
+// recheckAgentUpdate asks the device which version it has now and drops a
+// failed or held entry for that agent, so the list shows the truth after an
+// update the person ran by hand.
+func (s *Server) recheckAgentUpdate(deviceId, agent string) {
+	agents, err := s.agentUpdateDetect(deviceId, true)
+	if err != nil {
+		return
+	}
+	s.updateAgentSnap(deviceId, agents)
+	u := &s.agentUpd
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	key := agentUpdateKey(deviceId, agent)
+	if it := u.items[key]; it != nil && it.State == updFailed {
+		delete(u.items, key)
+	}
+	delete(u.held, key)
 }
 
 // agentUpdaterUpToDate reports whether an updater's output says there was
@@ -745,6 +810,9 @@ func (s *Server) finishAgentUpdate(it agentUpdateItem, state, current, message s
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	it.State, it.Current, it.Message, it.UpdatedAt = state, current, message, u.now().Unix()
+	if state != updFailed {
+		it.Command = "" // only a failure that needs a person carries one
+	}
 	if u.items == nil {
 		u.items = map[string]*agentUpdateItem{}
 	}
@@ -823,9 +891,25 @@ func (s *Server) handleStartAgentUpdates(w http.ResponseWriter, r *http.Request)
 	var in struct {
 		DeviceId string `json:"deviceId"`
 		Agent    string `json:"agent"`
+		// Recheck asks the device again instead of updating: after the
+		// person ran an update in a terminal themselves.
+		Recheck bool `json:"recheck"`
 	}
 	if err := readJSON(r, &in); err != nil && !errors.Is(err, io.EOF) {
 		httpError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if in.Recheck {
+		if in.DeviceId == "" || in.Agent == "" {
+			httpError(w, http.StatusBadRequest, "recheck needs deviceId and agent")
+			return
+		}
+		if _, ok := agentUpdateSpecFor(in.Agent); !ok {
+			httpError(w, http.StatusBadRequest, "unknown agent")
+			return
+		}
+		s.recheckAgentUpdate(in.DeviceId, in.Agent)
+		writeJSON(w, s.agentUpdateBody())
 		return
 	}
 	var target []string

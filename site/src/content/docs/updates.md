@@ -17,6 +17,7 @@ The agents on your machines (Claude Code, Codex, Gemini CLI and OpenCode) get ne
 - **Each agent updates itself the way it was installed**, on the machine it runs on: `claude update`, the Codex installer or package manager, `npm` for Gemini CLI, `opencode upgrade`. Overseer only starts it; your credentials and settings are untouched.
 - **A running session is never interrupted.** If an agent has a session working, waiting for you or just starting on that machine, its update is **queued** and starts by itself the moment the last of those sessions ends. Sessions that are already running keep the version they started with.
 - **Update automatically** (in the same dialog) installs new versions in the background whenever no session is using that agent. It is off by default. Only owners can start updates or change it.
+- **Claude Code installed with apt, dnf or apk** is upgraded with that package manager. If the agent runs as root, or `sudo` works without a password on that machine, Overseer does it on its own. Otherwise the row offers **Update in terminal**, which opens the upgrade command in a terminal on that machine so you can type your password, then **Check the version** confirms it.
 - If an update fails, the card says so with the last lines of what the updater printed, and **Retry** runs it again.
 
 The hub looks up the newest versions from the npm registry every few hours, so it needs outbound internet access to know about them.

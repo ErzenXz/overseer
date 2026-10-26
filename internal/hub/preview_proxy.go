@@ -247,8 +247,23 @@ func previewCookieFor(r *http.Request, ph previewHost, value string) *http.Cooki
 	return cookie
 }
 
+// previewProbePath answers on every preview origin, before sign-in, with a
+// 1×1 image. The Preview panel loads it first: if it doesn't load, the
+// preview address never reached this hub (missing wildcard DNS, a tunnel
+// without a route for it) and the panel says so instead of framing an error
+// page. It says nothing beyond "an Overseer preview host is here".
+const previewProbePath = "/__overseer/reachable.gif"
+
+var previewProbeGIF = []byte("GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")
+
 // servePreview handles every request whose Host is a preview origin.
 func (s *Server) servePreview(w http.ResponseWriter, r *http.Request, ph previewHost) {
+	if r.URL.Path == previewProbePath && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		w.Header().Set("Content-Type", "image/gif")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(previewProbeGIF)
+		return
+	}
 	rawQuery, token := withoutQueryParam(r.URL.RawQuery, previewTokenParam)
 	authed := false
 	if c, err := r.Cookie(previewCookie); err == nil {
