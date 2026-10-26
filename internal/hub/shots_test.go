@@ -322,8 +322,8 @@ func TestShotsOnlyCaptureTheSessionsOwnServer(t *testing.T) {
 	}
 
 	// A session in a broad folder (a home folder) is never matched at all.
-	home := e.startSession("/private/tmp")
-	startDevServer(t, "/private/tmp")
+	home := e.startSession("/tmp")
+	startDevServer(t, "/tmp")
 	e.api.do("POST", "/api/threads/"+home.Id+"/shots", map[string]string{"kind": "after"}, &reply)
 	if len(reply.Shots) != 0 {
 		t.Errorf("captured for a session in the home folder: %+v", reply.Shots)

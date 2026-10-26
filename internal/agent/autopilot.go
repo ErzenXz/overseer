@@ -285,13 +285,21 @@ func (a *Agent) dispatchAutopilot(m protocol.Msg) {
 			a.reply(m.Id, nil, err)
 			return
 		}
-		go a.reply(m.Id, a.autopilotFinish(req), nil)
+		// Committing, pushing and opening a PR can take minutes; never hold the
+		// connection's read loop for that.
+		go func() {
+			res := a.autopilotFinish(req)
+			a.reply(m.Id, res, nil)
+		}()
 	case protocol.TypeScreenshot:
 		var req protocol.ScreenshotRequest
 		if err := json.Unmarshal(m.Data, &req); err != nil {
 			a.reply(m.Id, nil, err)
 			return
 		}
-		go a.reply(m.Id, a.screenshot(req), nil)
+		go func() {
+			res := a.screenshot(req)
+			a.reply(m.Id, res, nil)
+		}()
 	}
 }
