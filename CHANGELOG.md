@@ -66,6 +66,12 @@ calmer app from top to bottom.
   isn't ready offers a guided install instead of an error.
 - **Alerts when an agent needs you.** A browser notification and the tab title
   tell you when a session is waiting for an approval.
+- **Agent updates.** When a newer Claude Code, Codex, Gemini CLI or OpenCode is
+  out for a machine, a card under the Overseer update offers to update it. Each
+  agent updates itself the way it was installed. An agent that has a session
+  running is never touched: its update waits and starts by itself when the
+  session ends. Turn on **Update automatically** to keep them current in the
+  background.
 - **Update notice with the changelog.** A quiet card in the sidebar shows when
   a new version is out and what changed in it.
 

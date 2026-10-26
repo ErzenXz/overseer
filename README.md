@@ -112,7 +112,8 @@ phone.
 | Gemini CLI, OpenCode, Goose, Copilot CLI, Cursor and others | [Agent Client Protocol](https://agentclientprotocol.com) |
 
 Install and sign in to them from **Machines → Setup** or the **Agents** tab of a
-machine. Your credentials stay on each machine.
+machine. Your credentials stay on each machine. Overseer also keeps the agents
+themselves up to date, never interrupting a running session.
 
 ## Good to know
 

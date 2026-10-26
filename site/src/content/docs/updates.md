@@ -10,6 +10,17 @@ Hubs check every six hours and install stable releases on their own. Turn **Auto
 
 When a new release is out, a small **Update available** card appears at the bottom of the sidebar. Click it to read what's new and install it in one click. After an update, the same card offers **See what's new** once.
 
+## Agent updates
+
+The agents on your machines (Claude Code, Codex, Gemini CLI and OpenCode) get new versions too. When one is out for a machine you have, a second card, **Agent updates**, appears under the Overseer one at the bottom of the sidebar. Click it to see which agent on which machine is behind, then **Update all** or update one at a time.
+
+- **Each agent updates itself the way it was installed**, on the machine it runs on: `claude update`, the Codex installer or package manager, `npm` for Gemini CLI, `opencode upgrade`. Overseer only starts it; your credentials and settings are untouched.
+- **A running session is never interrupted.** If an agent has a session working, waiting for you or just starting on that machine, its update is **queued** and starts by itself the moment the last of those sessions ends. Sessions that are already running keep the version they started with.
+- **Update automatically** (in the same dialog) installs new versions in the background whenever no session is using that agent. It is off by default. Only owners can start updates or change it.
+- If an update fails, the card says so with the last lines of what the updater printed, and **Retry** runs it again.
+
+The hub looks up the newest versions from the npm registry every few hours, so it needs outbound internet access to know about them.
+
 ## What happens during an update
 
 1. The release binary is downloaded and checked against the release's `checksums.txt`.

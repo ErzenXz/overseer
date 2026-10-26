@@ -308,6 +308,8 @@ func TestLoginRateLimitCoversUsers(t *testing.T) {
 // ownerRoutes are the routes a member must never reach.
 var ownerRoutes = []struct{ method, path string }{
 	{"GET", "/api/invites"},
+	{"POST", "/api/agent-updates"},
+	{"PUT", "/api/agent-updates/settings"},
 	{"POST", "/api/invites"},
 	{"DELETE", "/api/invites/abc"},
 	{"PATCH", "/api/users/abc"},

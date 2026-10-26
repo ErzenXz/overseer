@@ -65,6 +65,8 @@ type Server struct {
 	startMu sync.Mutex
 	// sched is the scheduled-session and guardrail state (schedule.go).
 	sched schedState
+	// agentUpd is the coding-agent CLI update state (agent_updates.go).
+	agentUpd agentUpdateState
 	// autopilot and shots hold the issue autopilot's and the before/after
 	// screenshots' in-memory state (autopilot.go, shots.go).
 	autopilot autopilotState
@@ -195,6 +197,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.runAutomations(runCtx)
 	s.startAutopilot(runCtx) // autopilot_run.go: issue poller and screenshot watcher
 	go s.runSchedule(runCtx)
+	go s.runAgentUpdates(runCtx)
 	go s.agents.run(runCtx)
 	go s.chat.run(runCtx)
 
@@ -434,6 +437,7 @@ func (s *Server) routes() {
 	s.routesTeams(m)
 	s.routesCloud(m)
 	s.routesRecipes(m)
+	s.routesAgentUpdates(m)
 
 	s.routesAutopilot(m) // issue autopilot and before/after screenshots (autopilot.go, shots.go)
 

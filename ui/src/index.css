@@ -2334,3 +2334,20 @@ button.wk-note:hover { color: var(--text-2); }
 .aa-details-toggle { color: var(--text-3); font-size: 13px; }
 .aa-details-toggle:hover { color: var(--text); }
 .aa-error-raw { margin: 10px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--bg); color: var(--text-2); font: 12.5px/1.5 var(--font-mono); white-space: pre-wrap; word-break: break-word; }
+
+/* Agent updates: a second card under the Overseer update, and its dialog. */
+.update-notice-stacked { border-top: 0; padding-top: 6px; }
+.update-dot-bad { background: var(--red); }
+.update-dot-wait { background: var(--amber); }
+.update-done { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 99px; background: var(--green-bg); color: var(--green); flex-shrink: 0; }
+.au-list { display: flex; flex-direction: column; margin-top: 4px; }
+.au-row { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 8px 0; border-top: 1px solid var(--border); }
+.au-row:first-child { border-top: 0; }
+.au-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--bg-hover); flex-shrink: 0; }
+.au-text { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; font-size: 14px; }
+.au-text > span { color: var(--text-3); font-size: 13px; }
+.au-machine { color: var(--text-3); font-weight: 400; }
+.au-bad { color: var(--red) !important; white-space: pre-wrap; word-break: break-word; }
+.au-auto { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
+.au-auto > span { display: flex; flex-direction: column; gap: 1px; }
+.au-auto > span > span { color: var(--text-3); font-size: 13px; }

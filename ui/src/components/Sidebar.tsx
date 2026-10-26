@@ -10,6 +10,7 @@ import Icon, { type IconName } from './Icon'
 import { AppIcon } from './Logo'
 import { ContextMenu, Menu, MenuItem, MenuLabel, MenuSeparator, Submenu, SwitchMark } from './Menu'
 import { TerminalMenuItems, ThreadMenuItems } from './SessionActions'
+import AgentUpdateNotice from './AgentUpdates'
 import UpdateNotice from './UpdateNotice'
 import { GuardrailNotices, ScheduledGroup } from './Scheduled'
 import { handedToMe, inScope, needsYou, useScope, useTeam } from '../teams'
@@ -425,7 +426,12 @@ function SessionLink({ row, props }: { row: SessionRow; props: Record<Property, 
 }
 
 function SidebarFoot() {
-  return <UpdateNotice />
+  return (
+    <>
+      <UpdateNotice />
+      <AgentUpdateNotice />
+    </>
+  )
 }
 
 // PanelHead tops the sessions panel: its title, new session, how the list is

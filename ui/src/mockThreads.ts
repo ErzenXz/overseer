@@ -37,7 +37,7 @@ const threads: Thread[] = [
   thread({ id: WORK_IDS.codex, title: 'Review migration 0042 for locking', deviceId: 'macbook', agent: 'codex', cwd: '~/Projects/storefront', updatedAt: nowSec() - 3600 * 3, lastReadAt: nowSec() - 3600 * 3, usage: { inputTokens: 148_000, outputTokens: 7_900, costUsd: 0.91, contextTokens: 47_000, contextWindow: 272_000 } }),
   thread({ id: 'th_rust', title: 'Build Rust OpenAI harness', deviceId: 'studio', agent: 'codex', cwd: '~/Projects/codex-harness', updatedAt: nowSec() - 120, lastReadAt: nowSec() - 900, pinned: true, folder: 'Harness', pr: { url: 'https://github.com/ErzenXz/codex-harness/pull/1', number: 1, state: 'open', checks: 'passing' }, usage: { inputTokens: 412_000, outputTokens: 38_400, costUsd: 3.12, contextTokens: 161_000, contextWindow: 272_000 } }),
   thread({ id: 'th_ui', title: 'Improve dashboard UI and features', deviceId: 'macbook', agent: 'claude', model: 'opus', cwd: '~/Projects/LiveAgent', updatedAt: nowSec() - 3600 * 5, pr: { url: 'https://github.com/ErzenXz/overseer/pull/3', number: 3, state: 'open', checks: 'passing' } }),
-  thread({ id: 'th_plus', title: 'Find the company details for plushouse.eu', deviceId: 'homelab', agent: 'codex', cwd: '/srv/research', status: 'error', error: 'workspace routing discovery unauthorized (401)', updatedAt: nowSec() - 60 * 6, lastReadAt: nowSec() - 60 * 6 }),
+  thread({ id: 'th_plus', title: 'Triage the open issues in the payments repo', deviceId: 'homelab', agent: 'codex', cwd: '/srv/research', status: 'error', error: 'workspace routing discovery unauthorized (401)', updatedAt: nowSec() - 60 * 6, lastReadAt: nowSec() - 60 * 6 }),
   thread({ id: 'th_auth', title: 'Fix flaky auth integration tests', deviceId: 'homelab', agent: 'claude', cwd: '/srv/api-gateway', status: 'waiting', updatedAt: nowSec() - 60 * 14, lastReadAt: nowSec() - 3600 }),
   thread({ id: 'th_archive', title: 'Update archive homepage design', deviceId: 'studio', agent: 'claude', cwd: '~/Projects/archive', status: 'waiting', folder: 'Websites', updatedAt: nowSec() - 120, pr: { url: 'https://github.com/ErzenXz/archive/pull/1', number: 1, state: 'open', checks: 'passing' } }),
   thread({ id: 'th_deps', title: 'Weekly dependency update', deviceId: 'homelab', agent: 'codex', cwd: '/srv/api-gateway', updatedAt: nowSec() - 86400 * 9, automationId: 'au_deps', pr: { url: 'https://github.com/ErzenXz/api-gateway/pull/88', number: 88, state: 'merged' } }),
@@ -114,7 +114,7 @@ function seed() {
   msg('th_ui', { role: 'assistant', turn: v1.id, durationMs: 412_000, text: 'Sessions are now the primary sidebar, with **Sort**, **Filter**, **Group** and **Property visibility** menus. Opened [overseer#3](https://github.com/ErzenXz/overseer/pull/3).' }, step(9000))
 
   t = nowMs() - 60_000 * 20
-  const p1 = msg('th_plus', { role: 'user', text: 'Find out the company details of https://plushouse.eu/ . Address and so on.' }, step(0))
+  const p1 = msg('th_plus', { role: 'user', text: 'Go through the open issues in acme-labs/payments, label them and close the duplicates.' }, step(0))
   msg('th_plus', { role: 'error', turn: p1.id, text: 'workspace routing discovery unauthorized (401)' }, step(2000))
   msg('th_plus', { role: 'error', turn: p1.id, text: 'workspace routing discovery unauthorized (401)' }, step(500))
   const a1 = msg('th_auth', { role: 'user', text: 'The auth integration tests fail about 1 in 5 runs. Find out why and fix it.' }, step(0))
@@ -509,6 +509,11 @@ export async function threadRoute(method: string, path: string, body: Record<str
     { id: 'claude', name: 'Claude Code', protocol: 'native' }, { id: 'codex', name: 'Codex', protocol: 'native' }, { id: 'gemini', name: 'Gemini CLI', protocol: 'acp' },
     { id: 'opencode', name: 'OpenCode', protocol: 'acp' }, { id: 'goose', name: 'Goose', protocol: 'acp' }, { id: 'copilot', name: 'Copilot CLI', protocol: 'acp' }, { id: 'cursor', name: 'Cursor Agent', protocol: 'acp' },
   ])
+  if (path === '/api/agent-updates' && (method === 'GET' || method === 'POST')) {
+    if (method === 'POST') for (const item of agentUpdateDemo) if (!item.startedAt && (!body.deviceId || body.deviceId === item.deviceId) && (!body.agent || body.agent === item.agent)) item.startedAt = Date.now()
+    return json(agentUpdatesNow())
+  }
+  if (path === '/api/agent-updates/settings' && method === 'PUT') { agentAuto = !!body.auto; return json(agentUpdatesNow()) }
   if (path === '/api/agents/catalog' && method === 'GET') return json([...demoCatalog, ...customAgents])
   if (path === '/api/agents/custom' && method === 'POST') {
     const name = String(body.name ?? '').trim()
@@ -654,4 +659,30 @@ function demoCommands(agent: string) {
     { name: 'cost', description: 'Show token usage and cost for this session' },
   ]
   return [{ name: 'compact', description: 'Summarise the conversation' }]
+}
+
+
+// Demo agent updates: newer CLIs on a few machines. Starting one plays out as
+// it would for real, including waiting for a machine whose agent has a session
+// running (Codex on the homelab) and finishing a few seconds later.
+let agentAuto = false
+const agentUpdateDemo: { deviceId: string; agent: string; name: string; current: string; latest: string; busy: number; startedAt?: number }[] = [
+  { deviceId: 'macbook', agent: 'claude', name: 'Claude Code', current: '2.1.4', latest: '2.2.0', busy: 0 },
+  { deviceId: 'studio', agent: 'claude', name: 'Claude Code', current: '2.1.4', latest: '2.2.0', busy: 1 },
+  { deviceId: 'homelab', agent: 'codex', name: 'Codex', current: '0.61.0', latest: '0.63.1', busy: 0 },
+  { deviceId: 'macbook', agent: 'gemini', name: 'Gemini CLI', current: '0.12.0', latest: '0.14.2', busy: 0 },
+]
+
+function agentUpdatesNow() {
+  const now = Date.now()
+  const items = agentUpdateDemo.map((item) => {
+    const base = { deviceId: item.deviceId, deviceName: deviceNames[item.deviceId] ?? item.deviceId, agent: item.agent, name: item.name, latest: item.latest, busy: item.busy }
+    if (!item.startedAt) return { ...base, current: item.current, state: 'available' as const }
+    const age = now - item.startedAt
+    const wait = item.busy > 0 ? 7000 : 0
+    if (age < wait) return { ...base, current: item.current, state: 'queued' as const }
+    if (age < wait + 3000) return { ...base, current: item.current, busy: 0, state: 'updating' as const }
+    return { ...base, current: item.latest, busy: 0, state: 'updated' as const, updatedAt: Math.floor((item.startedAt + wait + 3000) / 1000) }
+  })
+  return { auto: agentAuto, checkedAt: Math.floor(now / 1000), items }
 }
