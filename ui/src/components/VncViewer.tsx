@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { api, wsURL } from '../api'
 import { mockEnabled } from '../mock'
 import type { DesktopInfo } from '../types'
+import DesktopSetup from './DesktopSetup'
 import Icon from './Icon'
 import { Menu, MenuItem, MenuLabel, MenuSeparator, Switch } from './Menu'
 
@@ -48,6 +49,7 @@ export default function VncViewer({ deviceId, deviceName, compact }: { deviceId:
     api.get<DesktopInfo>(`/api/devices/${deviceId}/desktop`).then((next) => {
       if (!alive) return
       setInfo(next)
+      if (next.user) setUsername((current) => current || next.user!)
       setState(next.available ? 'connecting' : 'unavailable')
     }).catch((cause) => {
       if (!alive) return
@@ -160,22 +162,12 @@ export default function VncViewer({ deviceId, deviceName, compact }: { deviceId:
       <div className="vnc-screen" onClick={() => rfb.current?.focus()}>
         <div ref={screen} />
         {mockEnabled && info?.available && <MockDesktop name={deviceName} />}
-        {state === 'unavailable' && (
-          <div className="vnc-overlay">
-            <div>
-              <Icon name="presentation" size={30} className="mx-auto mb-4 text-[#777]" />
-              <h3>No desktop on {deviceName} yet</h3>
-              <p>{info?.reason || 'Start a VNC server on this machine, listening on 127.0.0.1:5900.'}</p>
-              <p>Overseer tunnels it through the agent connection, so it never needs to be reachable from the network.</p>
-              <button className="btn btn-sm btn-outline mt-4" onClick={() => setAttempt((value) => value + 1)}>Check again</button>
-            </div>
-          </div>
-        )}
+        {state === 'unavailable' && <DesktopSetup deviceId={deviceId} deviceName={deviceName} info={info} onCheck={() => setAttempt((value) => value + 1)} onReady={() => setAttempt((value) => value + 1)} />}
         {state === 'credentials' && (
           <div className="vnc-overlay">
             <form onSubmit={sendCredentials} className="w-full max-w-[300px] text-left">
               <h3 className="text-center">Sign in to {deviceName}</h3>
-              <p className="mx-auto text-center">The desktop asked for {needs.includes('username') ? 'your account name and password' : 'its VNC password'}.</p>
+              <p className="mx-auto text-center">{needs.includes('username') ? (info?.os === 'darwin' ? 'Use the name and password you sign in to this Mac with.' : 'The desktop asked for your account name and password.') : 'The desktop asked for its VNC password.'} It goes straight to the machine and isn’t saved.</p>
               {needs.includes('username') && <input className="input mt-4" placeholder="Account name" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />}
               <input className="input mt-3" type="password" placeholder="Password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} autoFocus />
               <button className="btn btn-dark mt-4 w-full">Connect</button>

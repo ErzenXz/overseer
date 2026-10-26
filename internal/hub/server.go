@@ -60,6 +60,23 @@ type Server struct {
 	mux           *http.ServeMux
 	updates       *updateManager
 	updateApplied atomic.Bool
+	// startMu makes "look up the request id, else create" one step, so a
+	// retried start can never create a second session.
+	startMu sync.Mutex
+	// sched is the scheduled-session and guardrail state (schedule.go).
+	sched schedState
+	// autopilot and shots hold the issue autopilot's and the before/after
+	// screenshots' in-memory state (autopilot.go, shots.go).
+	autopilot autopilotState
+	shots     shotsState
+	// prepares are the running and recent "get this repo and branch ready"
+	// jobs (gitprepare.go).
+	prepares prepareJobs
+	// team is the people, invites and presence state (users.go).
+	team teamState
+	// chat sends approvals and questions to Telegram, Slack, Discord and
+	// webhooks, and takes the answers back (chat.go).
+	chat *chatManager
 
 	// Live previews (previews.go, preview_proxy.go).
 	previewAuth        *previewAuth
@@ -96,6 +113,9 @@ func NewServer(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := store.migrateUsers(); err != nil { // the admin password becomes the first owner
+		return nil, fmt.Errorf("migrating users: %w", err)
+	}
 	events := newEventBus()
 	s := &Server{
 		opts:      opts,
@@ -114,6 +134,7 @@ func NewServer(opts Options) (*Server, error) {
 	s.previewTransport = s.newPreviewTransport()
 	s.agents = newAgentCatalog(store, opts.DataDir, opts.Version)
 	s.threads = newThreadService(s)
+	s.chat = newChatManager(s)
 	s.resetInterruptedThreads()
 	s.routes()
 	s.updates = newUpdateManager(store, opts.Version, opts.GithubRepo)
@@ -172,7 +193,10 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	go s.runEmbeddedAgent(runCtx)
 	go s.runAutomations(runCtx)
+	s.startAutopilot(runCtx) // autopilot_run.go: issue poller and screenshot watcher
+	go s.runSchedule(runCtx)
 	go s.agents.run(runCtx)
+	go s.chat.run(runCtx)
 
 	if s.opts.TLSDomain != "" {
 		err := s.runTLS(runCtx)
@@ -317,11 +341,11 @@ func (s *Server) routes() {
 	// Authenticated API.
 	m.HandleFunc("GET /api/devices", s.requireAuth(s.handleListDevices))
 	m.HandleFunc("PATCH /api/devices/{id}", s.requireAuth(s.handleRenameDevice))
-	m.HandleFunc("DELETE /api/devices/{id}", s.requireAuth(s.handleDeleteDevice))
-	m.HandleFunc("POST /api/enroll-tokens", s.requireAuth(s.handleCreateEnrollToken))
+	m.HandleFunc("DELETE /api/devices/{id}", s.ownerAudited("device.remove", s.handleDeleteDevice))
+	m.HandleFunc("POST /api/enroll-tokens", s.ownerAudited("device.add", s.handleCreateEnrollToken))
 	m.HandleFunc("GET /api/devices/{id}/sessions", s.requireAuth(s.handleListSessions))
-	m.HandleFunc("POST /api/devices/{id}/sessions", s.requireAuth(s.handleCreateSession))
-	m.HandleFunc("DELETE /api/devices/{id}/sessions/{name}", s.requireAuth(s.handleKillSession))
+	m.HandleFunc("POST /api/devices/{id}/sessions", s.authAudited("terminal.start", s.handleCreateSession))
+	m.HandleFunc("DELETE /api/devices/{id}/sessions/{name}", s.authAudited("terminal.stop", s.handleKillSession))
 	m.HandleFunc("POST /api/devices/{id}/sessions/{name}/input", s.requireAuth(s.handleSessionInput))
 	m.HandleFunc("GET /api/devices/{id}/sessions/{name}/output", s.requireAuth(s.handleSessionOutput))
 	m.HandleFunc("POST /api/devices/{id}/exec", s.requireAuth(s.handleExec))
@@ -338,22 +362,23 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/presets", s.requireAuth(s.handleListPresets))
 	m.HandleFunc("POST /api/presets", s.requireAuth(s.handleCreatePreset))
 	m.HandleFunc("DELETE /api/presets/{id}", s.requireAuth(s.handleDeletePreset))
-	m.HandleFunc("GET /api/tokens", s.requireAuth(s.handleListApiTokens))
-	m.HandleFunc("POST /api/tokens", s.requireAuth(s.handleCreateApiToken))
-	m.HandleFunc("DELETE /api/tokens/{id}", s.requireAuth(s.handleDeleteApiToken))
+	m.HandleFunc("GET /api/tokens", s.requireOwner(s.handleListApiTokens))
+	m.HandleFunc("POST /api/tokens", s.ownerAudited("token.create", s.handleCreateApiToken))
+	m.HandleFunc("DELETE /api/tokens/{id}", s.ownerAudited("token.delete", s.handleDeleteApiToken))
 	m.HandleFunc("GET /api/updates", s.requireAuth(s.handleUpdateStatus))
+	m.HandleFunc("GET /api/updates/notes", s.requireAuth(s.handleUpdateNotes))
 	m.HandleFunc("POST /api/updates/check", s.requireAuth(s.handleUpdateCheck))
-	m.HandleFunc("PATCH /api/updates", s.requireAuth(s.handleUpdateSettings))
-	m.HandleFunc("POST /api/updates/install", s.requireAuth(s.handleUpdateInstall))
-	m.HandleFunc("POST /api/updates/rollback", s.requireAuth(s.handleUpdateRollback))
+	m.HandleFunc("PATCH /api/updates", s.ownerAudited("update.settings", s.handleUpdateSettings))
+	m.HandleFunc("POST /api/updates/install", s.ownerAudited("update.install", s.handleUpdateInstall))
+	m.HandleFunc("POST /api/updates/rollback", s.ownerAudited("update.rollback", s.handleUpdateRollback))
 	m.HandleFunc("GET /api/threads", s.requireAuth(s.handleListThreads))
 	m.HandleFunc("POST /api/threads", s.requireAuth(s.handleCreateThread))
 	m.HandleFunc("GET /api/threads/{id}", s.requireAuth(s.handleGetThread))
 	m.HandleFunc("PATCH /api/threads/{id}", s.requireAuth(s.handlePatchThread))
-	m.HandleFunc("DELETE /api/threads/{id}", s.requireAuth(s.handleDeleteThread))
+	m.HandleFunc("DELETE /api/threads/{id}", s.authAudited("session.delete", s.handleDeleteThread))
 	m.HandleFunc("POST /api/threads/{id}/prompt", s.requireAuth(s.handleThreadPrompt))
-	m.HandleFunc("POST /api/threads/{id}/cancel", s.requireAuth(s.handleThreadCancel))
-	m.HandleFunc("POST /api/threads/{id}/approval", s.requireAuth(s.handleThreadApproval))
+	m.HandleFunc("POST /api/threads/{id}/cancel", s.authAudited("session.stop", s.handleThreadCancel))
+	m.HandleFunc("POST /api/threads/{id}/approval", s.answeredApproval(s.handleThreadApproval))
 	m.HandleFunc("POST /api/threads/{id}/fork", s.requireAuth(s.handleForkThread))
 	m.HandleFunc("POST /api/threads/{id}/compact", s.requireAuth(s.handleCompactThread))
 	m.HandleFunc("POST /api/threads/{id}/undo", s.requireAuth(s.handleUndoThread))
@@ -368,6 +393,14 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/devices/{id}/agents/{agent}/options", s.requireAuth(s.handleAgentOptions))
 	m.HandleFunc("GET /api/devices/{id}/desktop", s.requireAuth(s.handleDeviceDesktop))
 	m.HandleFunc("GET /api/devices/{id}/ports", s.requireAuth(s.handleDevicePorts))
+	m.HandleFunc("POST /api/devices/{id}/git-info", s.requireAuth(s.handleDeviceGitInfo))
+	m.HandleFunc("POST /api/devices/{id}/git-prepare", s.requireAuth(s.handleDeviceGitPrepare))
+	m.HandleFunc("GET /api/git-prepare/{key}", s.requireAuth(s.handleGitPrepareStatus))
+	m.HandleFunc("DELETE /api/git-prepare/{key}", s.requireAuth(s.handleGitPrepareCancel))
+	m.HandleFunc("GET /api/devices/{id}/github/repos", s.requireAuth(s.handleGitHubRepos))
+	m.HandleFunc("GET /api/devices/{id}/github/find", s.requireAuth(s.handleGitHubFind))
+	m.HandleFunc("GET /api/devices/{id}/github/branches", s.requireAuth(s.handleGitHubBranches))
+	m.HandleFunc("GET /api/sessions/by-request/{key}", s.requireAuth(s.handleSessionByRequest))
 	m.HandleFunc("GET /api/usage/limits", s.requireAuth(s.handleUsageLimits))
 	m.HandleFunc("GET /api/devices/{id}/extensions", s.requireAuth(s.handleExtensions))
 	m.HandleFunc("GET /api/devices/{id}/extensions/item", s.requireAuth(s.handleExtensionItem))
@@ -378,7 +411,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/devices/{id}/skills", s.requireAuth(s.handleCreateSkill))
 	m.HandleFunc("POST /api/devices/{id}/skills/share", s.requireAuth(s.handleShareSkill))
 	m.HandleFunc("GET /api/previews/config", s.requireAuth(s.handleGetPreviewConfig))
-	m.HandleFunc("PUT /api/previews/config", s.requireAuth(s.handlePutPreviewConfig))
+	m.HandleFunc("PUT /api/previews/config", s.ownerAudited("settings.previews", s.handlePutPreviewConfig))
 	m.HandleFunc("GET /api/mcp-servers", s.requireAuth(s.handleListMcpServers))
 	m.HandleFunc("POST /api/mcp-servers", s.requireAuth(s.handleCreateMcpServer))
 	m.HandleFunc("PATCH /api/mcp-servers/{id}", s.requireAuth(s.handlePatchMcpServer))
@@ -388,11 +421,21 @@ func (s *Server) routes() {
 	m.HandleFunc("PATCH /api/automations/{id}", s.requireAuth(s.handlePatchAutomation))
 	m.HandleFunc("DELETE /api/automations/{id}", s.requireAuth(s.handleDeleteAutomation))
 	m.HandleFunc("POST /api/automations/{id}/run", s.requireAuth(s.handleRunAutomation))
+	s.routesSchedule(m)
 	m.HandleFunc("GET /api/ws/term", s.requireAuth(s.handleTermWS))
 	m.HandleFunc("GET /api/ws/events", s.requireAuth(s.handleEventsWS))
 	m.HandleFunc("GET /api/ws/threads/{id}", s.requireAuth(s.handleThreadWS))
 	m.HandleFunc("GET /api/ws/desktop", s.requireAuth(s.handleDesktopWS))
+	s.routesChat(m)
 	m.HandleFunc("GET /api/ws/devices/{id}/tcp/{port}", s.requireAuth(s.handleDeviceTCPWS))
+	s.routesStats(m)
+	s.routesShare(m)
+	s.routesArena(m)
+	s.routesTeams(m)
+	s.routesCloud(m)
+	s.routesRecipes(m)
+
+	s.routesAutopilot(m) // issue autopilot and before/after screenshots (autopilot.go, shots.go)
 
 	// Web UI (embedded SPA) at everything else.
 	if s.opts.UI != nil {

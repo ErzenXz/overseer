@@ -7,6 +7,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from '../components/Menu'
 import { SidebarToggle, useOwnHeader, useShell } from '../shell'
 import { createThread, useDevices, usePref } from '../store'
 import type { ExecResult } from '../types'
+import { OsMark } from '../components/DeviceMark'
 
 interface PullRequest {
   number: number
@@ -152,7 +153,7 @@ export default function ReviewPage() {
           {(close) => (
             <>
               <MenuLabel>Use GitHub CLI on</MenuLabel>
-              {online.map((item) => <MenuItem key={item.id} icon="monitor" label={item.name} checked={item.id === device?.id} onClick={() => { setDeviceId(item.id); close() }} />)}
+              {online.map((item) => <MenuItem key={item.id} icon={<OsMark os={item.os} size={16} />} label={item.name} checked={item.id === device?.id} onClick={() => { setDeviceId(item.id); close() }} />)}
             </>
           )}
         </Menu>

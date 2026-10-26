@@ -58,15 +58,34 @@ The **Shell** tab opens a real terminal on the machine. On Linux and macOS termi
 
 ## Remote desktop
 
-Every machine has a **Desktop** tab. Overseer tunnels the machine's own VNC server through its connection, so VNC is never reachable from the network. Turn on a VNC server once per machine:
+Every machine has a **Desktop** tab. Overseer tunnels the machine's own VNC server through its connection, so VNC is never reachable from the network.
 
-| Platform | How to turn it on |
+### One-click setup
+
+If a machine has no VNC server yet, the Desktop tab offers **Set up remote desktop**. Overseer works out what that machine needs, runs the setup in a terminal you can watch (and type your password into), and connects as soon as the desktop is ready. Every setup keeps VNC listening on the machine itself only.
+
+| Platform | What the setup does |
 | --- | --- |
-| macOS | System Settings → General → Sharing → Screen Sharing |
-| Linux (X11) | `x11vnc -localhost -forever` |
-| Linux (Wayland) | `wayvnc` |
-| Windows | A VNC server such as TightVNC |
+| macOS | Turns on Screen Sharing, with a firewall rule so it only answers on the machine itself. Sign in with your Mac account. |
+| Linux (X11) | Installs `x11vnc`, asks you for a desktop password, and runs it as a background service bound to localhost |
+| Linux (Wayland: sway, Hyprland and similar) | Installs `wayvnc` and runs it on localhost |
+| Linux (GNOME or KDE on Wayland) | Shows the steps instead: log in with the Xorg session, then use one-click setup |
+| Windows | Installs TightVNC with `winget`, accepting connections from the machine itself only |
+
+Prefer to do it yourself? **Show me the commands** lists every step, with a copy button.
 
 ## Files and changes
 
 **Files** browses the machine from the session's folder. Open a file to read it, or upload and download files. **Changes** lists every file the session edited with a diff for each, so you can review the agent's work without opening an editor.
+
+## Before and after
+
+When an agent works on something with a web page, **Changes** also shows **Before / after**: how the page looked before the agent started, and how it looks after its last turn.
+
+Overseer takes the pictures by itself. When a dev server starts in the session's folder it takes the "before", and when the agent's turn ends it takes the "after". The pictures come from the Chrome, Chromium or Edge already installed on that machine, run in the background. Nothing is bundled; with no such browser, Overseer skips it quietly.
+
+- **Side by side** or **Slider** switches how you compare them. The slider wipes from before to after as you drag.
+- **Desktop** and **Phone** switch the screen size, when phone-size pictures are on.
+- The **⋯** menu takes a "before" or "after" now, deletes the pictures, and has three switches that apply to every session: **Take screenshots** (on), **Phone size too** (off) and **Add to pull requests** (on).
+
+Pictures are kept on your hub, a few per session. When a pull request is opened from the session, they're added to it as a comment, so reviewers can see the change. That only works when your hub has a public `https` address that GitHub can load images from. A hub on `localhost`, a private network, Tailscale or plain `http` can't, and the card says so instead. See [Remote Access](/docs/remote-access/).

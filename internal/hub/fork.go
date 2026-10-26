@@ -91,7 +91,7 @@ func forkTranscript(msgs []ThreadMessage) string {
 				b.WriteString("Assistant: " + t + "\n\n")
 			}
 		case "tool":
-			if m.Tool != nil {
+			if m.Tool != nil && m.ParentId == "" { // a subagent's steps stay inside its own line
 				line := "Tool: " + m.Tool.Title
 				if m.Tool.Input != "" {
 					line += " (" + clipText(m.Tool.Input, 200) + ")"

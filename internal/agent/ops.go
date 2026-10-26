@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -293,8 +294,33 @@ func (f *fileStream) close() {
 	}
 }
 
+// expandHome turns "~" and "~/x" into paths under the user's home directory.
+func expandHome(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") && !strings.HasPrefix(p, `~\`) {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	return filepath.Join(home, p[1:])
+}
+
 func (a *Agent) fsWriteStart(channel uint32, path string) {
+	path = expandHome(path)
 	dir := filepath.Dir(path)
+	// Uploads go to folders that may not exist yet (<project>/.overseer/uploads).
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		a.send(protocol.Msg{Type: protocol.TypeFsErr, Channel: channel, Error: err.Error()})
+		return
+	}
+	if filepath.Base(dir) == "uploads" && filepath.Base(filepath.Dir(dir)) == ".overseer" {
+		// Keep attachments out of the project's git status.
+		ignore := filepath.Join(filepath.Dir(dir), ".gitignore")
+		if _, err := os.Stat(ignore); os.IsNotExist(err) {
+			os.WriteFile(ignore, []byte("*\n"), 0o644)
+		}
+	}
 	tmp, err := os.CreateTemp(dir, ".overseer-upload-*")
 	if err != nil {
 		a.send(protocol.Msg{Type: protocol.TypeFsErr, Channel: channel, Error: err.Error()})
@@ -329,11 +355,14 @@ func (a *Agent) fsWriteFinish(channel uint32, errMsg string) {
 		}
 		return
 	}
+	os.Chmod(tmpName, 0o644) // CreateTemp makes it 0600
 	if err := os.Rename(tmpName, f.path); err != nil {
 		os.Remove(tmpName)
 		a.send(protocol.Msg{Type: protocol.TypeFsErr, Channel: channel, Error: err.Error()})
 		return
 	}
-	a.send(protocol.Msg{Type: protocol.TypeFsEOF, Channel: channel})
+	// The reply carries the resolved path ("~" expanded) for the caller.
+	done, _ := protocol.NewMsg(protocol.TypeFsEOF, 0, channel, protocol.FsTransfer{Path: f.path})
+	a.send(done)
 	log.Printf("upload complete: %s", f.path)
 }

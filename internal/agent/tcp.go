@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"net"
+	"os/user"
 	"runtime"
 	"strconv"
 	"sync"
@@ -150,7 +151,11 @@ func probeDesktop() protocol.DesktopProbeResult {
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 500*time.Millisecond)
 		if err == nil {
 			conn.Close()
-			return protocol.DesktopProbeResult{Available: true, Port: port}
+			res := protocol.DesktopProbeResult{Available: true, Port: port, OS: runtime.GOOS}
+			if u, err := user.Current(); err == nil {
+				res.User = u.Username // pre-fills the sign-in on macOS
+			}
+			return res
 		}
 	}
 	reason := "Install a VNC server such as TightVNC"
@@ -160,5 +165,7 @@ func probeDesktop() protocol.DesktopProbeResult {
 	case "linux", "freebsd", "openbsd", "netbsd":
 		reason = "Install and start a VNC server, e.g. x11vnc -localhost -forever or wayvnc"
 	}
-	return protocol.DesktopProbeResult{Available: false, Port: vncPorts[0], Reason: reason}
+	res := protocol.DesktopProbeResult{Available: false, Port: vncPorts[0], Reason: reason}
+	describeDesktop(&res) // lets the hub offer a one-click setup
+	return res
 }

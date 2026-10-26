@@ -377,7 +377,8 @@ func TestPreviewProxyEndToEnd(t *testing.T) {
 		if r.StatusCode != http.StatusFound || r.Header.Get("Location") != "/page?x=1" || c == nil {
 			t.Fatalf("token exchange: %d %q cookie=%v", r.StatusCode, r.Header.Get("Location"), c)
 		}
-		if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Path != "/" || c.Domain != "" || c.Secure {
+		// localhost previews are framed by the hub cross-site, so SameSite=None.
+		if !c.HttpOnly || c.SameSite != http.SameSiteNoneMode || c.Path != "/" || c.Domain != "" || !c.Secure {
 			t.Errorf("cookie attributes: %+v", c)
 		}
 
@@ -736,4 +737,23 @@ func TestPreviewProxyEndToEnd(t *testing.T) {
 			t.Errorf("preview cookie survived logout: %d", r.StatusCode)
 		}
 	})
+}
+
+// The Preview panel frames a preview on the hub, which is cross-site on
+// localhost, so its cookie must not be Lax there or the sign-in handoff loops.
+func TestPreviewCookieWorksInsideAFrame(t *testing.T) {
+	plain := httptest.NewRequest(http.MethodGet, "http://5173-box.localhost:4300/", nil)
+	local := previewCookieFor(plain, previewHost{domain: "localhost"}, "v")
+	if local.SameSite != http.SameSiteNoneMode || !local.Secure || local.Partitioned {
+		t.Fatalf("localhost cookie = %+v, want SameSite=None; Secure", local)
+	}
+	secure := httptest.NewRequest(http.MethodGet, "https://5173-box.example.com/", nil)
+	got := previewCookieFor(secure, previewHost{domain: "example.com"}, "v")
+	if got.SameSite != http.SameSiteNoneMode || !got.Secure || !got.Partitioned {
+		t.Fatalf("https cookie = %+v, want SameSite=None; Secure; Partitioned", got)
+	}
+	lan := previewCookieFor(plain, previewHost{domain: "lan"}, "v")
+	if lan.SameSite != http.SameSiteLaxMode || lan.Secure {
+		t.Fatalf("plain http cookie = %+v, want Lax and not Secure", lan)
+	}
 }

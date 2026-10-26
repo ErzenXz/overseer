@@ -49,8 +49,10 @@ Usage:
   overseer fleet send DEVICE SESSION TEXT                  Type into a session (presses Enter)
   overseer fleet read DEVICE SESSION [--lines N]           Read a session's recent output
   overseer fleet kill DEVICE SESSION                       Kill a session
+  overseer top [--interval 1.5s] [--no-color] [--plain]    Live htop-style view of every agent session and machine
+  overseer status [--json] [--short] [--no-color]          One-shot summary: machines and sessions needing you
   overseer forward MACHINE PORT [--local N] [--hub URL]    Open a machine's localhost:PORT on this computer
-  overseer mcp                                             Run the MCP server (stdio) for coding agents
+  overseer mcp                                           Run the MCP server (stdio) for coding agents
   overseer update [--check]                                Install or check the latest verified stable release
   overseer rollback                                        Restore the previous verified binary
   overseer version                                         Print version
@@ -72,6 +74,10 @@ func main() {
 		err = cmdFleet(os.Args[2:])
 	case "forward":
 		err = cmdForward(os.Args[2:])
+	case "top":
+		err = cmdTop(os.Args[2:])
+	case "status":
+		err = cmdStatus(os.Args[2:])
 	case "mcp":
 		err = cmdMCP()
 	case "update":

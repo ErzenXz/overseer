@@ -15,11 +15,20 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+// startUnknown tells "the hub answered no" from "we never heard back": a
+// network error, a timeout, or a gateway error from a proxy in front of the
+// hub. In those cases the request may still have been carried out.
+export function startUnknown(cause: unknown): boolean {
+  if (cause instanceof ApiError) return cause.status === 408 || cause.status === 502 || cause.status === 504
+  return true
+}
+
+async function request<T>(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
   })
   if (res.status === 401 && path !== '/api/login') {
     onUnauthorized?.()
@@ -39,7 +48,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  post: <T>(path: string, body?: unknown, timeoutMs?: number) => request<T>('POST', path, body, timeoutMs),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),

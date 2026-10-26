@@ -1,7 +1,10 @@
+import { SignInButton } from '../components/AgentAccess'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatBytes } from '../api'
 import { agentCatalog, relativeTime, threadStatusLabel } from '../agents'
+import { CloudBadge, CloudRemoveDialog } from '../components/CloudMachine'
+import { useCloudByDevice } from '../cloud'
 import { useAgentsOn } from '../components/Composer'
 import FileBrowser from '../components/FileBrowser'
 import Icon, { AgentMark } from '../components/Icon'
@@ -23,6 +26,8 @@ export default function MachinePage() {
   const tab = (params.get('tab') as Tab) || 'overview'
   const { value: devices } = useDevices()
   const device = devices?.find((item) => item.id === id)
+  const cloud = useCloudByDevice(devices).get(id)
+  const [removingCloud, setRemovingCloud] = useState(false)
   const navigate = useNavigate()
   const { toast } = useShell()
   const setTab = (next: Tab, extra: Record<string, string> = {}) => setParams(next === 'overview' ? extra : { tab: next, ...extra })
@@ -35,6 +40,7 @@ export default function MachinePage() {
     devicesResource.refresh()
   }
   const remove = async () => {
+    if (cloud) { setRemovingCloud(true); return }
     if (!device || !confirm(`Remove ${device.name} from this hub? Its agent stops connecting until you add it again.`)) return
     await api.del(`/api/devices/${device.id}`)
     devicesResource.refresh()
@@ -50,6 +56,7 @@ export default function MachinePage() {
           <Icon name="chevron" size={13} />
           <span className="current">{device?.name ?? '…'}</span>
         </nav>
+        {cloud && <CloudBadge machine={cloud} />}
         {device && <span className={`badge ${device.online ? 'badge-green' : ''}`}><span className={`dot ${device.online ? 'dot-green' : ''}`} />{device.online ? 'Online' : 'Offline'}</span>}
         <div className="topbar-actions">
           <Link to={`/?device=${id}`} className="btn btn-sm btn-dark"><Icon name="plus" size={15} />New session</Link>
@@ -87,6 +94,7 @@ export default function MachinePage() {
               {tab === 'agents' && <Agents device={device} />}
             </div>
           )}
+      {removingCloud && device && cloud && <CloudRemoveDialog device={device} machine={cloud} onClose={() => setRemovingCloud(false)} onRemoved={() => { devicesResource.refresh(); navigate('/machines') }} />}
     </div>
   )
 }
@@ -225,12 +233,14 @@ function Agents({ device }: { device: Device }) {
                 <span className="tile-icon"><AgentMark agent={agent.id} size={19} /></span>
                 <div className="min-w-0 flex-1">
                   <div className="list-row-title">{agent.name} <span className="text-[13px] text-muted">· {agent.vendor} · {agent.protocol === 'acp' ? 'ACP' : 'native'}</span></div>
-                  <div className="list-row-sub font-mono text-[12.5px]">{state?.installed ? `installed${state.version ? ` · ${state.version}` : ''}` : agent.install}</div>
+                  <div className="list-row-sub font-mono text-[12.5px]">{state?.installed ? `installed${state.version ? ` · ${state.version}` : ''}${state.account ? ` · ${state.account}` : ''}` : agent.install}</div>
                 </div>
                 {agents === null ? <span className="spinner" /> : state?.installed ? (
                   <>
-                    <span className="badge badge-green"><Icon name="check" size={12} />Ready</span>
-                    {agent.login && <button className="btn btn-sm btn-ghost" onClick={() => install(agent.id, agent.login!)}>Sign in</button>}
+                    {state.auth === 'signed-out'
+                      ? <span className="badge badge-amber">Signed out</span>
+                      : <span className="badge badge-green" title={state.account ? `Signed in as ${state.account}` : undefined}><Icon name="check" size={12} />{state.auth === 'ok' ? 'Signed in' : 'Ready'}</span>}
+                    {state.auth !== 'ok' && <SignInButton deviceId={device.id} deviceName={device.name} agent={agent.id} primary={state.auth === 'signed-out'} />}
                   </>
                 ) : <button className="btn btn-sm btn-outline" onClick={() => install(agent.id, agent.install)}>Install</button>}
               </div>

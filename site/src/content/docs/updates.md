@@ -8,6 +8,8 @@ lead: Installed hubs and machines keep themselves up to date. Every release is v
 
 Hubs check every six hours and install stable releases on their own. Turn **Auto-update** off to decide yourself, or click **Check now** and then **Install** to update right away. Each release's changes are on the [changelog](/changelog/).
 
+When a new release is out, a small **Update available** card appears at the bottom of the sidebar. Click it to read what's new and install it in one click. After an update, the same card offers **See what's new** once.
+
 ## What happens during an update
 
 1. The release binary is downloaded and checked against the release's `checksums.txt`.

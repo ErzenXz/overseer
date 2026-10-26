@@ -3,10 +3,13 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 're
 import { api, setUnauthorizedHandler } from './api'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import AcceptInvite from './pages/AcceptInvite'
 import NewSessionPage from './pages/NewSessionPage'
 import SessionPage from './pages/SessionPage'
 import SessionsPage from './pages/SessionsPage'
 import AutomationsPage from './pages/AutomationsPage'
+import AutopilotPage from './pages/AutopilotPage'
+import RecipeImport from './pages/RecipeImport'
 import MachinesPage from './pages/MachinesPage'
 import MachinePage from './pages/MachinePage'
 import ReviewPage from './pages/ReviewPage'
@@ -14,16 +17,22 @@ import SkillsPage from './pages/SkillsPage'
 import CustomizePage from './pages/CustomizePage'
 import SettingsPage from './pages/SettingsPage'
 import CodingPage from './pages/CodingPage'
+import ArenaRoot from './pages/ArenaPage'
+import WrappedPage from './pages/WrappedPage'
+import MissionPage from './pages/MissionPage'
+import SharePage from './pages/SharePage'
 
 interface Me {
   setupDone: boolean
   authenticated: boolean
   version: string
+  multiUser?: boolean // more than one person: sign-in asks for a name
 }
 
 export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const navigate = useNavigate()
+  const { pathname } = useLocation()
 
   const refresh = useCallback(async () => {
     try {
@@ -45,6 +54,9 @@ export default function App() {
     })
   }, [navigate])
 
+  // Shared session links are public: no login, no app around them.
+  if (pathname.startsWith('/s/')) return <SharePage />
+
   if (me === null) {
     return <div className="flex h-full items-center justify-center"><span className="spinner" /></div>
   }
@@ -52,7 +64,8 @@ export default function App() {
   if (!me.authenticated) {
     return (
       <Routes>
-        <Route path="*" element={<Login setupDone={me.setupDone} onSuccess={refresh} />} />
+        <Route path="/invite/:token" element={<AcceptInvite onSuccess={refresh} />} />
+        <Route path="*" element={<Login setupDone={me.setupDone} multiUser={!!me.multiUser} onSuccess={refresh} />} />
       </Routes>
     )
   }
@@ -64,9 +77,14 @@ export default function App() {
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/sessions/:id" element={<SessionPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
+        <Route path="/automations/import" element={<RecipeImport />} />
+        <Route path="/automations/autopilot" element={<AutopilotPage />} />
         <Route path="/machines" element={<MachinesPage />} />
         <Route path="/machines/:id" element={<MachinePage />} />
         <Route path="/review" element={<ReviewPage />} />
+        <Route path="/arena/:id?" element={<ArenaRoot />} />
+        <Route path="/wrapped" element={<WrappedPage />} />
+        <Route path="/mission" element={<MissionPage />} />
         <Route path="/projects" element={<CodingPage />} />
         <Route path="/projects/:projectId" element={<CodingPage />} />
         <Route path="/customize" element={<CustomizePage />} />

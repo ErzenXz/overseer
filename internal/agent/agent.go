@@ -368,6 +368,40 @@ func (a *Agent) dispatch(m protocol.Msg) {
 			res, err := a.fsList(req.Path)
 			a.reply(m.Id, res, err)
 		}()
+	case protocol.TypeGitInfo:
+		var req protocol.GitInfoRequest
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go a.reply(m.Id, a.gitInfo(req), nil)
+	case protocol.TypeGitPrepare:
+		var req protocol.GitPrepareRequest
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go func() {
+			res, err := a.prepareGit(req)
+			a.reply(m.Id, res, err)
+		}()
+	case protocol.TypeGitPrepareCancel:
+		var req protocol.GitPrepareRequest
+		if err := json.Unmarshal(m.Data, &req); err == nil {
+			cancelPrepare(req.Key)
+		}
+	case protocol.TypeAutopilotGh, protocol.TypeAutopilotFinish, protocol.TypeScreenshot:
+		a.dispatchAutopilot(m) // autopilot.go
+	case protocol.TypeArena:
+		var req protocol.ArenaRequest
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			a.reply(m.Id, nil, err)
+			return
+		}
+		go func() {
+			res, err := a.arenaOp(req)
+			a.reply(m.Id, res, err)
+		}()
 	case protocol.TypeTermOpen:
 		var req protocol.TermOpen
 		if err := json.Unmarshal(m.Data, &req); err == nil {

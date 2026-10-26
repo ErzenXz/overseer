@@ -9,6 +9,7 @@ import Modal from '../components/Modal'
 import { useShell } from '../shell'
 import { useDevices, usePref, useThreads } from '../store'
 import type { CatalogPlugin, ExtItem, ExtKind } from '../types'
+import { OsMark } from '../components/DeviceMark'
 
 // Skills & plugins: everything that extends each agent on a machine, in one
 // place: what's installed, where it comes from, which agents share it, and
@@ -90,11 +91,11 @@ export default function SkillsPage() {
         </div>
 
         <div className="skills-scope">
-          <Menu placement="bottom-start" width={260} trigger={<button className="ctl"><Icon name="monitor" size={15} /><span>{device?.name ?? 'Choose a machine'}</span><Icon name="chevron-down" size={12} className="ctl-chev" /></button>}>
+          <Menu placement="bottom-start" width={260} trigger={<button className="ctl"><OsMark os={device?.os} size={15} /><span>{device?.name ?? 'Choose a machine'}</span><Icon name="chevron-down" size={12} className="ctl-chev" /></button>}>
             {(close) => (
               <>
                 <MenuLabel>Machine</MenuLabel>
-                {online.map((item) => <MenuItem key={item.id} icon="monitor" label={item.name} checked={item.id === deviceId} onClick={() => { close(); setSavedDevice(item.id); set({ device: item.id, cwd: '' }) }} />)}
+                {online.map((item) => <MenuItem key={item.id} icon={<OsMark os={item.os} size={16} />} label={item.name} checked={item.id === deviceId} onClick={() => { close(); setSavedDevice(item.id); set({ device: item.id, cwd: '' }) }} />)}
                 {online.length === 0 && <div className="menu-label normal-case">No machines are online</div>}
               </>
             )}

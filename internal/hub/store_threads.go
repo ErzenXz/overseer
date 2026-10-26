@@ -51,7 +51,17 @@ type Thread struct {
 	Usage        *protocol.Usage `json:"usage,omitempty"`
 	AutomationId string          `json:"automationId,omitempty"`
 
+	// Teams (users.go): who started the session, who has it now, and the
+	// last hand-off. Ids are user ids; empty on sessions with no owner.
+	CreatedBy   string `json:"createdBy,omitempty"`
+	Assignee    string `json:"assignee,omitempty"`
+	HandoffBy   string `json:"handoffBy,omitempty"`
+	HandoffNote string `json:"handoffNote,omitempty"`
+	HandoffAt   int64  `json:"handoffAt,omitempty"`
+
 	ResumeId string `json:"-"` // the agent's own session id, for resuming
+	// RequestId is the client's idempotency key for the start request.
+	RequestId string `json:"-"`
 
 	// Fork bookkeeping: ForkPending asks the next start to fork ResumeId
 	// (cut after the ForkAt user message); ForkContext is the transcript
@@ -71,7 +81,8 @@ type threadMeta struct {
 const threadColumns = `t.id, t.title, t.device_id, COALESCE(d.name, ''), t.agent, t.command, t.cwd, t.model,
 	t.access, t.status, t.error, t.created_at, t.updated_at, t.last_read_at, t.terminal, t.pr, t.usage,
 	t.automation_id, t.resume_id, t.effort, t.fast, t.mode, t.pinned, t.archived, t.folder, t.parent_id,
-	t.fork_pending, t.fork_at, t.fork_context, t.agent_meta`
+	t.fork_pending, t.fork_at, t.fork_context, t.agent_meta,
+	t.created_by, t.assignee, t.handoff_by, t.handoff_note, t.handoff_at`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -81,7 +92,8 @@ func scanThread(row rowScanner) (*Thread, error) {
 	err := row.Scan(&t.Id, &t.Title, &t.DeviceId, &t.DeviceName, &t.Agent, &t.Command, &t.Cwd, &t.Model,
 		&t.Access, &t.Status, &t.Error, &t.CreatedAt, &t.UpdatedAt, &t.LastReadAt, &t.Terminal, &pr, &usage,
 		&t.AutomationId, &t.ResumeId, &t.Effort, &t.Fast, &t.Mode, &t.Pinned, &t.Archived, &t.Folder, &t.ParentId,
-		&t.ForkPending, &t.ForkAt, &t.ForkContext, &meta)
+		&t.ForkPending, &t.ForkAt, &t.ForkContext, &meta,
+		&t.CreatedBy, &t.Assignee, &t.HandoffBy, &t.HandoffNote, &t.HandoffAt)
 	if err != nil {
 		return nil, err
 	}
@@ -100,12 +112,33 @@ func scanThread(row rowScanner) (*Thread, error) {
 func (s *Store) CreateThread(t *Thread) error {
 	_, err := s.db.Exec(`INSERT INTO threads (id, title, device_id, agent, command, cwd, model, access, status,
 		error, created_at, updated_at, last_read_at, automation_id, resume_id, effort, fast, mode,
-		pinned, archived, folder, parent_id, fork_pending, fork_at, fork_context)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		pinned, archived, folder, parent_id, fork_pending, fork_at, fork_context, request_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.Id, t.Title, t.DeviceId, t.Agent, t.Command, t.Cwd, t.Model, t.Access, t.Status,
 		t.Error, t.CreatedAt, t.UpdatedAt, t.LastReadAt, t.AutomationId, t.ResumeId, t.Effort, t.Fast, t.Mode,
-		t.Pinned, t.Archived, t.Folder, t.ParentId, t.ForkPending, t.ForkAt, t.ForkContext)
+		t.Pinned, t.Archived, t.Folder, t.ParentId, t.ForkPending, t.ForkAt, t.ForkContext, t.RequestId)
+	if err == nil && t.CreatedBy != "" {
+		// Teams: the person who started a session also has it to begin with.
+		if t.Assignee == "" {
+			t.Assignee = t.CreatedBy
+		}
+		_, err = s.db.Exec(`UPDATE threads SET created_by = ?, assignee = ? WHERE id = ?`, t.CreatedBy, t.Assignee, t.Id)
+	}
 	return err
+}
+
+// ThreadByRequestId finds the session a client request id already created,
+// or nil.
+func (s *Store) ThreadByRequestId(requestId string) (*Thread, error) {
+	if requestId == "" {
+		return nil, nil
+	}
+	t, err := scanThread(s.db.QueryRow(`SELECT `+threadColumns+`
+		FROM threads t LEFT JOIN devices d ON d.id = t.device_id WHERE t.request_id = ?`, requestId))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return t, err
 }
 
 func (s *Store) ThreadById(id string) (*Thread, error) {
@@ -308,7 +341,8 @@ type ThreadMessage struct {
 	Approval   *protocol.ThreadApprovalRequest `json:"approval,omitempty"`
 	DurationMs int64                           `json:"durationMs,omitempty"`
 	Question   *protocol.ThreadQuestion        `json:"question,omitempty"`
-	Queued     bool                            `json:"queued,omitempty"` // user prompt waiting for the turn to end
+	Queued     bool                            `json:"queued,omitempty"`   // user prompt waiting for the turn to end
+	ParentId   string                          `json:"parentId,omitempty"` // subagent tool message this step belongs to
 
 	Images []string `json:"-"` // image paths of a (queued) user prompt
 }
@@ -323,11 +357,12 @@ type messageData struct {
 	Question   *protocol.ThreadQuestion        `json:"question,omitempty"`
 	Queued     bool                            `json:"queued,omitempty"`
 	Images     []string                        `json:"images,omitempty"`
+	ParentId   string                          `json:"parentId,omitempty"`
 }
 
 func (m *ThreadMessage) data() string {
 	b, _ := json.Marshal(messageData{Turn: m.Turn, Tool: m.Tool, Plan: m.Plan, Approval: m.Approval, DurationMs: m.DurationMs,
-		Question: m.Question, Queued: m.Queued, Images: m.Images})
+		Question: m.Question, Queued: m.Queued, Images: m.Images, ParentId: m.ParentId})
 	return string(b)
 }
 
@@ -341,7 +376,7 @@ func scanMessage(row rowScanner) (*ThreadMessage, error) {
 		var d messageData
 		if json.Unmarshal([]byte(data), &d) == nil {
 			m.Turn, m.Tool, m.Plan, m.Approval, m.DurationMs = d.Turn, d.Tool, d.Plan, d.Approval, d.DurationMs
-			m.Question, m.Queued, m.Images = d.Question, d.Queued, d.Images
+			m.Question, m.Queued, m.Images, m.ParentId = d.Question, d.Queued, d.Images, d.ParentId
 		}
 	}
 	return &m, nil
@@ -462,6 +497,9 @@ func foldEvent(msg *ThreadMessage, ev protocol.ThreadEvent) {
 	}
 	if ev.DurationMs > 0 {
 		msg.DurationMs = ev.DurationMs
+	}
+	if ev.ParentId != "" && msg.ParentId == "" {
+		msg.ParentId = ev.ParentId
 	}
 	if ev.Plan != nil {
 		msg.Plan = ev.Plan
@@ -631,8 +669,41 @@ func mergeTool(dst, src *protocol.ThreadTool) {
 	if src.Files != nil {
 		dst.Files = src.Files
 	}
+	if a := src.Agent; a != nil {
+		if dst.Agent == nil {
+			dst.Agent = &protocol.ThreadAgent{}
+		}
+		mergeAgent(dst.Agent, a)
+	}
 	if dst.Name == "" {
 		dst.Name = "other"
+	}
+}
+
+// mergeAgent copies the non-empty fields of src onto dst.
+func mergeAgent(dst, src *protocol.ThreadAgent) {
+	set := func(to *string, v string) {
+		if v != "" {
+			*to = v
+		}
+	}
+	set(&dst.Type, src.Type)
+	set(&dst.Name, src.Name)
+	set(&dst.Task, src.Task)
+	set(&dst.Prompt, src.Prompt)
+	set(&dst.Result, src.Result)
+	set(&dst.Model, src.Model)
+	if src.Tools > 0 {
+		dst.Tools = src.Tools
+	}
+	if src.Tokens > 0 {
+		dst.Tokens = src.Tokens
+	}
+	if src.DurationMs > 0 {
+		dst.DurationMs = src.DurationMs
+	}
+	if src.Background {
+		dst.Background = true
 	}
 }
 

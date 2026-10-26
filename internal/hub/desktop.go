@@ -21,6 +21,7 @@ var desktopUpgrader = websocket.Upgrader{
 }
 
 // handleDeviceDesktop reports whether the device runs a reachable VNC server.
+// When none answers, it also returns a one-click setup for that machine.
 func (s *Server) handleDeviceDesktop(w http.ResponseWriter, r *http.Request) {
 	c := s.deviceConn(w, r)
 	if c == nil {
@@ -33,7 +34,12 @@ func (s *Server) handleDeviceDesktop(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, res)
+	out := desktopStatus{DesktopProbeResult: res}
+	if !res.Available {
+		plan := buildDesktopSetup(res, c.hello.OS)
+		out.Setup = &plan
+	}
+	writeJSON(w, out)
 }
 
 // handleDesktopWS bridges a browser WebSocket to the device's local VNC port

@@ -2,7 +2,9 @@
 // Implements the endpoints in docs/agent-sessions-api.md so the UI can be
 // built and judged without a hub. Simulates streaming agent turns.
 
-import type { Automation, McpServer, Thread, ThreadMessage } from './types'
+import { seedMissionDemo } from './mockWrapped'
+import { startAudit, startLive, seedCodex, seedFinished, stopDemo, WORK_IDS, type MockKit } from './mockWork'
+import type { Automation, DeviceAgent, McpServer, Thread, ThreadMessage } from './types'
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 const nowMs = () => Date.now()
@@ -25,13 +27,24 @@ function thread(partial: Partial<Thread> & Pick<Thread, 'id' | 'title' | 'device
   }
 }
 
+// Sessions already started, by the client's idempotency key.
+const started = new Map<string, Thread>()
+
 const threads: Thread[] = [
+  thread({ id: WORK_IDS.live, title: 'Move session storage to Redis', deviceId: 'studio', agent: 'claude', model: 'sonnet', cwd: '~/Projects/orbit-api', status: 'working', updatedAt: nowSec() - 4, lastReadAt: nowSec() - 4, usage: { inputTokens: 188_000, outputTokens: 9_200, costUsd: 0.74, contextTokens: 61_000, contextWindow: 200_000 } }),
+  thread({ id: WORK_IDS.agents, title: 'Audit the storefront API for SQL injection', deviceId: 'homelab', agent: 'claude', model: 'opus', cwd: '/srv/storefront-api', status: 'working', updatedAt: nowSec() - 9, lastReadAt: nowSec() - 9, usage: { inputTokens: 402_000, outputTokens: 21_800, costUsd: 2.41, contextTokens: 84_000, contextWindow: 200_000 } }),
+  thread({ id: WORK_IDS.done, title: 'Add retry with backoff to the login client', deviceId: 'macbook', agent: 'claude', model: 'opus', cwd: '~/Projects/api-gateway', updatedAt: nowSec() - 60 * 24, lastReadAt: nowSec() - 60 * 24, usage: { inputTokens: 236_000, outputTokens: 12_400, costUsd: 1.12, contextTokens: 52_000, contextWindow: 200_000 } }),
+  thread({ id: WORK_IDS.codex, title: 'Review migration 0042 for locking', deviceId: 'macbook', agent: 'codex', cwd: '~/Projects/storefront', updatedAt: nowSec() - 3600 * 3, lastReadAt: nowSec() - 3600 * 3, usage: { inputTokens: 148_000, outputTokens: 7_900, costUsd: 0.91, contextTokens: 47_000, contextWindow: 272_000 } }),
   thread({ id: 'th_rust', title: 'Build Rust OpenAI harness', deviceId: 'studio', agent: 'codex', cwd: '~/Projects/codex-harness', updatedAt: nowSec() - 120, lastReadAt: nowSec() - 900, pinned: true, folder: 'Harness', pr: { url: 'https://github.com/ErzenXz/codex-harness/pull/1', number: 1, state: 'open', checks: 'passing' }, usage: { inputTokens: 412_000, outputTokens: 38_400, costUsd: 3.12, contextTokens: 161_000, contextWindow: 272_000 } }),
   thread({ id: 'th_ui', title: 'Improve dashboard UI and features', deviceId: 'macbook', agent: 'claude', model: 'opus', cwd: '~/Projects/LiveAgent', updatedAt: nowSec() - 3600 * 5, pr: { url: 'https://github.com/ErzenXz/overseer/pull/3', number: 3, state: 'open', checks: 'passing' } }),
+  thread({ id: 'th_plus', title: 'Find the company details for plushouse.eu', deviceId: 'homelab', agent: 'codex', cwd: '/srv/research', status: 'error', error: 'workspace routing discovery unauthorized (401)', updatedAt: nowSec() - 60 * 6, lastReadAt: nowSec() - 60 * 6 }),
   thread({ id: 'th_auth', title: 'Fix flaky auth integration tests', deviceId: 'homelab', agent: 'claude', cwd: '/srv/api-gateway', status: 'waiting', updatedAt: nowSec() - 60 * 14, lastReadAt: nowSec() - 3600 }),
   thread({ id: 'th_archive', title: 'Update archive homepage design', deviceId: 'studio', agent: 'claude', cwd: '~/Projects/archive', status: 'waiting', folder: 'Websites', updatedAt: nowSec() - 120, pr: { url: 'https://github.com/ErzenXz/archive/pull/1', number: 1, state: 'open', checks: 'passing' } }),
   thread({ id: 'th_deps', title: 'Weekly dependency update', deviceId: 'homelab', agent: 'codex', cwd: '/srv/api-gateway', updatedAt: nowSec() - 86400 * 9, automationId: 'au_deps', pr: { url: 'https://github.com/ErzenXz/api-gateway/pull/88', number: 88, state: 'merged' } }),
   thread({ id: 'th_map', title: 'Redesign calendar UI with map', deviceId: 'macbook', agent: 'claude', cwd: '~/Projects/takvimi', updatedAt: nowSec() - 86400 * 61, pr: { url: 'https://github.com/ErzenXz/takvimi/pull/3', number: 3, state: 'merged' } }),
+  thread({ id: 'th_notes', title: 'Review the overseer release notes', deviceId: 'studio', agent: 'claude', cwd: '~/code/overseer', updatedAt: nowSec() - 86400 * 3 }),
+  thread({ id: 'th_store', title: 'Speed up the storefront checkout', deviceId: 'studio', agent: 'codex', cwd: '~/Projects/storefront', updatedAt: nowSec() - 86400 * 6 }),
+  thread({ id: 'th_shop', title: 'Add gift cards to the storefront', deviceId: 'office', agent: 'claude', cwd: '~/src/storefront', updatedAt: nowSec() - 86400 * 10 }),
   thread({ id: 'th_leak', title: 'Investigate memory leak on homelab', deviceId: 'homelab', agent: 'opencode', cwd: '/srv/worker', status: 'error', error: 'opencode exited with status 1: provider not configured', updatedAt: nowSec() - 86400 * 70 }),
 ]
 
@@ -101,6 +114,9 @@ function seed() {
   msg('th_ui', { role: 'assistant', turn: v1.id, durationMs: 412_000, text: 'Sessions are now the primary sidebar, with **Sort**, **Filter**, **Group** and **Property visibility** menus. Opened [overseer#3](https://github.com/ErzenXz/overseer/pull/3).' }, step(9000))
 
   t = nowMs() - 60_000 * 20
+  const p1 = msg('th_plus', { role: 'user', text: 'Find out the company details of https://plushouse.eu/ . Address and so on.' }, step(0))
+  msg('th_plus', { role: 'error', turn: p1.id, text: 'workspace routing discovery unauthorized (401)' }, step(2000))
+  msg('th_plus', { role: 'error', turn: p1.id, text: 'workspace routing discovery unauthorized (401)' }, step(500))
   const a1 = msg('th_auth', { role: 'user', text: 'The auth integration tests fail about 1 in 5 runs. Find out why and fix it.' }, step(0))
   msg('th_auth', { role: 'tool', turn: a1.id, text: '', tool: { name: 'grep', title: 'Search for time.Sleep in tests', status: 'completed', input: 'time.Sleep  internal/auth', output: 'internal/auth/session_test.go:88:\ttime.Sleep(10 * time.Millisecond)\ninternal/auth/session_test.go:142:\ttime.Sleep(5 * time.Millisecond)' } }, step(6000))
   msg('th_auth', { role: 'thought', turn: a1.id, text: 'The tests race the session expiry ticker. Injecting a fake clock removes the sleeps entirely.' }, step(4000))
@@ -158,11 +174,29 @@ function update(threadId: string, message: ThreadMessage, patch: Partial<ThreadM
 export function mockThreadStream(id: string, listener: Listener) {
   ;(listeners[id] ??= new Set()).add(listener)
   const item = threads.find((entry) => entry.id === id)
+  if (item && id === WORK_IDS.live) startLive(kit, item)
+  if (item && id === WORK_IDS.agents) startAudit(kit, item)
   window.setTimeout(() => {
     if (item) listener({ type: 'snapshot', thread: { ...item }, messages: (messages[id] ?? []).map((message) => ({ ...message })) })
   }, 60)
   return () => { listeners[id]?.delete(listener) }
 }
+
+const kit: MockKit = {
+  nowMs,
+  msg,
+  push,
+  update,
+  later: (threadId, ms, fn) => later(threadId, ms, fn),
+  cancelTimers: (threadId) => cancelTimers(threadId),
+  touch,
+  messages,
+  listening: (threadId) => (listeners[threadId]?.size ?? 0) > 0,
+  snapshot: (item) => emit(item.id, { type: 'snapshot', thread: { ...item }, messages: (messages[item.id] ?? []).map((message) => ({ ...message })) }),
+}
+seedFinished(kit)
+seedCodex(kit)
+seedMissionDemo(kit, threads)
 
 const timers: Record<string, number[]> = {}
 function later(threadId: string, ms: number, fn: () => void) {
@@ -333,7 +367,16 @@ let customAgents: { id: string; name: string; protocol: string; source: string; 
 
 export async function threadRoute(method: string, path: string, body: Record<string, unknown>): Promise<Response | null> {
   if (path === '/api/threads' && method === 'GET') return json([...threads].sort((a, b) => b.updatedAt - a.updatedAt))
+  const byRequest = path.match(/^\/api\/sessions\/by-request\/([^/]+)$/)
+  if (byRequest && method === 'GET') {
+    const found = started.get(decodeURIComponent(byRequest[1]))
+    return json({ found: !!found, thread: found })
+  }
   if (path === '/api/threads' && method === 'POST') {
+    const key = body.clientRequestId ? String(body.clientRequestId) : ''
+    const again = key ? started.get(key) : undefined
+    if (again) return json(again)
+    if (body.deviceId === 'office') return json({ error: 'device is offline' }, 503)
     const prompt = String(body.prompt ?? '')
     const item = thread({
       id: uid('th'),
@@ -350,6 +393,7 @@ export async function threadRoute(method: string, path: string, body: Record<str
       updatedAt: nowSec(),
       lastReadAt: nowSec(),
     })
+    if (key) started.set(key, item)
     threads.unshift(item)
     messages[item.id] = []
     window.setTimeout(() => simulateTurn(item, prompt), 400)
@@ -434,6 +478,7 @@ export async function threadRoute(method: string, path: string, body: Record<str
     }
     if (action === 'cancel') {
       cancelTimers(item.id)
+      stopDemo(item.id)
       push(item.id, { role: 'status', text: 'Stopped by you' })
       touch(item, { status: 'idle' })
       return json({ ok: true })
@@ -482,7 +527,10 @@ export async function threadRoute(method: string, path: string, body: Record<str
     const id = agentsMatch[1]
     const installed: Record<string, string[]> = { macbook: ['claude', 'codex', 'gemini', 'opencode', 'devin', ...customAgents.map((agent) => agent.id)], studio: ['claude', 'codex', 'gemini', 'devin'], homelab: ['claude', 'codex', 'opencode', 'kimi'], office: [] }
     const versions: Record<string, string> = { claude: '2.1.4', codex: '0.61.0', gemini: '0.12.0', opencode: '1.0.40', devin: '3000.11.3', kimi: '1.4.0' }
-    return json([...demoCatalog.map((agent) => agent.id), ...customAgents.map((agent) => agent.id)].map((agent) => ({ id: agent, installed: (installed[id] ?? []).includes(agent), version: (installed[id] ?? []).includes(agent) ? versions[agent] : undefined })))
+    const here = (agent: string) => (installed[id] ?? []).includes(agent)
+    // Codex is signed out on the homelab; the others that can say are signed in.
+    const auth = (agent: string): Partial<DeviceAgent> => !here(agent) || (agent !== 'claude' && agent !== 'codex') ? {} : agent === 'codex' && id === 'homelab' ? { auth: 'signed-out' as const } : { auth: 'ok' as const, account: agent === 'claude' ? 'erzen@example.com' : 'ChatGPT' }
+    return json([...demoCatalog.map((agent) => agent.id), ...customAgents.map((agent) => agent.id)].map((agent) => ({ id: agent, installed: here(agent), version: here(agent) ? versions[agent] : undefined, ...auth(agent) })))
   }
   if (agentsMatch && agentsMatch[2] === 'desktop') {
     const id = agentsMatch[1]

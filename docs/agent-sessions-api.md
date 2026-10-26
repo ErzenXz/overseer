@@ -86,13 +86,26 @@ interface ThreadMessage {
   text: string
   turn?: string            // id of the user message this belongs to
   tool?: {
-    name: string           // bash | read | edit | write | grep | glob | webfetch | websearch | mcp | todo | other
+    name: string           // bash | read | edit | write | grep | glob | webfetch | websearch | mcp | todo | agent | other
     title: string
     status: 'running' | 'completed' | 'error'
     input?: string         // command line, path, query … (display string)
     output?: string        // truncated to 64 KiB by the agent
     files?: { path: string; additions?: number; deletions?: number; diff?: string }[]
+    agent?: {              // a subagent run (name 'agent'); status is the run's state
+      type?: string        // "Explore", "general-purpose", a Codex role
+      name?: string        // nickname, when the agent has one (Codex)
+      task?: string        // one-line description
+      prompt?: string      // the brief, clipped
+      result?: string      // the subagent's final report
+      model?: string
+      tools?: number       // tool calls so far
+      tokens?: number
+      durationMs?: number  // as reported by the agent
+      background?: boolean // runs past the call that started it
+    }
   }
+  parentId?: string        // a subagent's own step: id of the tool message that runs it
   plan?: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
   approval?: {
     id: string
@@ -183,7 +196,7 @@ Requests (hub → agent, reply `result`):
 - `desktop.probe` `{}` → `{available, port, reason?}`
 
 Notifications (agent → hub, no id):
-- `thread.event` `{threadId, event: {id, role, text?, append?: boolean, tool?, plan?, approval?, turn?, durationMs?}}`
+- `thread.event` `{threadId, event: {id, role, text?, append?: boolean, tool?, plan?, approval?, turn?, durationMs?, parentId?}}`
   — `append: true` appends `text` to the stored message with the same id;
   otherwise fields are merged/replaced.
 - `thread.state` `{threadId, status, error?, resumeId?, usage?}`
@@ -216,6 +229,15 @@ shape; everything here is optional or extra.
 - Events whose first sight has no `role` get one inferred (`tool`, `plan`,
   `approval`, else `status`). New messages without `turn` are stamped with
   the latest user message id. Stored tool output is capped at 64 KiB.
+- Subagents: Claude's `Task` / `Agent` tool and Codex's spawned agents become one
+  `tool` message (`name: "agent"`, `tool.agent` filled in as events arrive, `status` =
+  the run). Their own tool calls are ordinary `tool` messages whose creating event
+  carries `parentId` (Claude: `parent_tool_use_id`; Codex: events of the child thread);
+  a subagent's text and reasoning are not stored, its final report is `agent.result`.
+  Claude `task_started` / `task_progress` / `task_notification` system events update the
+  running totals and end a background run. Codex reads `collabAgentToolCall`
+  (`spawnAgent`, `wait`, …), `subAgentActivity` and the child's `thread/started`
+  (nickname, role). Older agents and hubs never send these fields; clients ignore them.
 - A turn that produced no assistant text ends with a `status` message
   (`"Done"`, or `"Cancelled"`) carrying `durationMs`.
 - Thread status: `stopped` is also what in-flight threads show after a hub
@@ -952,3 +974,228 @@ POST /api/devices/{id}/skills/share  { key, agents: string[] }  → { item }
   disconnected, 503 device offline, 504 the device did not answer in time.
   Writes drop the hub's cached inventories for that device (a
   `needsApproval` answer does not).
+
+## Where it runs (folders, branches, safe starts)
+
+### Folder info
+
+`POST /api/devices/{id}/git-info` with `{paths: string[]}` (1 to 32 paths;
+`~` is expanded on the device) returns what that machine has at each path:
+
+```json
+{"home": "/Users/me", "paths": [{
+  "path": "~/code/api", "resolved": "/Users/me/code/api",
+  "exists": true, "isRepo": true, "root": "/Users/me/code/api",
+  "branch": "main", "detached": false,
+  "remote": "https://github.com/acme/api.git", "remoteKey": "github.com/acme/api",
+  "dirty": 2
+}]}
+```
+
+`remoteKey` is `host/owner/repo` for any ssh or https remote URL (credentials
+are dropped), so the same repo on two machines compares equal. `dirty` counts
+changed and untracked entries and is left out when `git status` was too slow;
+`branch` is a short commit when `detached`. No git installed, or not a work
+tree, answers `isRepo: false`. The check is bounded: a few `git -C <path>`
+calls per path, each under 3 seconds, 8 seconds overall. An offline device
+answers 503, an agent that predates this op 502.
+
+Hub ↔ agent: request `git.info` (`protocol.GitInfoRequest`), reply
+`protocol.GitInfoResult`.
+
+### Starting a session safely
+
+`POST /api/threads` accepts an optional `clientRequestId` (8 to 64 letters,
+digits, `-` or `_`). The hub stores it with the session: a second request with
+the same id returns the first session (header `Idempotent-Replayed: true`)
+instead of starting another one, even when the two race. The id is only
+remembered once the session exists, so a start refused with 503 (device
+offline) can be retried with the same id.
+
+`GET /api/sessions/by-request/{key}` → `{found: boolean, thread: Thread | null}`.
+`found: false` is a definite "nothing was started" (the lookup waits for a start
+that is still in flight with that key). The UI uses it after a lost connection:
+found goes to the session, not found shows "Didn't start", and an unreachable
+hub shows "Start status unknown". Retry always reuses the same key.
+
+`lastSeen` on a device is written on connect and disconnect, and at most once a
+minute while connected, so it stays close to the truth if the hub itself dies.
+
+## Shared session links (replay and live watch)
+
+A session can be shared as a link, `<hub URL>/s/<token>`, that opens with no
+login. The token is 32 random bytes (base64url, 43 characters); only its
+SHA-256 is stored, so the full link is shown once, when it is created.
+
+**Manage (needs the hub login):**
+
+- `GET /api/shares/info` → `{baseUrl, private, docsUrl}`. `private` is true when
+  the hub's own address is only reachable locally (localhost, LAN IP, `.local`,
+  Tailscale `100.64/10` or `.ts.net`); the share dialog then explains that only
+  people who can reach the hub can open the link.
+- `POST /api/shares` `{threadId, mode: "replay"|"live", hideNames?: true,
+  expires?: "1d"|"7d"|"never"}` (default `hideNames` true, `expires` `7d`) →
+  `{share, token, url, private}`. A replay stores a frozen, already-sanitised
+  snapshot; later turns are not in it.
+- `GET /api/shares` → every share with its session title, `mode`, `hideNames`,
+  `createdAt`, `expiresAt` (0 = never), `views`, `expired`. Shares of deleted
+  sessions are dropped.
+- `DELETE /api/shares/{id}` revokes at once.
+
+**Public (no auth, no cookies, rate limited per client):**
+
+- `GET /s/{token}` serves the UI bundle with a server-rendered `<title>`,
+  `og:*` and `twitter:*` tags (for example "Claude Code fixed flaky auth tests
+  in 2m 10s · Overseer"), `noindex`, and `no-referrer`. Revoked, expired and
+  unknown tokens answer 404 with "This link has expired".
+- `GET /api/public/shares/{token}` → `{mode, hideNames, expiresAt, thread,
+  summary, messages}`. `thread` has only title, agent, agentName, model, status,
+  error, timestamps and, when names are shown, deviceName and cwd.
+  `?peek=1` does not count a view.
+- `GET /api/public/shares/{token}/stream` (live links only) is server-sent
+  events: `snapshot` (the same body as above), then `message` `{message}` and
+  `thread` `{thread}` as the session changes, and `end` `{reason}`. A revoked
+  link ends open streams within 10 seconds.
+
+What a public viewer never gets: approvals and questions, queued messages,
+image paths, usage and cost, pull request links, ids of the session or machine,
+and any other API. Every string goes through best-effort secret redaction (GitHub,
+OpenAI/Anthropic and other provider keys, AWS key ids, JWTs, private keys,
+bearer tokens, `user:pass@` URLs, and `password=` / `token=` / `api_key` values)
+and, when `hideNames` is on, the machine name, hostname and session folder are
+replaced ("the machine", relative paths) and home directories become `~`.
+Output is capped per message.
+
+## Agent Wrapped (usage stats)
+
+`GET /api/stats?range=week|month|all&tz=Europe/Berlin` summarises what the
+agents did. `week` is the last 7 local calendar days (today included), `month`
+the last 30, `all` everything since the first session. `start` and `end` (unix
+seconds) pick a custom range instead. `tz` is an IANA zone and sets the day
+boundaries (default UTC). The numbers come from the threads and thread
+messages tables in one pass, so it stays fast on large stores.
+
+Response (all lists are `[]` when empty): `range`, `start`, `end`, `tz`,
+`sessions` `{started, finished}`, `turns` (prompts sent), `agentMs` and
+`agentHours` (time agents spent working, from turn durations), `prs`
+`{opened, merged}` (the thread's PR, or PRs the agent opened with `gh pr
+create` / the GitHub MCP tools), `lines` `{added, removed}` and `files`
+(successful edits), `approvals` (answered), `tokens` `{input, output}` and
+`costUsd` (for sessions active in the range), `agents[]` and `machines[]`
+(`id`, `name`, `sessions`, `turns`, `agentMs`, `added`, `removed`, `prs`,
+sorted by time worked, so the first is the MVP), `days[]` (`date`, `sessions`,
+`turns`, `agentMs`, `lines`), `busiestDay`, `topSession` (most lines changed),
+`longestSession` (most time working), `streak` `{current, longest}` (days in a
+row with a prompt) and, except for `all`, `previous` (the totals of the period
+right before, for "up 28%").
+
+## Agent Arena
+
+One prompt, 2 to 4 agents, each in its own git worktree of the same commit
+(`~/.overseer/worktrees/arena/<arenaId>/<n>-<agent>`, branch
+`arena/<arenaId>/<agent>`). Uncommitted changes in the folder are not copied.
+Contestants are ordinary sessions (sidebar folder "Arena"). The hub measures
+each one when it stops (files, lines, optional check command).
+
+- `POST /api/arenas` `{title?, prompt, deviceId, cwd, check?, access?, contestants:[{agent, model?, effort?, fast?, deviceId?, cwd?}]}`
+  returns the arena at once; contestants start in parallel. Other machines
+  need a clone of the same remote (checked by remote URL).
+- `GET /api/arenas`, `GET /api/arenas/{id}`: `status` is `preparing | running | finished`;
+  each contestant has `state` (`preparing | running | checking | done | failed`),
+  `thread`, `stats` `{files, additions, deletions}` and `check` `{exitCode, output}`.
+- `POST /api/arenas/{id}/winner` `{contestant, action: "pr" | "apply" | "keep"}`:
+  `pr` pushes the branch and runs `gh pr create` on that machine; `apply` writes
+  the changes into the original folder only when it has no uncommitted changes
+  (otherwise 409 with `code: "dirty"`); `keep` commits to the branch.
+- `GET /api/arenas/{id}/patch?contestant=n`: the changes as a patch file.
+- `POST /api/arenas/{id}/cleanup` `{confirm: true, includeWinner?}` removes the
+  other worktrees and branches (only under the arena's own folder).
+- `POST /api/arenas/{id}/stop`, `DELETE /api/arenas/{id}` (forgets the record only).
+
+Machine side: one hub -> agent request, `arena.op`, with an `action`
+(`inspect`, `create`, `stats`, `check`, `commit`, `pr`, `apply`, `patch`, `remove`).
+
+## Teams
+
+A hub can have more than one person. The admin password every hub has becomes
+the first `owner` when the hub starts (idempotent; nothing is lost, and people
+sign in again because browser sessions live in memory and reset on every
+restart). Owners invite `member`s with one-time links.
+
+- `GET /api/me` adds `multiUser` (more than one person: sign-in needs a name)
+  and, when signed in, `user` `{id, name, email?, role, ...}`.
+- `POST /api/login` `{name?, password}`: with one person the password is
+  enough; with more, `name` (case-insensitive) is required. A wrong name, a
+  wrong password and a disabled account all answer the same 401.
+- `GET /api/users`: everyone, including removed people (`removed: true`, kept
+  so old sessions still show their name). Emails are only for owners.
+- Owner only: `PATCH /api/users/{id}` `{name?, email?, role?, disabled?}`,
+  `DELETE /api/users/{id}`, `GET|POST /api/invites` (`{label?}`; the link is in
+  the response once, only its hash is stored, valid 7 days),
+  `DELETE /api/invites/{id}`, `GET /api/audit?limit=&before=` (newest first;
+  `next` is the `before` for the next page, 0 at the end). The hub always keeps
+  one owner who can sign in (409 otherwise).
+- Also owner only: API tokens, `PATCH /api/updates`, update install and
+  rollback, `PUT /api/previews/config`, adding and removing machines.
+  An API token acts as an owner.
+- `PATCH /api/me` `{name?, email?}`, `POST /api/me/password` `{current, password}`
+  (signs the person out everywhere else).
+- Public, rate limited, same-origin only: `GET /api/invites/{token}`,
+  `POST /api/invites/{token}/accept` `{name, password, email?}` (joins as a
+  member and signs in; a taken name doesn't spend the invite).
+- Sessions carry `createdBy`, `assignee`, `handoffBy`, `handoffNote`,
+  `handoffAt` (user ids). `POST /api/threads/{id}/assign` `{to, note?}` hands a
+  session to a teammate (their copy becomes unread, so it shows in Needs you).
+- Approval messages carry `answeredBy` (a name) once someone answers.
+- The session websocket (`/api/ws/threads/{id}`) also sends
+  `{"type":"presence","users":[{id,name}]}` whenever someone opens or closes
+  the session.
+
+## Chat apps (Telegram, Slack, Discord, webhook)
+
+Owner-only settings API, used by Settings → Chat apps. Secrets are write-only: responses carry them masked.
+
+- `GET /api/chat/apps` lists the four integrations (`telegram`, `slack`, `discord`, `webhook`) with status (`off | connecting | connected | error`), masked tokens, linked chat, allowed user ids, events (`approval`, `question`, `finished`, `failed`) and machine filter.
+- `PUT /api/chat/apps/{kind}` saves settings. Token fields (`botToken`, `appToken`, `webhookUrl`, `webhookSecret`) are only changed when non-empty; `enabled`, `channel`, `allowedUsers`, `events`, `machines`, `hideAlways` as needed.
+- `DELETE /api/chat/apps/{kind}` forgets the tokens and closes open prompts.
+- `POST /api/chat/apps/telegram/connect` makes a one-time code (10 minutes) the user sends the bot as `/start <code>`.
+- `POST /api/chat/apps/{kind}/test` sends a test message.
+
+The hub dials out (Telegram long polling, Slack Socket Mode, Discord gateway), so no public URL is needed. Only the linked chat or channel, and allowed user ids, can answer. Answers use the same `sendApproval` / `sendAnswer` helpers as `POST /api/threads/{id}/approval` and `/answer`, and are noted in the transcript as "via Telegram" (etc.). Each prompt is claimed once; later presses are refused.
+
+Webhook events are JSON `POST`s (`type`, `at`, `text`, `session`, `machine`, `agent`, `title`/`command`, `question`, `summary`, `error`, `links.open`) with an optional `X-Overseer-Signature: sha256=<hmac>` header.
+
+## Scheduled sessions, guardrails and continue in another agent
+
+### Scheduled sessions
+
+A session saved with everything needed to start it, plus a trigger. The hub starts it through the same path as `POST /api/threads` (same validation, same `clientRequestId` idempotency), so a start that is retried never runs twice. Table: `scheduled_sessions`.
+
+- `GET /api/scheduled[?all=1]` lists waiting, starting and failed ones, soonest first (`all` adds started ones, kept three days).
+- `POST /api/scheduled` takes the `POST /api/threads` body (`deviceId`, `agent`, `cwd`, `prompt`, `images: [{path}]`, `model`, `effort`, `fast`, `mode`, `access`, `title`, `clientRequestId`) plus `trigger` and optionally `source: {repo, branch, known?}`. With `source` the machine gets that GitHub branch ready (`git.prepare`) when the session starts, and `cwd` is ignored.
+- `trigger` is `{"kind":"time","at":<unix seconds>}` (up to a year ahead, not in the past) or `{"kind":"limit_reset","threshold"?:90}`. The second waits for the agent's plan limit on that machine: among the windows that are used up (else at or above `threshold`), the one that resets last. The row stores the window and the expected reset (`trigger.window`, `trigger.resetsAt`) and `startsAt` is that time plus 30 s. At that time the hub asks the machine again; if the window is still limited it waits for the new reset time. A model-specific window (Claude's `seven_day_opus`) only counts for that model. 400 when no limit is known or it is not high.
+- A machine that is offline when a session is due is waited for; the row says so in `note` ("Waiting for X to come online").
+- `PATCH /api/scheduled/{id}` changes any of the fields above (a failed row is queued again). `DELETE` cancels. `POST /api/scheduled/{id}/start` starts it now, skipping the trigger and any guardrail, and answers with the row (`threadId` set) or 202 while a checkout is still being prepared.
+- Rows: `id`, `status` (`waiting | starting | started | failed`), `reason` (`guardrail` when held), `trigger`, `startsAt`, `note`, `threadId`, `error`, `deviceName`, `deviceOnline`, and the payload fields.
+- Events: `schedule.changed`, `schedule.started` (carries `threadId`).
+
+### Guardrails
+
+Per agent that reports plan limits (`claude`, `codex`), stored in the `guardrails` setting. Off by default; they watch the weekly window.
+
+- `GET /api/guardrails` and `PUT /api/guardrails` (a partial map is merged): `{"claude":{"holdEnabled":false,"holdPercent":90,"pauseEnabled":false,"pausePercent":98}}`. Percentages are 1 to 100.
+- Hold: when the weekly window is at or above `holdPercent`, `POST /api/threads` answers **202** `{"held":true,"scheduled":{…},"message":"…"}` instead of starting. The request is saved as a scheduled session (`reason: "guardrail"`) that starts when the limit resets, and the same `clientRequestId` finds the same row. Starts from automations and the MCP endpoint are not held.
+- Pause: every 15 s the hub stops the running turns (the same cancel as the Stop button; sessions stay) of that agent on a machine whose weekly window is at or above `pausePercent`. A turn is paused once; a status line says why. Send a message to carry on.
+- `GET /api/guardrails/notices` lists what a guardrail did or a scheduled start that failed (`kind`: `hold | pause | failed`), until `DELETE /api/guardrails/notices/{id}`. Event: `guardrail.notice`.
+
+### Continue in another agent
+
+- `POST /api/threads/{id}/continue/preview` `{agent?, note?, messageId?}` builds the handoff prompt from the transcript: the original goal, the turns so far (older ones condensed), files changed (the recorded edits plus `git diff --stat` and `git status --short` from the machine when it can be read), the current plan, the last error and what is left. `messageId` limits it to the conversation up to that turn. Reply: `{prompt, title, files, stats}`.
+- `POST /api/threads/{id}/continue` `{prompt, agent, model?, effort?, fast?, mode?, title?, deviceId?, cwd?, clientRequestId?}` starts the new session with the (edited) prompt, on the same machine and folder by default, and links the two (table `thread_continuations`; a status line in both transcripts). Answers the new thread, or 202 when a guardrail holds it.
+- `GET /api/threads/{id}/continue` returns `{from: {id,title,agent,status} | null, to: [...]}` for the "Continued from / in" chips.
+
+## Issue autopilot and before/after screenshots
+
+**Autopilot.** A repo is opted in explicitly (`POST /api/autopilot/repos` needs `"acknowledge": true`). Every ~2 minutes (jittered) the hub runs `gh issue list --label <label>` on the repo's GitHub machine. A new issue becomes a row in `autopilot_runs` (unique on repo + number, so it never runs twice, restarts included). It runs only if whoever added the label owns the repo or has write access (`trust: "writers"`, default) or is the signed-in GitHub user (`"me"`); anything else is `skipped` and waits for `POST /api/autopilot/runs/{id}/approve`. Issue text is untrusted: the prompt fences it with a random marker and leaves out comments from people without write access. Lifecycle: `queued → preparing → working → finishing → pr_open → merged|closed`, or `failed`/`skipped`. Preparing labels the issue `overseer:working`, optionally comments, makes a worktree on `overseer/issue-<n>-<slug>` (`git.prepare` with `createFrom`) and starts a session (`clientRequestId` `ap-<run>-<attempt>`). Finishing sends `autopilot.finish` to the machine: commit what is left (never `.env`, keys), push (never forced), reuse or open the pull request (`Fixes #n`, optional "Built with Overseer" footer), then swap the label to `overseer:done` (or `overseer:failed` plus a comment). Endpoints: `GET /api/autopilot`, `PATCH|DELETE /api/autopilot/repos/{id}`, `POST /api/autopilot/repos/{id}/poll`, `POST /api/autopilot/runs/{id}/retry|approve|stop`, `GET /api/autopilot/clones?repo=`, `GET /api/autopilot/by-thread/{id}`.
+
+**Screenshots.** When a web server runs inside a session's own folder, the hub asks that machine (`screenshot.capture`, headless Chrome, Chromium or Edge) for a picture when it first appears (before) and when a turn ends (after); phone size is optional. Pictures live in the hub database (4 per session at most, 1.5 MB each). `GET /api/threads/{id}/shots` lists them, `GET /api/shots/img/{id}` serves one to signed-in users, `POST /api/threads/{id}/shots {kind}` takes one by hand, `GET|PUT /api/shots/config` holds the switches. When a pull request exists for the session (autopilot or `/pr`) and the hub has a public https address, a comment with the pictures is added; they are served from `GET /api/shots/pub/{token}.png|jpg` (128-bit token, 180 days). Without a public https address the reason is shown in the UI and nothing is posted.

@@ -71,7 +71,7 @@ export default function Terminal({
           term.write(data)
         }
       })
-      const resize = new ResizeObserver(() => fit.fit())
+      const resize = new ResizeObserver(() => { try { fit.fit() } catch { /* the panel closed mid-resize */ } })
       resize.observe(host)
       return () => {
         dataSub.dispose()

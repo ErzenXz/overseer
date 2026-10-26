@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { agentCatalog, agentInfo, loadAgentCatalog, relativeTime, useAgentCatalog, type AgentInfo } from '../agents'
 import AddDeviceModal from '../components/AddDeviceModal'
+import ChatApps from './ChatApps'
 import Icon, { AgentMark, type IconName } from '../components/Icon'
 import { Switch } from '../components/Menu'
 import { settingsSections } from '../settings'
@@ -11,8 +12,14 @@ import { useDevices, usePref, useThreads } from '../store'
 import type { DeviceAgent, ExecResult } from '../types'
 import Modal from '../components/Modal'
 import { McpHelp, Presets, ApiTokens, PreviewSettings, SoftwareUpdates } from './SettingsParts'
+import SharedLinks from '../components/SharedLinks'
 import { Meter, type ComposerSettings } from '../components/Composer'
 import { resetsIn, usePlanLimits } from '../usageLimits'
+import { showNotice } from '../notify'
+import { GuardrailsSection } from '../components/Scheduled'
+import { ActivitySettings, OwnerOnly, PeopleSettings } from './PeopleSettings'
+import { useTeam } from '../teams'
+import { ShortcutList } from '../components/ShortcutsHelp'
 
 export default function SettingsPage() {
   useOwnHeader()
@@ -40,16 +47,20 @@ export default function SettingsPage() {
               {section === 'shortcuts' && <Shortcuts />}
               {section === 'notifications' && <Notifications />}
               {section === 'general' && <SoftwareUpdates />}
+              {section === 'people' && <PeopleSettings />}
+              {section === 'activity' && <OwnerOnly><ActivitySettings /></OwnerOnly>}
               {section === 'connections' && <Connections />}
+              {section === 'chat' && <ChatApps />}
               {section === 'machines' && <MachinesSettings />}
-              {section === 'previews' && <PreviewSettings />}
+              {section === 'previews' && <OwnerOnly><PreviewSettings /></OwnerOnly>}
+              {section === 'shares' && <SharedLinks />}
               {section === 'usage' && <Usage />}
               {section === 'agents' && <AgentsSettings />}
               {section === 'automations' && <LinkCard to="/automations" icon="automation" title="Open Automations" text="Create schedules, run them now, and see past runs." />}
               {section === 'mcp' && <><LinkCard to="/customize" icon="layers" title="Manage MCP servers in Customize" text="Servers you enable there are passed to every agent session on every machine." /><McpHelp /></>}
               {section === 'review' && <LinkCard to="/review" icon="pull-request" title="Open Review" text="Review uses the GitHub CLI signed in on one of your machines. Choose which one from the person icon in Review’s toolbar." />}
               {section === 'presets' && <Presets />}
-              {section === 'tokens' && <ApiTokens />}
+              {section === 'tokens' && <OwnerOnly><ApiTokens /></OwnerOnly>}
             </>
           )}
         </div>
@@ -60,6 +71,7 @@ export default function SettingsPage() {
 
 function Overview() {
   const [name] = usePref('displayName', 'Overseer')
+  const team = useTeam()
   const row = (id: string) => {
     const item = settingsSections.find((entry) => entry.id === id)!
     return (
@@ -74,7 +86,7 @@ function Overview() {
     <>
       <h1 className="settings-h1">{name || 'Overseer'}</h1>
       <p className="settings-sub">Hub preferences and settings</p>
-      <div className="settings-group">{['general', 'connections', 'machines', 'previews', 'usage'].map(row)}</div>
+      <div className="settings-group">{['general', 'people', ...(team.isOwner ? ['activity'] : []), 'connections', 'chat', 'machines', 'previews', 'shares', 'usage'].map(row)}</div>
       <h2 className="settings-h2">Products</h2>
       <p className="settings-sub" style={{ fontSize: 15 }}>Configure agents and the tools they get</p>
       <div className="settings-group">{['agents', 'automations', 'mcp', 'review'].map(row)}</div>
@@ -139,21 +151,7 @@ function Preferences() {
 }
 
 function Shortcuts() {
-  const mod = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl'
-  const rows: [string, string[]][] = [
-    ['Search sessions, machines and actions', [mod, 'K']],
-    ['New session', ['⇧', mod, 'O']],
-    ['Show or hide the sidebar', [mod, 'B']],
-    ['Send message', ['↵']],
-    ['New line in a message', ['⇧', '↵']],
-    ['Search settings', ['/']],
-    ['Close a menu or dialog', ['Esc']],
-  ]
-  return (
-    <div className="settings-group">
-      {rows.map(([label, keys]) => <Field key={label} title={label}><span className="flex gap-1">{keys.map((key) => <span key={key} className="kbd" style={{ height: 24, minWidth: 24, fontSize: 12.5 }}>{key}</span>)}</span></Field>)}
-    </div>
-  )
+  return <ShortcutList />
 }
 
 function Notifications() {
@@ -172,13 +170,13 @@ function Notifications() {
   return (
     <>
       <div className="settings-group">
-        <Field title="Desktop notifications" sub={permission === 'denied' ? 'Blocked by the browser. Allow notifications for this site in its settings.' : permission === 'unsupported' ? 'This browser doesn’t support notifications.' : 'Shown while Overseer is open in a tab'}>
+        <Field title="Desktop notifications" sub={permission === 'denied' ? 'Blocked by the browser. Allow notifications for this site in its settings.' : permission === 'unsupported' ? 'This browser doesn’t support notifications.' : 'Shown while Overseer is open in a tab. A session still waiting gets a reminder after 5 and 30 minutes.'}>
           <Switch checked={enabled && permission === 'granted'} disabled={permission === 'denied' || permission === 'unsupported'} label="Desktop notifications" onChange={toggle} />
         </Field>
         <Field title="When an agent finishes"><Switch checked={onDone} disabled={!enabled} label="When an agent finishes" onChange={setOnDone} /></Field>
         <Field title="When an agent needs approval"><Switch checked={onApproval} disabled={!enabled} label="When an agent needs approval" onChange={setOnApproval} /></Field>
       </div>
-      {enabled && permission === 'granted' && <button className="btn btn-outline mt-4" onClick={() => new Notification('Overseer', { body: 'Notifications are working.' })}>Send a test notification</button>}
+      {enabled && permission === 'granted' && <button className="btn btn-outline mt-4" onClick={() => showNotice('Overseer', 'Notifications are working.', 'overseer-test', '/settings/notifications', () => window.focus())}>Send a test notification</button>}
     </>
   )
 }
@@ -282,6 +280,7 @@ function Usage() {
   return (
     <>
       <PlanLimitsSection />
+      <GuardrailsSection />
       <h2 className="settings-h2">Sessions in Overseer</h2>
       <div className="mt-4 grid gap-4 sm:grid-cols-3">
         <div className="stat-card"><div className="k">Sessions</div><div className="v">{total.sessions}</div></div>

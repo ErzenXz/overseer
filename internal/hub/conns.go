@@ -27,6 +27,7 @@ type agentConn struct {
 	channels map[uint32]*hubChannel
 	stats    *protocol.Stats
 	closed   bool
+	touched  time.Time // last time last_seen was written while connected
 
 	nextId      atomic.Uint64
 	nextChannel atomic.Uint32
@@ -262,7 +263,16 @@ func (s *Server) handleAgentMsg(c *agentConn, m protocol.Msg) {
 		if err := json.Unmarshal(m.Data, &st); err == nil {
 			c.mu.Lock()
 			c.stats = &st
+			// Keep "last seen" honest if the hub dies before a clean
+			// disconnect: write it at most once a minute.
+			touch := time.Since(c.touched) > time.Minute
+			if touch {
+				c.touched = time.Now()
+			}
 			c.mu.Unlock()
+			if touch {
+				s.store.TouchDevice(c.deviceId)
+			}
 			s.events.publish(event{Type: "device.stats", DeviceId: c.deviceId, Stats: &st})
 		}
 	case m.Channel != 0:

@@ -1,15 +1,14 @@
 import { useEffect, useRef } from "react";
 
 // Morph is the hero art: a cloud of glowing points that turns as a sphere,
-// then gathers into the Orbit mark (ring, core and satellite), then lets go
-// again. Canvas 2D with additive blending, capped at 2x DPR, paused off-screen
+// then reveals the approved Overseer mark, then lets go again. Canvas 2D with additive blending, capped at 2x DPR, paused off-screen
 // and in background tabs, and one still frame (the mark) for reduced motion.
 
 const COUNT = 1150;
 const HOLD = 4200; // ms in each shape
 const MOVE = 1700; // ms to morph between shapes
 
-interface P { sx: number; sy: number; sz: number; mx: number; my: number; mz: number; size: number; tint: number; twinkle: number }
+interface P { sx: number; sy: number; sz: number; size: number; tint: number; twinkle: number }
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
@@ -28,42 +27,19 @@ function build(): P[] {
     const sx = Math.cos(theta) * r * depth;
     const sz = Math.sin(theta) * r * depth;
     const sy = y * depth;
-    // mark: 62% on the ring, 24% in the core, 14% on the satellite
-    const pick = rand();
-    let mx: number, my: number, tint: number;
-    if (pick < 0.62) {
-      // ring, with a gap where the satellite sits (upper right)
-      let a = rand() * Math.PI * 2;
-      const gap = -Math.PI / 4;
-      if (Math.abs(Math.atan2(Math.sin(a - gap), Math.cos(a - gap))) < 0.42) a += 0.84;
-      const rr = 0.78 + (rand() - 0.5) * 0.17;
-      mx = Math.cos(a) * rr;
-      my = Math.sin(a) * rr;
-      tint = 0;
-    } else if (pick < 0.86) {
-      const a = rand() * Math.PI * 2;
-      const rr = Math.sqrt(rand()) * 0.3;
-      mx = Math.cos(a) * rr;
-      my = Math.sin(a) * rr;
-      tint = 0;
-    } else {
-      const a = rand() * Math.PI * 2;
-      const rr = Math.sqrt(rand()) * 0.21;
-      mx = 0.62 + Math.cos(a) * rr;
-      my = -0.62 + Math.sin(a) * rr;
-      tint = 1;
-    }
+    let tint = rand() < 0.14 ? 1 : 0;
     // a few status sprinkles: amber (needs you) and green (done)
     const sprinkle = rand();
     if (tint === 0 && sprinkle < 0.025) tint = 2;
     else if (tint === 0 && sprinkle < 0.05) tint = 3;
-    points.push({ sx, sy, sz, mx, my, mz: (rand() - 0.5) * 0.12, size: 0.35 + rand() * 0.75, tint, twinkle: rand() * Math.PI * 2 });
+    points.push({ sx, sy, sz, size: 0.35 + rand() * 0.75, tint, twinkle: rand() * Math.PI * 2 });
   }
   return points;
 }
 
 export function Morph({ className = "" }: { className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const markRef = useRef<HTMLImageElement>(null);
   useEffect(() => {
     const canvas = ref.current;
     const ctx = canvas?.getContext("2d");
@@ -86,6 +62,8 @@ export function Morph({ className = "" }: { className?: string }) {
 
     const draw = (now: number, mix: number) => {
       ctx.clearRect(0, 0, width, height);
+      canvas.style.opacity = String(1 - mix);
+      if (markRef.current) markRef.current.style.opacity = String(mix);
       ctx.globalCompositeOperation = "lighter";
       const radius = Math.min(width, height) * 0.38;
       const cx = width * 0.5;
@@ -93,21 +71,12 @@ export function Morph({ className = "" }: { className?: string }) {
       const spin = now / 9000 + pointer.x * 0.6;
       const tilt = 0.32 + pointer.y * 0.25;
       const cs = Math.cos(spin), sn = Math.sin(spin), ct = Math.cos(tilt), st = Math.sin(tilt);
-      // the mark turns slightly too, so it reads as an object
-      const mark = Math.sin(now / 2600) * 0.18 + pointer.x * 0.25;
-      const mc = Math.cos(mark), ms = Math.sin(mark);
       for (const p of points) {
         // sphere position, rotated
-        let x = p.sx * cs - p.sz * sn;
+        const x = p.sx * cs - p.sz * sn;
         let z = p.sx * sn + p.sz * cs;
-        let y = p.sy * ct - z * st;
+        const y = p.sy * ct - z * st;
         z = p.sy * st + z * ct;
-        // mark position, gently turned about the vertical axis
-        const mx = p.mx * mc - p.mz * ms;
-        const mz = p.mx * ms + p.mz * mc;
-        x += (mx - x) * mix;
-        y += (p.my - y) * mix;
-        z += (mz - z) * mix;
         const persp = 1 / (1.9 - z * 0.6);
         const px = cx + x * radius * persp * 1.7;
         const py = cy + y * radius * persp * 1.7;
@@ -165,5 +134,10 @@ export function Morph({ className = "" }: { className?: string }) {
     run();
     return () => { stop(); io.disconnect(); ro.disconnect(); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pointermove", onMove); };
   }, []);
-  return <canvas ref={ref} aria-hidden="true" className={className} />;
+  return (
+    <div aria-hidden="true" className={className}>
+      <canvas ref={ref} style={{ width: "100%", height: "100%" }} />
+      <img ref={markRef} src="/brand/overseer.png" alt="" style={{ position: "absolute", width: "64%", maxHeight: "76%", objectFit: "contain", left: "50%", top: "50%", transform: "translate(-50%, -50%)", opacity: 0, borderRadius: "12%" }} />
+    </div>
+  );
 }

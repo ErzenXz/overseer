@@ -342,6 +342,10 @@ func (c *claudeAdapter) onLine(line []byte) {
 	m := decodeObj(line)
 	switch jStr(m, "type") {
 	case "system":
+		switch jStr(m, "subtype") {
+		case "task_started", "task_progress", "task_notification":
+			c.onTaskEvent(m)
+		}
 		if jStr(m, "subtype") == "init" {
 			c.setResumeId(jStr(m, "session_id"))
 			if len(c.commandList()) == 0 {
@@ -366,12 +370,12 @@ func (c *claudeAdapter) onLine(line []byte) {
 		if m["parent_tool_use_id"] == nil {
 			c.noteContext(jObj(msg, "usage"))
 		}
-		c.onAssistant(msg, m["parent_tool_use_id"] != nil)
+		c.onAssistant(msg, jStr(m, "parent_tool_use_id"), m["parent_tool_use_id"] != nil)
 	case "user":
 		msg := jObj(m, "message")
 		for _, b := range jArr(msg, "content") {
 			if block, ok := b.(map[string]any); ok && jStr(block, "type") == "tool_result" {
-				c.onToolResult(block)
+				c.onToolResult(block, jObj(m, "tool_use_result"))
 			}
 		}
 	case "result":
@@ -463,7 +467,7 @@ func (c *claudeAdapter) finalBlockId(msgId, kind string) string {
 	return c.scopedId("m", fmt.Sprintf("%s-%s%d", msgId, kind, k))
 }
 
-func (c *claudeAdapter) onAssistant(msg jsonObj, sub bool) {
+func (c *claudeAdapter) onAssistant(msg jsonObj, parent string, sub bool) {
 	msgId := jStr(msg, "id")
 	if msgId == "" {
 		msgId = c.newId("msg")
@@ -487,7 +491,7 @@ func (c *claudeAdapter) onAssistant(msg jsonObj, sub bool) {
 				c.emit(protocol.ThreadEvent{Id: c.finalBlockId(msgId, "thinking"), Role: "thought", Text: text})
 			}
 		case "tool_use":
-			c.onToolUse(block)
+			c.onToolUse(block, parent)
 		}
 	}
 }
@@ -496,7 +500,7 @@ var claudeToolNames = map[string]string{
 	"Bash": "bash", "BashOutput": "bash", "KillShell": "bash", "Read": "read", "NotebookRead": "read",
 	"Edit": "edit", "MultiEdit": "edit", "NotebookEdit": "edit", "Write": "write",
 	"Grep": "grep", "Glob": "glob", "LS": "glob", "WebFetch": "webfetch", "WebSearch": "websearch",
-	"TodoWrite": "todo",
+	"TodoWrite": "todo", "Task": "agent", "Agent": "agent",
 }
 
 func claudeToolName(name string) string {
@@ -531,8 +535,11 @@ func claudeToolTitle(name string, input jsonObj) string {
 		return "Fetch " + clip(jStr(input, "url"), 80)
 	case "WebSearch":
 		return "Search the web"
-	case "Task":
-		return "Agent: " + clip(jStr(input, "description"), 60)
+	case "Task", "Agent":
+		if d := jStr(input, "description"); d != "" {
+			return clip(d, 80)
+		}
+		return "Subagent"
 	}
 	if strings.HasPrefix(name, "mcp__") {
 		parts := strings.SplitN(strings.TrimPrefix(name, "mcp__"), "__", 2)
@@ -549,7 +556,7 @@ func claudeToolInput(name string, input jsonObj) string {
 		return jStr(input, "command")
 	case "WebSearch":
 		return jStr(input, "query")
-	case "Task":
+	case "Task", "Agent":
 		return clip(jStr(input, "prompt"), 500)
 	}
 	return toolInputDisplay(input)
@@ -579,14 +586,26 @@ func claudeToolFiles(name string, input jsonObj) []protocol.ThreadToolFile {
 	return nil
 }
 
-func (c *claudeAdapter) onToolUse(block jsonObj) {
+// claudeAgent describes a Task / Agent tool call.
+func claudeAgent(input jsonObj) *protocol.ThreadAgent {
+	return &protocol.ThreadAgent{
+		Type:       jStr(input, "subagent_type"),
+		Name:       jStr(input, "name"),
+		Task:       clip(jStr(input, "description"), 120),
+		Prompt:     clip(jStr(input, "prompt"), 2000),
+		Model:      jStr(input, "model"),
+		Background: jBool(input, "run_in_background"),
+	}
+}
+
+func (c *claudeAdapter) onToolUse(block jsonObj, parent string) {
 	id := jStr(block, "id")
 	name := jStr(block, "name")
 	input := jObj(block, "input")
 	c.smu.Lock()
 	c.toolNames[id] = name
 	c.smu.Unlock()
-	if name == "TodoWrite" {
+	if name == "TodoWrite" && parent == "" {
 		var plan []protocol.PlanEntry
 		for _, t := range jArr(input, "todos") {
 			if m, ok := t.(map[string]any); ok {
@@ -605,13 +624,21 @@ func (c *claudeAdapter) onToolUse(block jsonObj) {
 		c.emit(protocol.ThreadEvent{Id: planId, Role: "plan", Plan: plan})
 		return
 	}
-	c.emit(protocol.ThreadEvent{Id: c.scopedId("tool", id), Role: "tool", Tool: &protocol.ThreadTool{
+	tool := &protocol.ThreadTool{
 		Name:   claudeToolName(name),
 		Title:  claudeToolTitle(name, input),
 		Status: "running",
 		Input:  claudeToolInput(name, input),
 		Files:  claudeToolFiles(name, input),
-	}})
+	}
+	if tool.Name == "agent" {
+		tool.Agent = claudeAgent(input)
+	}
+	ev := protocol.ThreadEvent{Id: c.scopedId("tool", id), Role: "tool", Tool: tool}
+	if parent != "" {
+		ev.ParentId = c.scopedId("tool", parent) // a subagent's own step
+	}
+	c.emit(ev)
 }
 
 // toolResultText flattens a tool_result's content (string or blocks).
@@ -631,7 +658,7 @@ func toolResultText(v any) string {
 	return ""
 }
 
-func (c *claudeAdapter) onToolResult(block jsonObj) {
+func (c *claudeAdapter) onToolResult(block, meta jsonObj) {
 	id := jStr(block, "tool_use_id")
 	c.smu.Lock()
 	name, known := c.toolNames[id]
@@ -643,10 +670,67 @@ func (c *claudeAdapter) onToolResult(block jsonObj) {
 	if jBool(block, "is_error") {
 		status = "error"
 	}
+	if claudeToolName(name) == "agent" {
+		// A subagent started in the background answers at once with a launch
+		// receipt; its real end arrives as a task_notification.
+		if jBool(meta, "isAsync") || jStr(meta, "status") == "async_launched" {
+			c.emit(protocol.ThreadEvent{Id: c.scopedId("tool", id), Role: "tool", Tool: &protocol.ThreadTool{Agent: &protocol.ThreadAgent{Background: true}}})
+			return
+		}
+		agent := &protocol.ThreadAgent{Result: toolResultText(block["content"])}
+		if n, ok := jNum(meta, "totalToolUseCount"); ok {
+			agent.Tools = int(n)
+		}
+		if n, ok := jNum(meta, "totalTokens"); ok {
+			agent.Tokens = int64(n)
+		}
+		if n, ok := jNum(meta, "totalDurationMs"); ok {
+			agent.DurationMs = int64(n)
+		}
+		c.emit(protocol.ThreadEvent{Id: c.scopedId("tool", id), Role: "tool", Tool: &protocol.ThreadTool{Status: status, Agent: agent}})
+		return
+	}
 	c.emit(protocol.ThreadEvent{Id: c.scopedId("tool", id), Role: "tool", Tool: &protocol.ThreadTool{
 		Status: status,
 		Output: toolResultText(block["content"]),
 	}})
+}
+
+// onTaskEvent folds Claude's task_started / task_progress / task_notification
+// system events into the subagent's tool message (they carry the Task tool's
+// tool_use_id): running totals while it works, and the end of a background run.
+func (c *claudeAdapter) onTaskEvent(m jsonObj) {
+	id := jStr(m, "tool_use_id")
+	c.smu.Lock()
+	name, known := c.toolNames[id]
+	c.smu.Unlock()
+	if !known || claudeToolName(name) != "agent" {
+		return
+	}
+	tool := &protocol.ThreadTool{Agent: &protocol.ThreadAgent{}}
+	if u := jObj(m, "usage"); len(u) > 0 {
+		if n, ok := jNum(u, "tool_uses"); ok {
+			tool.Agent.Tools = int(n)
+		}
+		if n, ok := jNum(u, "total_tokens"); ok {
+			tool.Agent.Tokens = int64(n)
+		}
+	}
+	if jStr(m, "subtype") == "task_notification" {
+		switch jStr(m, "status") {
+		case "completed":
+			tool.Status = "completed"
+		case "failed", "killed", "stopped":
+			tool.Status = "error"
+		}
+		if tool.Status != "" {
+			tool.Agent.Result = jStr(m, "summary")
+			if n, ok := jNum(jObj(m, "usage"), "duration_ms"); ok {
+				tool.Agent.DurationMs = int64(n)
+			}
+		}
+	}
+	c.emit(protocol.ThreadEvent{Id: c.scopedId("tool", id), Role: "tool", Tool: tool})
 }
 
 // noteContext records the context fill from a top-level assistant message.

@@ -10,6 +10,9 @@ import Icon, { type IconName } from './Icon'
 import { AppIcon } from './Logo'
 import { ContextMenu, Menu, MenuItem, MenuLabel, MenuSeparator, Submenu, SwitchMark } from './Menu'
 import { TerminalMenuItems, ThreadMenuItems } from './SessionActions'
+import UpdateNotice from './UpdateNotice'
+import { GuardrailNotices, ScheduledGroup } from './Scheduled'
+import { handedToMe, inScope, needsYou, useScope, useTeam } from '../teams'
 
 export const docsURL = 'https://github.com/ErzenXz/overseer#readme'
 
@@ -44,7 +47,7 @@ const sortLabels: Record<Sort, string> = { updated: 'Last updated', created: 'Cr
 const filterLabels: Record<Filter, string> = { all: 'All sessions', active: 'Active', unread: 'Unread', prs: 'With pull request', agents: 'Agent sessions', terminals: 'Terminals', archived: 'Archived' }
 const groupLabels: Record<Group, string> = { none: 'None', folder: 'Folders', machine: 'Machines', agent: 'Agents', status: 'Status' }
 const propertyLabels: Record<Property, string> = { status: 'Status', time: 'Last updated', pr: 'Pull request', machine: 'Machine', agent: 'Agent' }
-const defaultProps: Record<Property, boolean> = { status: true, time: true, pr: true, machine: false, agent: false }
+const defaultProps: Record<Property, boolean> = { status: true, time: true, pr: true, machine: true, agent: false }
 const statusRank: Record<string, number> = { waiting: 0, working: 1, starting: 1, error: 2, idle: 3, stopped: 4, exited: 5 }
 
 export function threadRow(thread: Thread, path: string): SessionRow {
@@ -99,75 +102,119 @@ export default function Sidebar({ onSearch, onClose }: { onSearch: () => void; o
   const inSettings = location.pathname.startsWith('/settings')
   return (
     <aside className="sidebar" aria-label="Sidebar">
-      {inSettings ? <SettingsNav onClose={onClose} /> : <AppNav onSearch={onSearch} onClose={onClose} />}
+      <Rail onSearch={onSearch} />
+      <div className="sidebar-panel">
+        {inSettings ? <SettingsNav onClose={onClose} /> : <AppNav onClose={onClose} />}
+      </div>
     </aside>
   )
 }
 
-function SidebarHead({ onSearch, onClose, back }: { onSearch?: () => void; onClose: () => void; back?: boolean }) {
+// SidebarHead tops the settings panel: back to the app, and hide the panel.
+function SidebarHead({ onClose }: { onClose: () => void }) {
   const { toggleSidebar, mobile } = useShell()
-  const [name] = usePref('displayName', 'Overseer')
-  const [, setTheme] = usePref<'system' | 'light' | 'dark'>('theme', 'system')
-  const logout = async () => {
-    try { await api.post('/api/logout') } finally { window.location.assign('/login') }
-  }
   return (
     <div className="sidebar-head">
-      {back ? (
-        <Link to="/" className="workspace-btn" style={{ fontWeight: 400, color: 'var(--text-2)' }}>
-          <Icon name="arrow-left" size={18} />
-          <span>Back to app</span>
-        </Link>
-      ) : (
-        <Menu
-          placement="bottom-start"
-          width={260}
-          trigger={
-            <button className="workspace-btn">
-              <AppIcon size={22} />
-              <span className="truncate">{name || 'Overseer'}</span>
-              <Icon name="chevron-down" size={14} />
-            </button>
-          }
-        >
-          {(close) => (
-            <>
-              <MenuItem icon="settings" label="Settings" to="/settings" onClick={close} />
-              <MenuItem icon="monitor" label="Machines" to="/machines" onClick={close} />
-              <MenuItem icon="user-plus" label="Add a machine" to="/machines?add=1" onClick={close} />
-              <Submenu icon="sun" label="Theme">
-                <MenuItem icon="monitor" label="System" onClick={() => { setTheme('system'); close() }} />
-                <MenuItem icon="sun" label="Light" onClick={() => { setTheme('light'); close() }} />
-                <MenuItem icon="moon" label="Dark" onClick={() => { setTheme('dark'); close() }} />
-              </Submenu>
-              <MenuSeparator />
-              <MenuItem icon="book" label="Documentation" href={docsURL} onClick={close} />
-              <MenuItem icon="logout" label="Log out" onClick={logout} />
-            </>
-          )}
-        </Menu>
-      )}
+      <Link to="/" className="workspace-btn" style={{ fontWeight: 400, color: 'var(--text-2)' }}>
+        <Icon name="arrow-left" size={18} />
+        <span>Back to app</span>
+      </Link>
       <span className="flex-1" />
-      {onSearch && <button className="icon-btn" aria-label="Search" title="Search (⌘K)" onClick={onSearch}><Icon name="search" size={19} /></button>}
-      <Notifications />
       <button className="icon-btn" aria-label="Hide sidebar" title="Hide sidebar (⌘B)" onClick={mobile ? onClose : toggleSidebar}><Icon name="panel-left" size={19} /></button>
     </div>
   )
 }
 
+// The rail: the app's sections as icons down the left edge, so the panel
+// beside it only has to list sessions. Each icon names itself on hover.
+const railMain: { to: string; label: string; icon: IconName; end?: boolean }[] = [
+  { to: '/sessions', label: 'Sessions', icon: 'message' },
+  { to: '/automations', label: 'Automations', icon: 'automation' },
+  { to: '/review', label: 'Review', icon: 'pull-request' },
+  { to: '/arena', label: 'Agent Arena', icon: 'zap' },
+  { to: '/machines', label: 'Machines', icon: 'monitor' },
+  { to: '/mission', label: 'Mission control', icon: 'grid' },
+]
+const railMore: { to: string; label: string; icon: IconName }[] = [
+  { to: '/skills', label: 'Skills & plugins', icon: 'sparkles' },
+  { to: '/projects', label: 'Projects', icon: 'book' },
+  { to: '/customize', label: 'Customize', icon: 'customize' },
+]
+
+function Rail({ onSearch }: { onSearch: () => void }) {
+  const navigate = useNavigate()
+  const [, setTheme] = usePref<'system' | 'light' | 'dark'>('theme', 'system')
+  const logout = async () => {
+    try { await api.post('/api/logout') } finally { window.location.assign('/login') }
+  }
+  return (
+    <nav className="rail" aria-label="Main">
+      <Menu
+        placement="right-start"
+        width={250}
+        trigger={<button className="rail-logo" aria-label="Overseer menu"><AppIcon size={26} /></button>}
+      >
+        {(close) => (
+          <>
+            <MenuItem icon="settings" label="Settings" to="/settings" onClick={close} />
+            <MenuItem icon="user-plus" label="Add a machine" to="/machines?add=1" onClick={close} />
+            <MenuItem icon="terminal" label="New terminal" onClick={() => { close(); navigate('/?mode=terminal') }} />
+            <MenuItem icon="star" label="Agent Wrapped" to="/wrapped" onClick={close} />
+            <Submenu icon="sun" label="Theme">
+              <MenuItem icon="monitor" label="System" onClick={() => { setTheme('system'); close() }} />
+              <MenuItem icon="sun" label="Light" onClick={() => { setTheme('light'); close() }} />
+              <MenuItem icon="moon" label="Dark" onClick={() => { setTheme('dark'); close() }} />
+            </Submenu>
+            <MenuSeparator />
+            <MenuItem icon="logout" label="Log out" onClick={logout} />
+          </>
+        )}
+      </Menu>
+      <NavLink to="/" end className="rail-btn rail-new" aria-label="New session" data-tip="New session"><Icon name="plus" size={19} /></NavLink>
+      <div className="rail-group">
+        {railMain.map((item) => <NavLink key={item.to} to={item.to} end={item.end} className="rail-btn" aria-label={item.label} data-tip={item.label}><Icon name={item.icon} size={19} /></NavLink>)}
+      </div>
+      <span className="rail-sep" />
+      <div className="rail-group">
+        {railMore.map((item) => <NavLink key={item.to} to={item.to} className="rail-btn" aria-label={item.label} data-tip={item.label}><Icon name={item.icon} size={19} /></NavLink>)}
+      </div>
+      <span className="flex-1" />
+      <div className="rail-group">
+        <button className="rail-btn" aria-label="Search" data-tip="Search  ⌘K" onClick={onSearch}><Icon name="search" size={19} /></button>
+        <Notifications />
+        <Menu
+          placement="right-start"
+          width={250}
+          trigger={<button className="rail-btn" aria-label="Help" data-tip="Help"><Icon name="help" size={19} /></button>}
+        >
+          {(close) => (
+            <>
+              <MenuItem icon="book" label="Documentation" href={docsURL} onClick={close} />
+              <MenuItem icon="keyboard" label="Keyboard shortcuts" to="/settings/shortcuts" onClick={close} />
+              <MenuItem icon="github" label="Report an issue" href="https://github.com/ErzenXz/overseer/issues/new" onClick={close} />
+            </>
+          )}
+        </Menu>
+        <NavLink to="/settings" className="rail-btn" aria-label="Settings" data-tip="Settings"><Icon name="settings" size={19} /></NavLink>
+      </div>
+    </nav>
+  )
+}
+
 function Notifications() {
   const { value: threads } = useThreads()
+  const team = useTeam()
   const navigate = useNavigate()
   const items = (threads ?? []).filter((thread) => thread.status === 'waiting' || thread.status === 'error' || isUnread(thread)).slice(0, 8)
   const markAll = () => items.forEach((thread) => patchThread(thread.id, { read: true }).catch(() => {}))
   return (
     <Menu
-      placement="bottom-start"
+      placement="right-start"
       width={340}
       trigger={
-        <button className="icon-btn relative" aria-label={`Notifications${items.length ? ` (${items.length})` : ''}`}>
+        <button className="rail-btn relative" aria-label={`Notifications${items.length ? ` (${items.length})` : ''}`} data-tip="Notifications">
           <Icon name="bell" size={19} />
-          {items.length > 0 && <span className="absolute right-[5px] top-[5px] h-[7px] w-[7px] rounded-full bg-[var(--blue)]" />}
+          {items.length > 0 && <span className={`rail-badge ${items.some((thread) => thread.status === 'waiting') ? 'is-waiting' : ''}`} />}
         </button>
       }
     >
@@ -182,7 +229,7 @@ function Notifications() {
               key={thread.id}
               icon={thread.status === 'waiting' ? 'alert' : thread.status === 'error' ? 'alert' : 'check'}
               label={thread.title}
-              description={`${thread.status === 'waiting' ? 'Needs your approval' : thread.status === 'error' ? 'Failed' : 'Finished'} · ${thread.deviceName} · ${relativeTime(thread.updatedAt)}`}
+              description={`${handedToMe(thread, team.me) ? `${team.nameOf(thread.handoffBy) || 'Someone'} handed this to you` : thread.status === 'waiting' ? 'Needs your approval' : thread.status === 'error' ? 'Failed' : 'Finished'} · ${thread.deviceName} · ${relativeTime(thread.updatedAt)}`}
               onClick={() => { close(); navigate(`/sessions/${thread.id}`) }}
             />
           ))}
@@ -192,18 +239,8 @@ function Notifications() {
   )
 }
 
-const nav: { to: string; label: string; icon: IconName }[] = [
-  { to: '/automations', label: 'Automations', icon: 'automation' },
-  { to: '/machines', label: 'Machines', icon: 'monitor' },
-  { to: '/review', label: 'Review', icon: 'pull-request' },
-  { to: '/projects', label: 'Projects', icon: 'book' },
-  { to: '/skills', label: 'Skills & plugins', icon: 'sparkles' },
-  { to: '/customize', label: 'Customize', icon: 'customize' },
-]
-
-function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => void }) {
+function AppNav({ onClose }: { onClose: () => void }) {
   const location = useLocation()
-  const navigate = useNavigate()
   const { value: threads, error: threadsError } = useThreads()
   const { value: terminals } = useTerminals()
   const [sort, setSort] = usePref<Sort>('sidebar.sort', 'updated')
@@ -212,12 +249,16 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
   const [props, setProps] = usePref<Record<Property, boolean>>('sidebar.props', defaultProps)
   const [compact, setCompact] = usePref('sidebar.compact', false)
   const [showTerminals] = usePref('sidebar.terminals', false)
+  const team = useTeam()
+  const [scope, setScope] = useScope(team.multi)
+  // Waiting on you, or handed to you and not opened yet: shown under Needs you.
+  const inNeeds = (row: SessionRow) => row.status === 'waiting' || !!(row.thread && handedToMe(row.thread, team.me))
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const [recentOpen, setRecentOpen] = useState(true)
   const [scrolled, setScrolled] = useState(false)
 
   const rows = useMemo(() => {
-    const threadRows = (threads ?? []).map((thread) => threadRow(thread, location.pathname))
+    const threadRows = (threads ?? []).filter((thread) => inScope(thread, scope, team.me)).map((thread) => threadRow(thread, location.pathname))
     // Terminal sessions that belong to a thread (its Shell tab) stay hidden.
     const owned = new Set((threads ?? []).map((thread) => `${thread.deviceId}:${thread.terminal}`))
     const terminalRows = showTerminals ? (terminals ?? []).filter((session) => !owned.has(`${session.deviceId}:${session.name}`)).map((session) => terminalRow(session, location.pathname, location.search)) : []
@@ -236,11 +277,11 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
       return b.updatedAt - a.updatedAt
     })
     return all
-  }, [threads, terminals, filter, sort, location.pathname, location.search, showTerminals])
+  }, [threads, terminals, filter, sort, location.pathname, location.search, showTerminals, scope, team.me])
 
   const groups = useMemo(() => {
     // Pinned sessions get their own section above, whatever the grouping.
-    const rest = rows.filter((row) => !row.pinned)
+    const rest = rows.filter((row) => !row.pinned && !inNeeds(row))
     const head: { key: string; label: string; rows: SessionRow[] }[] = []
     if (group === 'none') return [{ key: 'all', label: '', rows: rest }]
     const buckets = new Map<string, SessionRow[]>()
@@ -253,7 +294,10 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
     return [...head, ...entries.map(([label, items]) => ({ key: label, label, rows: items }))]
   }, [rows, group])
 
-  const pinnedRows = rows.filter((row) => row.pinned)
+  // Sessions stopped on a question for you sit above everything, whatever the
+  // filter, so one can't hide below the fold.
+  const needsRows = useMemo(() => (threads ?? []).filter((thread) => needsYou(thread, scope, team.me)).sort((a, b) => a.updatedAt - b.updatedAt).map((thread) => threadRow(thread, location.pathname)), [threads, location.pathname, scope, team.me])
+  const pinnedRows = rows.filter((row) => row.pinned && !inNeeds(row))
   const [pinnedOpen, setPinnedOpen] = usePref('sidebar.pinnedOpen', true)
   const visibleProps = Object.values(props).filter(Boolean).length
   const customized = sort !== 'updated' || filter !== 'all' || group !== 'none' || compact
@@ -262,89 +306,20 @@ function AppNav({ onSearch, onClose }: { onSearch: () => void; onClose: () => vo
 
   return (
     <>
-      <SidebarHead onSearch={onSearch} onClose={onClose} />
-      <div className={`sidebar-scroll ${scrolled ? 'scrolled' : ''}`} onScroll={(event) => setScrolled(event.currentTarget.scrollTop >= (event.currentTarget.querySelector<HTMLElement>('.sessions-block')?.offsetTop ?? 0))}>
-      <nav className="sidebar-nav" aria-label="Main">
-        <NavLink to="/" end className="nav-item"><Icon name="plus" size={19} />New session</NavLink>
-        {nav.map((item) => (
-          <NavLink key={item.to} to={item.to} className="nav-item"><Icon name={item.icon} size={19} />{item.label}</NavLink>
-        ))}
-        <Menu
-          placement="right-start"
-          width={240}
-          trigger={<button className="nav-item"><Icon name="more" size={19} />More<Icon name="chevron" size={15} className="nav-end" /></button>}
-        >
-          {(close) => (
+      <PanelHead onClose={onClose} scope={team.multi ? scope : null} setScope={setScope} customized={customized} unreadCount={unreadCount} markAllRead={markAllRead}
+        sort={sort} setSort={setSort} filter={filter} setFilter={setFilter} group={group} setGroup={setGroup}
+        props={props} setProps={setProps} visibleProps={visibleProps} compact={compact} setCompact={setCompact} />
+      <div className={`sidebar-scroll ${scrolled ? 'scrolled' : ''}`} onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}>
+      <section className={`sessions-block ${compact ? 'sessions-compact' : ''}`} aria-label="Sessions">
+        <div className="sessions-scroll">
+          <GuardrailNotices />
+          {needsRows.length > 0 && filter !== 'archived' && (
             <>
-              <MenuItem icon="list-bullets" label="All sessions" to="/sessions" onClick={close} />
-              <MenuItem icon="setup" label="Machine setup" to="/machines?tab=setup" onClick={close} />
-              <MenuItem icon="terminal" label="New terminal" onClick={() => { close(); navigate('/?mode=terminal') }} />
-              <MenuItem icon="keyboard" label="Keyboard shortcuts" to="/settings/shortcuts" onClick={close} />
-              <MenuSeparator />
-              <MenuItem icon="book" label="Documentation" href={docsURL} onClick={close} />
+              <div className="sessions-sub sessions-sub-inline sessions-needs"><span><Icon name="alert" size={16} />Needs you<span className="count">{needsRows.length}</span></span></div>
+              {needsRows.map((row) => <SessionLink key={row.key} row={row} props={props} />)}
             </>
           )}
-        </Menu>
-      </nav>
-
-      <section className={`sessions-block ${compact ? 'sessions-compact' : ''}`} aria-label="Sessions">
-        <div className="sessions-sticky">
-        <div className="sessions-head">
-          <Link to="/sessions">Sessions</Link>
-          <div className="sessions-head-actions">
-            <button className="icon-btn" aria-label="New session" title="New session" onClick={() => navigate('/')}><Icon name="plus" size={18} /></button>
-            <Menu
-              placement="bottom-start"
-              width={300}
-              trigger={<button className={`icon-btn ${customized ? 'icon-btn-active' : ''}`} aria-label="View properties"><Icon name="sliders" size={18} /></button>}
-            >
-              <MenuLabel>Properties</MenuLabel>
-              <Submenu icon="sort" label="Sort" end={sortLabels[sort]}>
-                {(Object.keys(sortLabels) as Sort[]).map((key) => <MenuItem key={key} label={sortLabels[key]} checked={sort === key} onClick={() => setSort(key)} />)}
-              </Submenu>
-              <Submenu icon="filter" label="Filter" end={filter === 'all' ? undefined : filterLabels[filter]}>
-                {(Object.keys(filterLabels) as Filter[]).map((key) => <MenuItem key={key} label={filterLabels[key]} checked={filter === key} onClick={() => setFilter(key)} />)}
-              </Submenu>
-              <Submenu icon="group" label="Group" end={groupLabels[group]}>
-                {(Object.keys(groupLabels) as Group[]).map((key) => <MenuItem key={key} label={groupLabels[key]} checked={group === key} onClick={() => setGroup(key)} />)}
-              </Submenu>
-              <MenuSeparator />
-              <Submenu icon="eye" label="Property visibility" end={visibleProps}>
-                {(Object.keys(propertyLabels) as Property[]).map((key) => (
-                  <button key={key} type="button" className="menu-item" role="menuitemcheckbox" aria-checked={props[key]} onClick={() => setProps({ ...props, [key]: !props[key] })}>
-                    <span className="flex-1">{propertyLabels[key]}</span>
-                    <SwitchMark checked={props[key]} />
-                  </button>
-                ))}
-              </Submenu>
-              <button type="button" className="menu-item" role="menuitemcheckbox" aria-checked={compact} onClick={() => setCompact(!compact)}>
-                <Icon name="compact" size={18} />
-                <span className="flex-1">Compact view</span>
-                <SwitchMark checked={compact} />
-              </button>
-            </Menu>
-            <Menu
-              placement="bottom-start"
-              width={280}
-              trigger={<button className="icon-btn" aria-label="Session actions"><Icon name="more" size={18} /></button>}
-            >
-              {(close) => (
-                <>
-                  <MenuItem icon="list-bullets" label="View all sessions" to="/sessions" onClick={close} />
-                  <MenuSeparator />
-                  <Submenu icon="more" label="More actions">
-                    <MenuItem icon="check" label="Mark all as read" disabled={!unreadCount} onClick={() => { markAllRead(); close() }} />
-                    <MenuItem icon="terminal" label="New terminal" onClick={() => { close(); navigate('/?mode=terminal') }} />
-                    <MenuItem icon="refresh" label="Reset view" disabled={!customized} onClick={() => { setSort('updated'); setFilter('all'); setGroup('none'); setCompact(false); close() }} />
-                  </Submenu>
-                </>
-              )}
-            </Menu>
-          </div>
-        </div>
-
-        </div>
-        <div className="sessions-scroll">
+          {filter !== 'archived' && <ScheduledGroup />}
           {pinnedRows.length > 0 && filter !== 'archived' && (
             <>
               <div className="sessions-sub sessions-sub-inline">
@@ -402,7 +377,7 @@ function SessionLink({ row, props }: { row: SessionRow; props: Record<Property, 
   }
 
   return (
-    <div className={`session-row-wrap ${menuAt ? 'menu-open' : ''}`} onContextMenu={(event) => { event.preventDefault(); setMenuAt({ x: event.clientX, y: event.clientY }) }}>
+    <div className={`session-row-wrap ${menuAt ? 'menu-open' : ''} ${row.status === 'waiting' ? 'needs-you' : ''}`} onContextMenu={(event) => { event.preventDefault(); setMenuAt({ x: event.clientX, y: event.clientY }) }}>
       <Link to={row.to} className="session-row" aria-current={row.active ? 'page' : undefined} onClick={(event) => { if (renaming) event.preventDefault() }}>
         <span className="session-row-lead">
           {row.kind === 'terminal' ? <Icon name="terminal" size={13} /> : row.pinned ? <Icon name="pin" size={12} /> : row.status === 'error' ? <span className="dot dot-red" style={{ width: 6, height: 6 }} /> : row.status === 'waiting' ? <span className="dot dot-amber" style={{ width: 6, height: 6 }} /> : <span className="tiny-dot" />}
@@ -450,27 +425,72 @@ function SessionLink({ row, props }: { row: SessionRow; props: Record<Property, 
 }
 
 function SidebarFoot() {
+  return <UpdateNotice />
+}
+
+// PanelHead tops the sessions panel: its title, new session, how the list is
+// shown, list actions, and hiding the panel.
+function PanelHead({ onClose, scope, setScope, customized, unreadCount, markAllRead, sort, setSort, filter, setFilter, group, setGroup, props, setProps, visibleProps, compact, setCompact }: {
+  onClose: () => void; scope: 'mine' | 'everyone' | null; setScope: (value: 'mine' | 'everyone') => void; customized: boolean; unreadCount: number; markAllRead: () => void
+  sort: Sort; setSort: (value: Sort) => void; filter: Filter; setFilter: (value: Filter) => void; group: Group; setGroup: (value: Group) => void
+  props: Record<Property, boolean>; setProps: (value: Record<Property, boolean>) => void; visibleProps: number; compact: boolean; setCompact: (value: boolean) => void
+}) {
+  const { toggleSidebar, mobile } = useShell()
   return (
-    <div className="sidebar-foot">
+    <div className="sidebar-head panel-head">
+      <Link to="/sessions" className="panel-title">Sessions</Link>
+      {scope && (
+        <Menu placement="bottom-start" width={200} trigger={<button className="panel-scope" aria-label="Whose sessions">{scope === 'mine' ? 'Mine' : 'Everyone'}<Icon name="chevron-down" size={12} /></button>}>
+          {(close) => (
+            <>
+              <MenuItem label="Everyone" description="Every session on the hub" checked={scope === 'everyone'} onClick={() => { setScope('everyone'); close() }} />
+              <MenuItem label="Mine" description="Sessions you started or were handed" checked={scope === 'mine'} onClick={() => { setScope('mine'); close() }} />
+            </>
+          )}
+        </Menu>
+      )}
+      <span className="flex-1" />
       <Menu
-        placement="top-start"
-        width={250}
-        trigger={<button className="icon-btn" aria-label="Help"><Icon name="help" size={19} /></button>}
+        placement="bottom-start"
+        width={300}
+        trigger={<button className={`icon-btn ${customized ? 'icon-btn-active' : ''}`} aria-label="View options and actions" title="View options"><Icon name="sliders" size={18} /></button>}
       >
-        {(close) => (
-          <>
-            <MenuItem icon="book" label="Documentation" href={docsURL} onClick={close} />
-            <MenuItem icon="keyboard" label="Keyboard shortcuts" to="/settings/shortcuts" onClick={close} />
-            <MenuItem icon="github" label="Report an issue" href="https://github.com/ErzenXz/overseer/issues/new" onClick={close} />
-          </>
-        )}
+        <MenuLabel>Properties</MenuLabel>
+        <Submenu icon="sort" label="Sort" end={sortLabels[sort]}>
+          {(Object.keys(sortLabels) as Sort[]).map((key) => <MenuItem key={key} label={sortLabels[key]} checked={sort === key} onClick={() => setSort(key)} />)}
+        </Submenu>
+        <Submenu icon="filter" label="Filter" end={filter === 'all' ? undefined : filterLabels[filter]}>
+          {(Object.keys(filterLabels) as Filter[]).map((key) => <MenuItem key={key} label={filterLabels[key]} checked={filter === key} onClick={() => setFilter(key)} />)}
+        </Submenu>
+        <Submenu icon="group" label="Group" end={groupLabels[group]}>
+          {(Object.keys(groupLabels) as Group[]).map((key) => <MenuItem key={key} label={groupLabels[key]} checked={group === key} onClick={() => setGroup(key)} />)}
+        </Submenu>
+        <MenuSeparator />
+        <Submenu icon="eye" label="Property visibility" end={visibleProps}>
+          {(Object.keys(propertyLabels) as Property[]).map((key) => (
+            <button key={key} type="button" className="menu-item" role="menuitemcheckbox" aria-checked={props[key]} onClick={() => setProps({ ...props, [key]: !props[key] })}>
+              <span className="flex-1">{propertyLabels[key]}</span>
+              <SwitchMark checked={props[key]} />
+            </button>
+          ))}
+        </Submenu>
+        <button type="button" className="menu-item" role="menuitemcheckbox" aria-checked={compact} onClick={() => setCompact(!compact)}>
+          <Icon name="compact" size={18} />
+          <span className="flex-1">Compact view</span>
+          <SwitchMark checked={compact} />
+        </button>
+        <MenuSeparator />
+        <MenuItem icon="list-bullets" label="View all sessions" to="/sessions" />
+        <MenuItem icon="check" label="Mark all as read" disabled={!unreadCount} onClick={markAllRead} />
+        <MenuItem icon="refresh" label="Reset view" disabled={!customized} onClick={() => { setSort('updated'); setFilter('all'); setGroup('none'); setCompact(false) }} />
       </Menu>
-      <NavLink to="/settings" className="icon-btn" aria-label="Settings" title="Settings"><Icon name="settings" size={19} /></NavLink>
+      <button className="icon-btn" aria-label="Hide sidebar" title="Hide sidebar (⌘B)" onClick={mobile ? onClose : toggleSidebar}><Icon name="panel-left" size={18} /></button>
     </div>
   )
 }
 
 function SettingsNav({ onClose }: { onClose: () => void }) {
+  const team = useTeam()
   const location = useLocation()
   const [query, setQuery] = useState('')
   const [name] = usePref('displayName', 'Overseer')
@@ -489,12 +509,12 @@ function SettingsNav({ onClose }: { onClose: () => void }) {
     )
   }
   const personal = ['preferences', 'shortcuts', 'notifications'].map(link).filter(Boolean)
-  const hub = ['general', 'connections', 'machines', 'previews', 'usage'].map(link).filter(Boolean)
+  const hub = ['general', 'people', ...(team.isOwner ? ['activity'] : []), 'connections', 'chat', 'machines', 'previews', 'shares', 'usage'].map(link).filter(Boolean)
   const products = ['agents', 'automations', 'mcp', 'review'].map(link).filter(Boolean)
   const advanced = ['presets', 'tokens'].map(link).filter(Boolean)
   return (
     <>
-      <SidebarHead onClose={onClose} back />
+      <SidebarHead onClose={onClose} />
       <label className="settings-search">
         <Icon name="search" size={17} />
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search settings…" aria-label="Search settings" onKeyDown={(event) => { if (event.key === 'Escape') setQuery('') }} />
@@ -513,9 +533,7 @@ function SettingsNav({ onClose }: { onClose: () => void }) {
         </div>
         {query && !settingsSections.some((section) => match(section.id)) && <p className="sidebar-message">No settings match “{query}”.</p>}
       </nav>
-      <div className="sidebar-foot">
-        <a href={docsURL} target="_blank" rel="noreferrer" className="icon-btn" aria-label="Help"><Icon name="help" size={19} /></a>
-      </div>
+      <UpdateNotice />
     </>
   )
 }

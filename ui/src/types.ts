@@ -122,6 +122,25 @@ export interface UpdateStatus {
   }
 }
 
+// One release's notes, parsed by the hub from CHANGELOG.md. Bullets keep
+// inline markdown (bold, code, links).
+export interface ReleaseNotes {
+  version: string
+  date?: string
+  intro?: string
+  groups: { title: string; items: string[] }[]
+}
+
+// GET /api/updates/notes: notes for releases newer than the running one, and
+// the running release's own. Both are empty for dev builds or when GitHub
+// can't be reached.
+export interface UpdateNotes {
+  currentVersion: string
+  latestVersion?: string
+  newer: ReleaseNotes[]
+  current: ReleaseNotes | null
+}
+
 export interface FsEntry {
   name: string
   dir: boolean
@@ -133,6 +152,75 @@ export interface FsEntry {
 export interface FsListing {
   path: string
   entries: FsEntry[]
+}
+
+// ---- Where it runs (see docs/agent-sessions-api.md) ----
+
+// One folder as a machine sees it: POST /api/devices/{id}/git-info.
+export interface GitPathInfo {
+  path: string
+  resolved: string
+  exists: boolean
+  isRepo: boolean
+  root?: string
+  branch?: string
+  detached?: boolean
+  remote?: string
+  // The same repo on any machine, e.g. "github.com/acme/api".
+  remoteKey?: string
+  // Changed and untracked files; missing when it could not be read in time.
+  dirty?: number
+}
+
+export interface GitInfoResult {
+  home: string
+  paths: GitPathInfo[]
+}
+
+// ---- GitHub source for a new session (internal/hub/github.go, gitprepare.go) ----
+
+export interface GitHubRepo {
+  nameWithOwner: string
+  description?: string
+  updatedAt?: string
+  isPrivate: boolean
+  isFork?: boolean
+  defaultBranch?: string
+}
+
+export interface GitHubBranch {
+  name: string
+  isDefault?: boolean
+  pr?: { number: number; title: string; draft?: boolean }
+}
+
+// Every GitHub answer. status is "ok", or why not: the GitHub CLI is missing
+// (no-gh), not signed in (no-auth), the repo is unknown (not-found) or other.
+export interface GitHubReply {
+  status: 'ok' | 'no-gh' | 'no-auth' | 'not-found' | 'error'
+  message?: string
+  login?: string
+  repos?: GitHubRepo[]
+  branch?: string // a branch named in a pasted link
+  defaultBranch?: string
+  branches?: GitHubBranch[]
+  more?: boolean // the repo has more branches than listed
+}
+
+export interface GitPrepareResult {
+  action: 'reuse' | 'worktree' | 'clone'
+  path: string
+  branch: string
+  home?: string
+  source?: string // the clone a worktree hangs off
+  note?: string
+}
+
+export interface GitPrepareJob {
+  key: string
+  state: 'running' | 'done' | 'failed'
+  result?: GitPrepareResult
+  error?: string
 }
 
 export interface HubEvent {
@@ -179,6 +267,12 @@ export interface Thread {
   archived?: boolean
   folder?: string
   parentId?: string
+  // Teams: user ids of who started it and who has it now, and the last hand-off.
+  createdBy?: string
+  assignee?: string
+  handoffBy?: string
+  handoffNote?: string
+  handoffAt?: number
 }
 
 export interface ThreadCapabilities {
@@ -204,6 +298,21 @@ export interface ToolFile {
   diff?: string
 }
 
+// A subagent run: the tool call itself is the row, its own steps are
+// messages whose parentId is that row's id.
+export interface ToolAgent {
+  type?: string
+  name?: string
+  task?: string
+  prompt?: string
+  result?: string
+  model?: string
+  tools?: number
+  tokens?: number
+  durationMs?: number
+  background?: boolean
+}
+
 export interface ThreadMessage {
   id: string
   seq: number
@@ -221,6 +330,8 @@ export interface ThreadMessage {
   }
   text: string
   turn?: string
+  // Set on a subagent's own steps: the id of its tool message.
+  parentId?: string
   tool?: {
     name: string
     title: string
@@ -228,6 +339,7 @@ export interface ThreadMessage {
     input?: string
     output?: string
     files?: ToolFile[]
+    agent?: ToolAgent
   }
   plan?: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
   approval?: {
@@ -236,6 +348,7 @@ export interface ThreadMessage {
     detail?: string
     options: { id: string; label: string; kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' }[]
     resolved?: string
+    answeredBy?: string
   }
   durationMs?: number
 }
@@ -251,12 +364,29 @@ export interface DeviceAgent {
   id: string
   installed: boolean
   version?: string
+  // "ok" or "signed-out" when the agent's CLI can say; absent when unknown.
+  auth?: 'ok' | 'signed-out'
+  account?: string
+}
+
+export interface DesktopSetup {
+  supported: boolean
+  server?: string
+  summary: string
+  steps?: string[]
+  command?: string
+  notes?: string[]
+  manual?: string[]
+  needsAdmin?: boolean
 }
 
 export interface DesktopInfo {
   available: boolean
   port: number
   reason?: string
+  os?: string
+  user?: string
+  setup?: DesktopSetup
 }
 
 export interface McpServer {

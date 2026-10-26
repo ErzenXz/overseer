@@ -80,6 +80,7 @@ func (s *Server) handleForkThread(w http.ResponseWriter, r *http.Request) {
 	if dropped > 0 && nt.ForkPending {
 		nt.ForkAt = cutUser
 	}
+	nt.CreatedBy = userFrom(r).ID // teams: the forker holds the fork
 	if err := s.store.CreateThread(nt); err != nil {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -184,18 +185,9 @@ func (s *Server) handleAnswerThread(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "questionId and answers or text are required")
 		return
 	}
-	c := s.registry.get(t.DeviceId)
-	if c == nil {
-		httpError(w, http.StatusServiceUnavailable, "device is offline")
-		return
-	}
-	ctx, cancel := deviceCtx()
-	defer cancel()
-	err := c.requestInto(ctx, protocol.TypeThreadAnswer, protocol.ThreadAnswer{
-		ThreadId: t.Id, QuestionId: req.QuestionId, Answers: req.Answers, Text: strings.TrimSpace(req.Text),
-	}, nil)
-	if err != nil {
-		httpError(w, http.StatusConflict, err.Error())
+	// Shared with the chat apps (chat.go).
+	if status, err := s.sendAnswer(t, req.QuestionId, req.Answers, req.Text); err != nil {
+		httpError(w, status, err.Error())
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})

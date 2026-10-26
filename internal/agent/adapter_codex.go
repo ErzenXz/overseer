@@ -38,6 +38,19 @@ type codexAdapter struct {
 	model      string                  // model the thread runs (from thread/start), for collaborationMode
 	tier       string                  // service tier id used for fast mode
 	planTurn   bool                    // the last turn ran in the plan collaboration mode
+
+	// Subagents: Codex runs them as child threads on the same app-server.
+	agents map[string]*codexSub // child thread id -> its row in the parent transcript
+}
+
+// codexSub tracks one spawned subagent while its parent turn runs.
+type codexSub struct {
+	msgId string
+	tools int
+	done  bool
+	start time.Time
+	name  string // nickname
+	role  string
 }
 
 func newCodexAdapter(cfg protocol.ThreadStart, sink threadSink) *codexAdapter {
@@ -49,6 +62,7 @@ func newCodexAdapter(cfg protocol.ThreadStart, sink threadSink) *codexAdapter {
 		reasoning:   map[string]bool{},
 		cmdOutput:   map[string]string{},
 		cmdEmitted:  map[string]time.Time{},
+		agents:      map[string]*codexSub{},
 	}
 }
 
@@ -585,6 +599,18 @@ func (c *codexAdapter) itemId(id string) string { return c.scopedId("i", id) }
 
 func (c *codexAdapter) onNotify(method string, params json.RawMessage) {
 	p := decodeObj(params)
+	if method == "thread/started" {
+		c.onThreadStarted(jObj(p, "thread"))
+		return
+	}
+	// Events of a spawned subagent's own thread arrive on the same stream.
+	c.cmu.Lock()
+	own := c.threadId
+	c.cmu.Unlock()
+	if tid := jStr(p, "threadId"); tid != "" && own != "" && tid != own {
+		c.onChildNotify(method, p, tid)
+		return
+	}
 	switch method {
 	case "turn/started":
 		if id := jStr(jObj(p, "turn"), "id"); id != "" {
@@ -595,9 +621,9 @@ func (c *codexAdapter) onNotify(method string, params json.RawMessage) {
 	case "thread/compacted":
 		c.emit(protocol.ThreadEvent{Id: c.newId("compact"), Role: "status", Text: "Conversation compacted"})
 	case "item/started":
-		c.onItem(jObj(p, "item"), false)
+		c.onItem(jObj(p, "item"), false, "")
 	case "item/completed":
-		c.onItem(jObj(p, "item"), true)
+		c.onItem(jObj(p, "item"), true, "")
 	case "item/agentMessage/delta":
 		c.appendTo(c.itemId(jStr(p, "itemId")), "assistant", jStr(p, "delta"))
 	case "item/reasoning/summaryTextDelta":
@@ -663,6 +689,7 @@ func (c *codexAdapter) onNotify(method string, params json.RawMessage) {
 		c.turnActive = false
 		c.cmu.Unlock()
 		turn := jObj(p, "turn")
+		c.finishAgents(jStr(turn, "status") == "completed")
 		switch jStr(turn, "status") {
 		case "failed":
 			msg := jStr(jObj(turn, "error"), "message")
@@ -752,7 +779,7 @@ func joinStrings(v []any, sep string) string {
 	return strings.Join(parts, sep)
 }
 
-func (c *codexAdapter) onItem(item jsonObj, done bool) {
+func (c *codexAdapter) onItem(item jsonObj, done bool, parent string) {
 	id := jStr(item, "id")
 	if id == "" {
 		return
@@ -761,13 +788,19 @@ func (c *codexAdapter) onItem(item jsonObj, done bool) {
 	status := codexItemStatus(item, done)
 	switch jStr(item, "type") {
 	case "agentMessage":
+		if parent != "" {
+			if text := jStr(item, "text"); done && text != "" {
+				c.emit(protocol.ThreadEvent{Id: parent, Role: "tool", Tool: &protocol.ThreadTool{Agent: &protocol.ThreadAgent{Result: text}}})
+			}
+			return
+		}
 		if done {
 			if text := jStr(item, "text"); text != "" {
 				c.emit(protocol.ThreadEvent{Id: msgId, Role: "assistant", Text: text})
 			}
 		}
 	case "reasoning":
-		if done {
+		if done && parent == "" {
 			text := joinStrings(jArr(item, "summary"), "\n\n")
 			if text == "" {
 				text = joinStrings(jArr(item, "content"), "\n\n")
@@ -794,7 +827,7 @@ func (c *codexAdapter) onItem(item jsonObj, done bool) {
 			delete(c.cmdEmitted, id)
 			c.cmu.Unlock()
 		}
-		c.emit(protocol.ThreadEvent{Id: msgId, Role: "tool", Tool: tool})
+		c.emitTool(msgId, parent, tool, done)
 	case "fileChange":
 		tool := &protocol.ThreadTool{Name: "edit", Title: "Edit files", Status: status}
 		for _, ch := range jArr(item, "changes") {
@@ -808,7 +841,7 @@ func (c *codexAdapter) onItem(item jsonObj, done bool) {
 			tool.Title = "Edit " + filepath.Base(tool.Files[0].Path)
 			tool.Input = tool.Files[0].Path
 		}
-		c.emit(protocol.ThreadEvent{Id: msgId, Role: "tool", Tool: tool})
+		c.emitTool(msgId, parent, tool, done)
 	case "mcpToolCall":
 		server, name := jStr(item, "server"), jStr(item, "tool")
 		tool := &protocol.ThreadTool{Name: "mcp", Title: server + " · " + name, Status: status, Input: clip(compactJSON(item["arguments"]), 500)}
@@ -821,11 +854,277 @@ func (c *codexAdapter) onItem(item jsonObj, done bool) {
 				tool.Output = compactJSON(res)
 			}
 		}
-		c.emit(protocol.ThreadEvent{Id: msgId, Role: "tool", Tool: tool})
+		c.emitTool(msgId, parent, tool, done)
 	case "webSearch":
-		c.emit(protocol.ThreadEvent{Id: msgId, Role: "tool", Tool: &protocol.ThreadTool{
+		c.emitTool(msgId, parent, &protocol.ThreadTool{
 			Name: "websearch", Title: "Search the web", Status: status, Input: jStr(item, "query"),
-		}})
+		}, done)
+	case "collabAgentToolCall":
+		c.onCollab(item, status, done)
+	case "subAgentActivity":
+		c.onSubAgentActivity(item)
+	}
+}
+
+// emitTool sends a tool message; a subagent's own step carries its parent
+// row's id and counts toward that row's tool total once it completes.
+func (c *codexAdapter) emitTool(msgId, parent string, tool *protocol.ThreadTool, done bool) {
+	ev := protocol.ThreadEvent{Id: msgId, Role: "tool", Tool: tool}
+	if parent != "" {
+		ev.ParentId = parent
+	}
+	c.emit(ev)
+	if parent == "" || !done {
+		return
+	}
+	c.cmu.Lock()
+	var count int
+	for _, sub := range c.agents {
+		if sub.msgId == parent {
+			sub.tools++
+			count = sub.tools
+		}
+	}
+	c.cmu.Unlock()
+	if count > 0 {
+		c.emit(protocol.ThreadEvent{Id: parent, Role: "tool", Tool: &protocol.ThreadTool{Agent: &protocol.ThreadAgent{Tools: count}}})
+	}
+}
+
+// --- subagents ---
+
+// codexAgentStatus maps a CollabAgentStatus onto a tool status; "" keeps the
+// row running.
+func codexAgentStatus(state string) string {
+	switch state {
+	case "completed", "shutdown":
+		return "completed"
+	case "errored", "notFound", "interrupted":
+		return "error"
+	}
+	return ""
+}
+
+// firstLine is the first non-empty line of s, clipped for a one-line title.
+func firstLine(s string, n int) string {
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return clip(line, n)
+		}
+	}
+	return ""
+}
+
+// subRow returns the transcript row for a subagent thread, creating its
+// bookkeeping (and reporting whether it is new).
+func (c *codexAdapter) subRow(threadId, msgId string) (*codexSub, bool) {
+	c.cmu.Lock()
+	defer c.cmu.Unlock()
+	if sub := c.agents[threadId]; sub != nil {
+		return sub, false
+	}
+	if msgId == "" {
+		msgId = c.itemId("agent-" + threadId)
+	}
+	sub := &codexSub{msgId: msgId, start: time.Now()}
+	c.agents[threadId] = sub
+	return sub, true
+}
+
+// onCollab handles Codex's collab tool calls. spawnAgent opens a subagent row
+// (its call status is only the spawn, so the row stays running until the
+// agent's own state or turn says otherwise); the other calls update the rows
+// of the agents they name, and wait carries their final messages.
+func (c *codexAdapter) onCollab(item jsonObj, status string, done bool) {
+	tool := jStr(item, "tool")
+	var receivers []string
+	for _, r := range jArr(item, "receiverThreadIds") {
+		if id, ok := r.(string); ok && id != "" {
+			receivers = append(receivers, id)
+		}
+	}
+	states := jObj(item, "agentsStates")
+	if tool == "spawnAgent" {
+		prompt := jStr(item, "prompt")
+		for _, tid := range receivers {
+			sub, fresh := c.subRow(tid, "")
+			agent := &protocol.ThreadAgent{Task: firstLine(prompt, 120), Prompt: clip(prompt, 2000), Model: jStr(item, "model")}
+			c.cmu.Lock()
+			agent.Name, agent.Type = sub.name, sub.role
+			c.cmu.Unlock()
+			t := &protocol.ThreadTool{Name: "agent", Title: agent.Task, Input: clip(prompt, 500), Status: "running", Agent: agent}
+			if t.Title == "" {
+				t.Title = "Subagent"
+			}
+			if st := codexAgentStatus(jStr(jObj(states, tid), "status")); st != "" {
+				t.Status = st
+			}
+			if fresh || done {
+				c.emit(protocol.ThreadEvent{Id: sub.msgId, Role: "tool", Tool: t})
+			}
+		}
+		if len(receivers) == 0 && done && status == "error" {
+			c.emit(protocol.ThreadEvent{Id: c.itemId(jStr(item, "id")), Role: "tool", Tool: &protocol.ThreadTool{
+				Name: "agent", Title: firstLine(prompt, 120), Status: "error", Agent: &protocol.ThreadAgent{Task: firstLine(prompt, 120), Prompt: clip(prompt, 2000)},
+			}})
+		}
+		return
+	}
+	// Other collab calls: surface the final message and status of each agent.
+	for tid, raw := range states {
+		state, _ := raw.(map[string]any)
+		c.cmu.Lock()
+		sub := c.agents[tid]
+		c.cmu.Unlock()
+		if sub == nil || sub.done {
+			continue
+		}
+		t := &protocol.ThreadTool{Agent: &protocol.ThreadAgent{}}
+		if st := codexAgentStatus(jStr(state, "status")); st != "" {
+			t.Status = st
+			t.Agent.Result = jStr(state, "message")
+			t.Agent.DurationMs = time.Since(sub.start).Milliseconds()
+			c.cmu.Lock()
+			sub.done = true
+			c.cmu.Unlock()
+		}
+		if t.Status != "" || t.Agent.Result != "" {
+			c.emit(protocol.ThreadEvent{Id: sub.msgId, Role: "tool", Tool: t})
+		}
+	}
+	if tool == "wait" || tool == "listAgents" || len(receivers) == 0 {
+		return // bookkeeping calls are not steps of their own
+	}
+	verb := map[string]string{"sendInput": "Message", "sendMessage": "Message", "followupTask": "Follow up with", "resumeAgent": "Resume", "closeAgent": "Close", "interruptAgent": "Interrupt"}[tool]
+	if verb == "" {
+		return
+	}
+	c.cmu.Lock()
+	label := "subagent"
+	if sub := c.agents[receivers[0]]; sub != nil && sub.name != "" {
+		label = sub.name
+	}
+	c.cmu.Unlock()
+	c.emit(protocol.ThreadEvent{Id: c.itemId(jStr(item, "id")), Role: "tool", Tool: &protocol.ThreadTool{
+		Name: "other", Title: verb + " " + label, Status: status, Input: clip(jStr(item, "prompt"), 300),
+	}})
+}
+
+// onSubAgentActivity handles the newer subAgentActivity items, which report a
+// subagent starting, being messaged, interrupted or finishing.
+func (c *codexAdapter) onSubAgentActivity(item jsonObj) {
+	tid := jStr(item, "agentThreadId")
+	if tid == "" {
+		return
+	}
+	sub, fresh := c.subRow(tid, "")
+	name := jStr(item, "agentPath")
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	tool := &protocol.ThreadTool{Name: "agent", Agent: &protocol.ThreadAgent{Name: name, Model: jStr(item, "model")}}
+	switch jStr(item, "kind") {
+	case "started":
+		tool.Status = "running"
+	case "completed":
+		tool.Status = "completed"
+	case "interrupted":
+		tool.Status = "error"
+	default:
+		if !fresh {
+			return
+		}
+		tool.Status = "running"
+	}
+	if fresh {
+		tool.Title = "Subagent " + name
+		tool.Agent.Task = ""
+	}
+	if tool.Status != "running" {
+		c.cmu.Lock()
+		sub.done = true
+		c.cmu.Unlock()
+	}
+	c.emit(protocol.ThreadEvent{Id: sub.msgId, Role: "tool", Tool: tool})
+}
+
+// onThreadStarted records the nickname and role Codex gives a spawned
+// subagent, and puts them on its row.
+func (c *codexAdapter) onThreadStarted(thread jsonObj) {
+	tid := jStr(thread, "id")
+	nick, role := jStr(thread, "agentNickname"), jStr(thread, "agentRole")
+	if tid == "" || (nick == "" && role == "" && jStr(thread, "parentThreadId") == "") {
+		return
+	}
+	c.cmu.Lock()
+	if tid == c.threadId {
+		c.cmu.Unlock()
+		return
+	}
+	known := c.agents[tid] != nil
+	c.cmu.Unlock()
+	sub, _ := c.subRow(tid, "")
+	c.cmu.Lock()
+	sub.name, sub.role = nick, role
+	msgId := sub.msgId
+	c.cmu.Unlock()
+	tool := &protocol.ThreadTool{Agent: &protocol.ThreadAgent{Name: nick, Type: role}}
+	if !known { // the spawn call hasn't been seen: open the row now
+		tool.Name, tool.Title, tool.Status = "agent", "Subagent", "running"
+	}
+	c.emit(protocol.ThreadEvent{Id: msgId, Role: "tool", Tool: tool})
+}
+
+// onChildNotify routes the events of a subagent's own thread: its tool calls
+// become nested steps of its row, its last message is its result, and its
+// turn ending ends the row. Everything else (reasoning, usage) is dropped so
+// it can't leak into the parent turn.
+func (c *codexAdapter) onChildNotify(method string, p jsonObj, tid string) {
+	c.cmu.Lock()
+	sub := c.agents[tid]
+	c.cmu.Unlock()
+	if sub == nil {
+		return // not a subagent we know; ignore stray threads
+	}
+	switch method {
+	case "item/started":
+		c.onItem(jObj(p, "item"), false, sub.msgId)
+	case "item/completed":
+		c.onItem(jObj(p, "item"), true, sub.msgId)
+	case "item/commandExecution/outputDelta":
+		c.onCommandOutput(jStr(p, "itemId"), jStr(p, "delta", "chunk"))
+	case "turn/completed":
+		status := "completed"
+		if s := jStr(jObj(p, "turn"), "status"); s == "failed" || s == "interrupted" {
+			status = "error"
+		}
+		c.cmu.Lock()
+		already := sub.done
+		sub.done = true
+		c.cmu.Unlock()
+		if !already {
+			c.emit(protocol.ThreadEvent{Id: sub.msgId, Role: "tool", Tool: &protocol.ThreadTool{Status: status, Agent: &protocol.ThreadAgent{DurationMs: time.Since(sub.start).Milliseconds()}}})
+		}
+	}
+}
+
+// finishAgents ends subagent rows still running when the parent turn ends.
+func (c *codexAdapter) finishAgents(ok bool) {
+	status := "completed"
+	if !ok {
+		status = "error"
+	}
+	var open []*codexSub
+	c.cmu.Lock()
+	for _, sub := range c.agents {
+		if !sub.done {
+			sub.done = true
+			open = append(open, sub)
+		}
+	}
+	c.cmu.Unlock()
+	for _, sub := range open {
+		c.emit(protocol.ThreadEvent{Id: sub.msgId, Role: "tool", Tool: &protocol.ThreadTool{Status: status, Agent: &protocol.ThreadAgent{DurationMs: time.Since(sub.start).Milliseconds()}}})
 	}
 }
 

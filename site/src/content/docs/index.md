@@ -13,6 +13,17 @@ Overseer puts all of them in one place:
 - **Sessions keep running.** Agents run on the machine, not in your browser. Close the tab and come back later; the session is where you left it.
 - **Everything about the machine, beside the chat.** A live preview of the dev server, the machine's shell, its remote desktop, its files and the session's changes.
 
+## Find your way around
+
+A slim icon rail runs down the left edge, and the panel beside it lists your sessions. Hover an icon to see its name.
+
+- **At the top:** **New session**, **Sessions**, **Automations**, **Review**, **Agent Arena**, **Machines** and **Mission control**.
+- **Then:** **Skills & plugins**, **Projects** and **Customize**.
+- **At the bottom:** search, notifications, help and **Settings**.
+- **The Overseer logo** opens a menu with **Settings**, **Add a machine**, **New terminal**, **Agent Wrapped**, the theme and **Log out**.
+
+Press <kbd>⌘</kbd> <kbd>B</kbd> to hide the sessions panel and show it again.
+
 ## How it fits together
 
 Overseer has three parts, and all of them are the same `overseer` binary.
@@ -44,6 +55,9 @@ Terminal output, file transfers, previews and the remote desktop all travel over
 ## Where to go next
 
 - [Quick Start](/docs/quick-start/) installs the hub and adds your first machine.
-- [Sessions](/docs/sessions/) covers models, modes and approvals.
+- [Sessions](/docs/sessions/) covers models, modes, approvals, sending later and sharing a session.
+- [Agent Arena](/docs/arena/) races several agents on the same task so you keep the best result.
+- [Mission Control & Wrapped](/docs/mission/) puts every agent on one wall and recaps your week.
+- [Teams & Chat Apps](/docs/teams/) lets more people use one hub, and lets you answer agents from Telegram, Slack or Discord.
 - [Remote Access](/docs/remote-access/) shows how to reach the hub safely from outside your home network.
 - [Command Line](/docs/cli/) and [MCP & Agents](/docs/mcp/) let scripts and other agents drive your fleet.

@@ -1,37 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { formatDuration } from '../agents'
-import type { Thread, ThreadMessage, ToolFile } from '../types'
+import { buildSegments, currentActivity } from '../lib/steps'
+import { useNow } from '../lib/useNow'
+import type { Thread, ThreadMessage } from '../types'
+import { Diff } from './Diff'
 import Icon, { type IconName } from './Icon'
 import Markdown from './Markdown'
-import { localTarget, usePreviewLink } from '../previews'
+import { AgentErrorContext, ErrorMessage } from './AgentAccess'
+import { ActivityLine, WorkBlock } from './Work'
 
-// Segment is one visual unit of the conversation. Consecutive agent steps
-// (thoughts and tool calls) collapse into a "Worked for …" block, the way
-// Devin shows them; user and assistant text, plans, approvals and errors
-// stand on their own.
-type Segment =
-  | { kind: 'message'; message: ThreadMessage }
-  | { kind: 'steps'; id: string; steps: ThreadMessage[]; durationMs: number }
-
-export function segment(messages: ThreadMessage[]): Segment[] {
-  const out: Segment[] = []
-  let steps: ThreadMessage[] = []
-  const flush = (after?: ThreadMessage) => {
-    if (!steps.length) return
-    const first = steps[0]
-    const last = steps[steps.length - 1]
-    const measured = Math.max(1000, (after?.at ?? last.updatedAt) - first.at)
-    out.push({ kind: 'steps', id: first.id, steps, durationMs: after?.role === 'assistant' && after.durationMs ? after.durationMs : measured })
-    steps = []
-  }
-  for (const message of messages) {
-    if (message.role === 'tool' || message.role === 'thought') { steps.push(message); continue }
-    flush(message)
-    out.push({ kind: 'message', message })
-  }
-  flush()
-  return out
-}
+export { Diff }
 
 export default function Transcript({
   thread,
@@ -46,23 +24,30 @@ export default function Transcript({
   onApprove: (approvalId: string, optionId: string) => Promise<void>
   actions?: MessageActions
 }) {
-  const segments = segment(messages)
   const running = thread.status === 'working' || thread.status === 'starting'
-  const last = segments[segments.length - 1]
+  const active = running || thread.status === 'waiting'
+  const segments = useMemo(() => buildSegments(messages, active), [messages, active])
+  // The block being worked on: the last one, unless an answer follows it.
+  let liveIndex = -1
+  for (let i = segments.length - 1; i >= 0 && active; i--) {
+    const seg = segments[i]
+    if (seg.kind === 'work') { liveIndex = i; break }
+    if (seg.message.role !== 'approval' && seg.message.role !== 'question' && seg.message.role !== 'plan') break
+  }
+  const now = useNow(running)
+  const activity = running ? currentActivity(segments, thread.status, thread.deviceName, now) : null
+  const errorScope = useMemo(() => ({ threadId: thread.id, agent: thread.agent, deviceId: thread.deviceId, deviceName: thread.deviceName }), [thread.id, thread.agent, thread.deviceId, thread.deviceName])
   return (
-    <>
+    <AgentErrorContext.Provider value={errorScope}>
       {segments.map((item, index) => {
-        if (item.kind === 'steps') {
-          const live = running && index === segments.length - 1
-          return <Steps key={item.id} steps={item.steps} durationMs={item.durationMs} live={live} forceOpen={expandAll} />
-        }
+        if (item.kind === 'work') return <WorkBlock key={item.id} work={item} live={index === liveIndex} waiting={thread.status === 'waiting'} forceOpen={expandAll} />
+        const before = segments[index - 1]
+        if (item.message.role === 'error' && before?.kind !== 'work' && before?.message.role === 'error' && before.message.text === item.message.text) return null
         return <MessageView key={item.message.id} message={item.message} onApprove={onApprove} actions={actions} busy={running} streaming={running && index === segments.length - 1} />
       })}
-      {running && (!last || (last.kind === 'message' && !(last.message.role === 'assistant' && last.message.text))) && (
-        <div className="msg-status"><Icon name="chevron" size={15} /><span className="shimmer">{thread.status === 'starting' ? `Starting ${thread.deviceName}…` : last?.kind === 'message' && last.message.role === 'assistant' && last.message.text ? 'Finishing up in the background' : 'Thinking…'}</span></div>
-      )}
-      {thread.status === 'error' && thread.error && !messages.some((message) => message.role === 'error') && <div className="msg-error">{thread.error}</div>}
-    </>
+      {activity && <ActivityLine activity={activity} />}
+      {thread.status === 'error' && thread.error && !messages.some((message) => message.role === 'error') && <ErrorMessage text={thread.error} />}
+    </AgentErrorContext.Provider>
   )
 }
 
@@ -70,6 +55,7 @@ export interface MessageActions {
   onEdit: (text: string) => void
   onRetry: (text: string) => void
   onFork?: (messageId: string) => void
+  onContinueIn?: (messageId: string) => void
   onAnswer: (questionId: string, answers: string[], text?: string) => Promise<void>
 }
 
@@ -100,6 +86,7 @@ function MessageView({ message, onApprove, actions, busy, streaming }: { message
           <div className="msg-actions">
             <CopyButton text={message.text} />
             {actions.onFork && <ActionButton icon="git-fork" label="Continue in new session" onClick={() => actions.onFork!(message.id)} />}
+            {actions.onContinueIn && <ActionButton icon="arrow-up-right" label="Continue in another agent" onClick={() => actions.onContinueIn!(message.id)} />}
             {message.durationMs ? <span className="msg-meta">{formatDuration(message.durationMs)}</span> : null}
           </div>
         )}
@@ -109,7 +96,7 @@ function MessageView({ message, onApprove, actions, busy, streaming }: { message
   if (message.role === 'plan' && message.plan) return <PlanCard plan={message.plan} />
   if (message.role === 'approval' && message.approval) return <ApprovalCard message={message} onApprove={onApprove} />
   if (message.role === 'question' && message.question) return <QuestionCard message={message} onAnswer={actions?.onAnswer} />
-  if (message.role === 'error') return <div className="msg-error" role="alert">{message.text}</div>
+  if (message.role === 'error') return <ErrorMessage text={message.text} />
   if (message.role === 'status') return <div className="msg-status"><Icon name="info" size={16} />{message.text}</div>
   return null
 }
@@ -153,7 +140,7 @@ function QuestionCard({ message, onAnswer }: { message: ThreadMessage; onAnswer?
     )
   }
   return (
-    <div className="approval question-card" role="alert">
+    <div className="approval approval-pending question-card" role="alert">
       <div className="approval-title"><Icon name="message" size={17} className="text-[var(--blue)]" /><span>{question.text}</span></div>
       <div className="question-options">
         {question.options.map((option) => {
@@ -179,88 +166,6 @@ function QuestionCard({ message, onAnswer }: { message: ThreadMessage; onAnswer?
           <button className="btn btn-sm btn-dark" disabled={busy || (!picked.length && !text.trim())}>{busy && <span className="spinner" />}Answer</button>
         </form>
       )}
-    </div>
-  )
-}
-
-function Steps({ steps, durationMs, live, forceOpen }: { steps: ThreadMessage[]; durationMs: number; live: boolean; forceOpen: boolean }) {
-  const [open, setOpen] = useState(false)
-  const expanded = open || forceOpen || live
-  const shown = live && !open && !forceOpen ? steps.slice(-3) : steps
-  const files = steps.flatMap((step) => step.tool?.files ?? [])
-  const additions = files.reduce((sum, file) => sum + (file.additions ?? 0), 0)
-  const deletions = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0)
-  return (
-    <div className="worked">
-      <button className="worked-toggle" aria-expanded={expanded} onClick={() => setOpen(!open)}>
-        <Icon name="chevron" size={15} />
-        {live ? <span className="shimmer">Working… {steps.length} step{steps.length === 1 ? '' : 's'}</span> : <span>Worked for {formatDuration(durationMs)}</span>}
-        {!live && files.length > 0 && <span className="text-[13.5px]"><span className="plus">+{additions}</span> <span className="minus">−{deletions}</span></span>}
-      </button>
-      {expanded && (
-        <div className="worked-body">
-          {live && steps.length > shown.length && <button className="step text-muted hover:text-ink" onClick={() => setOpen(true)}><span className="step-icon"><Icon name="more" size={16} /></span>{steps.length - shown.length} earlier steps</button>}
-          {shown.map((step) => <StepView key={step.id} step={step} />)}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const toolIcons: Record<string, IconName> = { bash: 'terminal', read: 'file', edit: 'edit', write: 'edit', grep: 'search', glob: 'search', webfetch: 'globe', websearch: 'globe', mcp: 'layers', todo: 'list-checks' }
-
-function StepView({ step }: { step: ThreadMessage }) {
-  const [open, setOpen] = useState(false)
-  const openPreview = usePreviewLink()
-  if (step.role === 'thought') {
-    return (
-      <div className="step">
-        <span className="step-icon"><Icon name="brain" size={16} /></span>
-        <div className="step-main step-thought">{step.text || '…'}</div>
-      </div>
-    )
-  }
-  const tool = step.tool
-  if (!tool) return null
-  const hasDetail = !!(tool.output || tool.files?.some((file) => file.diff) || (tool.input && tool.name === 'bash'))
-  // A dev server announcing itself ("Local: http://localhost:5173/").
-  const served = localTarget(tool.output?.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):\d{2,5}(?:\/[^\s]*)?/)?.[0])
-  return (
-    <div className="step">
-      <span className="step-icon">
-        {tool.status === 'running' ? <span className="spinner" /> : tool.status === 'error' ? <Icon name="alert" size={16} className="text-danger" /> : <Icon name={toolIcons[tool.name] ?? 'wrench'} size={16} />}
-      </span>
-      <div className="step-main">
-        <div className="step-title">
-          <button onClick={() => hasDetail && setOpen(!open)} aria-expanded={hasDetail ? open : undefined} disabled={!hasDetail}>
-            <span className={tool.status === 'running' ? 'shimmer' : ''}>{tool.title}</span>
-            {tool.input && tool.name === 'bash' && <code>{tool.input}</code>}
-            {hasDetail && <Icon name={open ? 'chevron-down' : 'chevron'} size={13} className="text-faint" />}
-          </button>
-          {served && openPreview && <button type="button" className="step-preview" onClick={() => openPreview(served.port, served.path)}><Icon name="globe" size={13} />Preview :{served.port}</button>}
-          {tool.files?.map((file) => <span key={file.path} className="text-[13px]"><span className="plus">+{file.additions ?? 0}</span> <span className="minus">−{file.deletions ?? 0}</span></span>)}
-        </div>
-        {open && tool.files?.filter((file) => file.diff).map((file) => <Diff key={file.path} file={file} />)}
-        {open && tool.output && <pre className="step-out">{tool.output}</pre>}
-      </div>
-    </div>
-  )
-}
-
-export function Diff({ file }: { file: ToolFile }) {
-  const lines = (file.diff ?? '').split('\n')
-  return (
-    <div className="diff">
-      <div className="diff-head">
-        <Icon name="file" size={14} />
-        <span className="truncate">{file.path}</span>
-        <span className="ml-auto"><span className="plus">+{file.additions ?? 0}</span> <span className="minus">−{file.deletions ?? 0}</span></span>
-      </div>
-      <div className="diff-body">
-        {lines.map((line, index) => (
-          <div key={index} className={`diff-line ${line.startsWith('@@') ? 'diff-hunk' : line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-del' : ''}`}>{line || ' '}</div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -291,10 +196,10 @@ function ApprovalCard({ message, onApprove }: { message: ThreadMessage; onApprov
     try { await onApprove(approval.id, optionId) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not answer') } finally { setBusy('') }
   }
   return (
-    <div className="approval" role={resolved ? undefined : 'alert'}>
+    <div className={`approval ${resolved ? '' : 'approval-pending'}`} role={resolved ? undefined : 'alert'}>
       <div className="approval-title">
         <Icon name={resolved ? (resolved.kind.startsWith('reject') ? 'close' : 'check') : 'shield'} size={18} className={resolved ? 'text-muted' : 'text-warning'} />
-        {resolved ? <span className="text-muted">{resolved.kind.startsWith('reject') ? 'Rejected' : 'Allowed'}: {approval.title}</span> : <span>Allow the agent to {lowerFirst(approval.title)}?</span>}
+        {resolved ? <span className="text-muted">{approval.answeredBy ? `${resolved.kind.startsWith('reject') ? 'Rejected' : 'Approved'} by ${approval.answeredBy}` : resolved.kind.startsWith('reject') ? 'Rejected' : 'Allowed'}: {approval.title}</span> : <span>Allow the agent to {lowerFirst(approval.title)}?</span>}
       </div>
       {approval.detail && !resolved && <div className="approval-detail">{approval.detail}</div>}
       {!resolved && (
