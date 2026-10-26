@@ -91,7 +91,7 @@ function Row({ item, owner, onRun, disabled }: { item: AgentUpdate; owner: boole
   const detail = item.state === 'queued'
     ? `Waiting for ${item.busy} running ${item.busy === 1 ? 'session' : 'sessions'}`
     : item.state === 'updating' ? 'Updating…'
-    : item.state === 'updated' ? `Now on ${item.current}`
+    : item.state === 'updated' ? (item.message || `Now on ${item.current}`)
     : item.state === 'failed' ? (item.message || 'The update failed')
     : item.busy > 0 ? `${item.busy} running ${item.busy === 1 ? 'session' : 'sessions'}: it will wait for ${item.busy === 1 ? 'it' : 'them'}`
     : `${item.current} → ${item.latest}`

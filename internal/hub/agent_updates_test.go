@@ -4,6 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -188,7 +192,7 @@ func TestAgentUpdateCommands(t *testing.T) {
 
 	unix := func(agent string) string { return agentUpdateCommand(agent, "linux") }
 	for agent, want := range map[string][]string{
-		"claude":   {"claude update"},
+		"claude":   {`"$B" update`, "brew upgrade --cask claude-code", "npm install -g @anthropic-ai/claude-code@latest", "sudo apt upgrade claude-code"},
 		"codex":    {"brew list codex", "brew upgrade codex", "npm ls -g @openai/codex", "npm install -g @openai/codex@latest", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"},
 		"gemini":   {"npm install -g @google/gemini-cli@latest", `npm install --prefix "$P" @google/gemini-cli@latest`, `.overseer/tools`},
 		"opencode": {"opencode upgrade"},
@@ -443,7 +447,7 @@ func TestAgentUpdateQueuesWhileBusy(t *testing.T) {
 	if it.Current != "2.0.0" || it.Latest != "2.0.0" || it.UpdatedAt == 0 || it.Message != "" {
 		t.Fatalf("updated item: %+v", it)
 	}
-	if e.commandCount() != 1 || !strings.Contains(e.commands[0], "claude update") {
+	if e.commandCount() != 1 || !strings.Contains(e.commands[0], `"$B" update`) {
 		t.Fatalf("commands: %q", e.commands)
 	}
 	if e.detects.Load() < 2 {
@@ -530,6 +534,96 @@ func TestAgentUpdateNeedsAChangedVersion(t *testing.T) {
 	it := e.wait("failed")
 	if it.Message != "Still on 1.0.0 after updating" {
 		t.Fatalf("message: %q", it.Message)
+	}
+}
+
+// When the updater ran but changed nothing, what it printed is the reason.
+func TestAgentUpdateStillOnSaysWhy(t *testing.T) {
+	e := newUpdEnv(t)
+	res := protocol.ExecResult{Stdout: "Warning: claude is managed by another tool\n"}
+	e.execRes.Store(&res)
+	e.post(map[string]string{})
+	it := e.wait("failed")
+	if it.Message != "Still on 1.0.0 after updating. The updater said: Warning: claude is managed by another tool" {
+		t.Fatalf("message: %q", it.Message)
+	}
+}
+
+// A machine whose own updater says it is current (Claude Code's stable
+// channel lags the registry) is not a failure, and isn't offered again until
+// a newer release appears.
+func TestAgentUpdateUpToDateOnItsChannel(t *testing.T) {
+	e := newUpdEnv(t)
+	res := protocol.ExecResult{Stdout: "Current version: 1.0.0\nClaude Code is up to date (1.0.0)\n"}
+	e.execRes.Store(&res)
+	e.post(map[string]string{})
+	it := e.wait("updated")
+	if it.Current != "1.0.0" || !strings.Contains(it.Message, "update channel") {
+		t.Fatalf("held item: %+v", it)
+	}
+	// Once the "updated" row expires, nothing is on offer for that release.
+	later := time.Now().Add(agentUpdateKeepDone + time.Minute)
+	e.srv.agentUpd.clock = func() time.Time { return later }
+	e.srv.agentUpd.mu.Lock()
+	e.srv.agentUpd.scannedAt = later
+	e.srv.agentUpd.mu.Unlock()
+	if items := e.srv.agentUpdateItems(); len(items) != 0 {
+		t.Fatalf("held update offered again: %+v", items)
+	}
+	// A newer release is offered again.
+	e.srv.agentUpd.mu.Lock()
+	for id, l := range e.srv.agentUpd.latest {
+		l.version = "3.0.0"
+		e.srv.agentUpd.latest[id] = l
+	}
+	e.srv.agentUpd.mu.Unlock()
+	if items := e.srv.agentUpdateItems(); len(items) != 1 || items[0].State != "available" || items[0].Latest != "3.0.0" {
+		t.Fatalf("after a newer release: %+v", items)
+	}
+}
+
+// The Claude Code command updates the copy on PATH the way it was installed.
+func TestClaudeUpdateFollowsTheInstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix shell script")
+	}
+	script := agentUpdateCommand("claude", "linux")
+	fake := func(t *testing.T, dir, name, body string) string {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	cases := []struct{ name, target, want string }{
+		{"native", ".local/share/claude/versions/2.1.0", "NATIVE update"},
+		{"npm", "lib/node_modules/@anthropic-ai/claude-code/cli.js", "NPM install -g @anthropic-ai/claude-code@latest"},
+		{"homebrew stable", "Caskroom/claude-code/2.1.0/claude", "BREW upgrade --cask claude-code"},
+		{"homebrew latest", "Caskroom/claude-code@latest/2.1.0/claude", "BREW upgrade --cask claude-code@latest"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			tools := filepath.Join(home, "fakebin")
+			fake(t, tools, "npm", `echo "NPM $*"`)
+			fake(t, tools, "brew", `echo "BREW $*"`)
+			target := fake(t, home, c.target, `echo "NATIVE $*"`)
+			bin := filepath.Join(home, "bin")
+			os.MkdirAll(bin, 0o755)
+			if err := os.Symlink(target, filepath.Join(bin, "claude")); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("sh", "-c", script)
+			cmd.Env = []string{"HOME=" + home, "PATH=" + bin + ":" + tools + ":/usr/bin:/bin"}
+			out, err := cmd.CombinedOutput()
+			if err != nil || strings.TrimSpace(string(out)) != c.want {
+				t.Fatalf("%v: %q, want %q", err, out, c.want)
+			}
+		})
 	}
 }
 
