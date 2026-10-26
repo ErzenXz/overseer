@@ -95,6 +95,7 @@ function Row({ item, owner, onRun, disabled }: { item: AgentUpdate; owner: boole
     ? `Waiting for ${item.busy} running ${item.busy === 1 ? 'session' : 'sessions'}`
     : item.state === 'updating' ? 'Updating…'
     : item.state === 'updated' ? (item.message || `Now on ${item.current}`)
+    : item.state === 'failed' && item.command && item.busy > 0 ? `Needs your password. Waiting for ${item.busy} running ${item.busy === 1 ? 'session' : 'sessions'}`
     : item.state === 'failed' ? (item.message || 'The update failed')
     : item.busy > 0 ? `${item.busy} running ${item.busy === 1 ? 'session' : 'sessions'}: it will wait for ${item.busy === 1 ? 'it' : 'them'}`
     : `${item.current} → ${item.latest}`
@@ -123,9 +124,15 @@ function TerminalUpdate({ item }: { item: AgentUpdate }) {
   const [session, setSession] = useState('')
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(false)
+  const busyText = (n: number) => `${item.name} has ${n} running ${n === 1 ? 'session' : 'sessions'} on ${item.deviceName}. Update it once ${n === 1 ? 'it finishes' : 'they finish'}.`
   const start = async () => {
     setOpen(true)
     setError('')
+    // Same rule as every other update: never while a session uses the
+    // agent. Ask again now rather than trusting the row's last refresh.
+    await agentUpdatesResource.refresh()
+    const fresh = agentUpdatesResource.get()?.items.find((entry) => entry.deviceId === item.deviceId && entry.agent === item.agent)
+    if ((fresh?.busy ?? item.busy) > 0) { setError(busyText(fresh?.busy ?? item.busy)); return }
     const name = `update-${item.agent}-${Date.now().toString().slice(-5)}`
     try {
       await api.post(`/api/devices/${item.deviceId}/sessions`, { name, command: item.command, kind: 'setup' })
@@ -141,7 +148,7 @@ function TerminalUpdate({ item }: { item: AgentUpdate }) {
   }
   return (
     <>
-      <button className="btn btn-sm btn-dark" onClick={start}>Update in terminal</button>
+      <button className="btn btn-sm btn-dark" disabled={item.busy > 0} title={item.busy > 0 ? busyText(item.busy) : undefined} onClick={start}>Update in terminal</button>
       {open && (
         <Modal
           wide
