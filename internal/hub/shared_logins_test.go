@@ -346,6 +346,26 @@ func TestSharedLoginsHTTP(t *testing.T) {
 		t.Fatalf("second apply replaces %q", req.Replaces)
 	}
 
+	// Replacing the shared sign-in leaves the machines stale, not forgotten:
+	// they drop out of "applied", but the next apply still says which file
+	// Overseer wrote, so the person's own backup survives.
+	newToken := "sk-ant-oat01-" + strings.Repeat("Zx9", 30)
+	secrets = append(secrets, newToken)
+	if st, body := do("POST", "/api/shared-logins", map[string]any{"agent": "claude", "token": newToken}); st != 200 {
+		t.Fatalf("replace the shared token: %d %s", st, body)
+	} else if items := decode[sharedLoginsBody](e, body).Items; len(items[0].Applied) != 0 {
+		t.Fatalf("stale machines still listed as applied: %s", body)
+	}
+	st, body = do("POST", "/api/shared-logins/claude/apply", map[string]any{"deviceIds": []string{out.id}, "replace": true})
+	if st != 200 || decode[sharedApplyBody](e, body).Results[0].State != "ok" {
+		t.Fatalf("apply the new token: %d %s", st, body)
+	}
+	applies = out.requests(protocol.TypeLoginApply)
+	json.Unmarshal(applies[len(applies)-1].Data, &req)
+	if req.Secret != newToken || req.Replaces != hashToken(testClaudeToken) {
+		t.Fatalf("apply after replacing: replaces %q", req.Replaces)
+	}
+
 	// Auto on and off.
 	if st, _ := do("PUT", "/api/shared-logins/claude", map[string]any{}); st != 400 {
 		t.Fatalf("missing auto: %d", st)
@@ -363,14 +383,16 @@ func TestSharedLoginsHTTP(t *testing.T) {
 	if items := decode[sharedLoginsBody](e, body).Items; len(items) != 1 || items[0].Agent != "codex" {
 		t.Fatalf("after delete: %s", body)
 	}
-	for _, d := range []*fakeLoginDevice{out, in} {
+	// out has the new token; in still has the old one (stale), and both are
+	// Overseer's, so both are removed by what was last written there.
+	for d, token := range map[*fakeLoginDevice]string{out: newToken, in: testClaudeToken} {
 		rm := d.requests(protocol.TypeLoginRemove)
 		if len(rm) != 1 {
 			t.Fatalf("%s got %d removes", d.id, len(rm))
 		}
 		var r protocol.LoginRemoveRequest
 		json.Unmarshal(rm[0].Data, &r)
-		if r.Agent != "claude" || r.Sha256 != hashToken(testClaudeToken) {
+		if r.Agent != "claude" || r.Sha256 != hashToken(token) {
 			t.Fatalf("remove request: %+v", r)
 		}
 	}

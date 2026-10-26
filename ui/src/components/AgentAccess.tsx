@@ -44,7 +44,11 @@ export function SignInDialog({ deviceId, deviceName, agent, onClose, onSignedIn 
     setApplying(true)
     try {
       const [result] = await applySharedLogin(agent as 'claude' | 'codex', [deviceId], true)
-      if (result?.state === 'ok') { setDone(true); onSignedIn?.() } else setError(result?.message || 'It didn’t work. Sign in on this machine instead.')
+      if (result?.state === 'ok') {
+        await refreshAgents(deviceId).catch(() => {}) // so the Agents tab and notices see it at once
+        setDone(true)
+        onSignedIn?.()
+      } else setError(result?.message || 'It didn’t work. Sign in on this machine instead.')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'It didn’t work') }
     setApplying(false)
   }

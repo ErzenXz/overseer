@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { agentInfo, relativeTime } from '../agents'
-import { useAgentsOn } from '../agentOptions'
+import { refreshAgents, useAgentsOn } from '../agentOptions'
 import { applySharedLogin, removeSharedLogin, setSharedAuto, shareClaudeToken, shareCodexFrom, sharedLoginsResource, type SharedAgent, type SharedLogin } from '../sharedLogins'
 import { useShell } from '../shell'
 import { useDevices } from '../store'
@@ -148,7 +148,10 @@ function MachineRow({ device, shared }: { device: Device; shared: SharedLogin })
     setBusy(true)
     try {
       const [result] = await applySharedLogin(shared.agent, [device.id], replace)
-      if (result?.state === 'ok') toast(`${agentInfo(shared.agent).name} is signed in on ${device.name}`)
+      if (result?.state === 'ok') {
+        toast(`${agentInfo(shared.agent).name} is signed in on ${device.name}`)
+        await refreshAgents(device.id).catch(() => {}) // the row reads this machine's sign-in state
+      }
       else if (result) toast(result.message || 'It didn’t work')
     } catch (cause) { toast(cause instanceof Error ? cause.message : 'Could not apply it') }
     setBusy(false)

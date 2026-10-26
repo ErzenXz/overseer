@@ -54,8 +54,13 @@ const (
 	sharedLoginMaxDevices = 200
 	maxCodexAuthSize      = 64 << 10
 
-	loginOK      = "ok"
-	loginFailed  = "failed"
+	loginOK     = "ok"
+	loginFailed = "failed"
+	// loginStale marks a device that got an earlier shared sign-in for the
+	// agent: not "applied" for the current one, but its hash still says what
+	// Overseer last wrote there, so a backup of the person's own sign-in is
+	// never overwritten and removal still recognises the file.
+	loginStale   = "stale"
 	loginSkipped = "skipped"
 
 	claudeTokenPrefix = "sk-ant-oat"
@@ -234,7 +239,8 @@ func (s *Store) SharedLogins() ([]sharedLogin, error) {
 }
 
 // SaveSharedLogin stores l in place of any earlier sign-in for that agent.
-// The devices the earlier one went to are forgotten: they don't have this one.
+// The devices the earlier one went to don't have this one, so they turn
+// stale, keeping the hash of what was written there.
 func (s *Store) SaveSharedLogin(l sharedLogin) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -247,7 +253,7 @@ func (s *Store) SaveSharedLogin(l sharedLogin) error {
 		l.Agent, l.Kind, l.Secret, l.Account, l.SourceDevice, l.CreatedAt, boolInt(l.Auto)); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM shared_login_devices WHERE agent = ?`, l.Agent); err != nil {
+	if _, err := tx.Exec(`UPDATE shared_login_devices SET state = ?, message = '' WHERE agent = ?`, loginStale, l.Agent); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -370,8 +376,8 @@ func (s *Server) sharedLoginsBody() (sharedLoginsBody, error) {
 		}
 		for _, d := range rows {
 			name, ok := names[d.DeviceId]
-			if !ok {
-				continue // the device was removed
+			if !ok || d.State == loginStale {
+				continue // the device was removed, or only had an earlier sign-in
 			}
 			it.Applied = append(it.Applied, sharedLoginApplied{DeviceId: d.DeviceId, DeviceName: name, AppliedAt: d.AppliedAt,
 				State: d.State, Message: d.Message})
@@ -468,7 +474,7 @@ func (s *Server) autoApplySharedLogins(c *agentConn) {
 		if !l.Auto {
 			continue
 		}
-		if prev, err := s.store.SharedLoginDevice(l.Agent, c.deviceId); err == nil && prev == nil {
+		if prev, err := s.store.SharedLoginDevice(l.Agent, c.deviceId); err == nil && (prev == nil || prev.State == loginStale) {
 			todo = append(todo, l)
 		}
 	}
@@ -513,7 +519,7 @@ func (s *Server) autoApplySharedLogins(c *agentConn) {
 		// or the sign-in may have been replaced or turned off.
 		cur, _ := s.store.SharedLogin(l.Agent)
 		prev, err := s.store.SharedLoginDevice(l.Agent, c.deviceId)
-		if cur == nil || !cur.Auto || cur.CreatedAt != l.CreatedAt || err != nil || prev != nil {
+		if cur == nil || !cur.Auto || cur.CreatedAt != l.CreatedAt || err != nil || (prev != nil && prev.State != loginStale) {
 			unlock()
 			continue
 		}
