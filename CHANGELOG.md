@@ -3,6 +3,23 @@
 What changed in each Overseer release. Installed hubs and machines update to
 the newest release on their own; see [Settings → General](docs/guide.md#keeping-devices-up-to-date).
 
+## v0.5.1 — 2026-10-26
+
+Agent updates that work however Claude Code was installed.
+
+### Fixed
+- **Updating Claude Code could fail with “Still on … after updating”.**
+  Overseer ran `claude update` whatever the install was. It now updates the
+  copy Overseer actually runs, the way it was installed: Homebrew
+  (`brew upgrade --cask`), npm, Overseer’s own tools folder, or Claude Code’s
+  own updater. A copy installed with apt, dnf or apk needs root, so the card
+  shows the exact command to run instead of failing.
+- **Machines on Claude Code’s stable channel** are no longer reported as
+  failed. When an agent’s own updater says it is already up to date, Overseer
+  takes its word for it and stops offering that release on that machine.
+- When an update still leaves the old version, the card now shows what the
+  updater printed, so the reason is right there.
+
 ## v0.5.0 — 2026-10-26
 
 Teams, a race between agents, a live wall for everything running, start a
