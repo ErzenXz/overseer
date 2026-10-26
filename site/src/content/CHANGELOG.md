@@ -3,6 +3,17 @@
 What changed in each Overseer release. Installed hubs and machines update to
 the newest release on their own; see [Settings → General](docs/guide.md#keeping-devices-up-to-date).
 
+## v0.6.0 — Unreleased
+
+### New
+- **Share sign-ins with your other machines.** Settings → Sign-ins keeps one
+  Claude Code and one Codex sign-in on your hub and hands it to the machines
+  you pick, using each agent's documented way of signing in without a browser:
+  a `claude setup-token` token, or Codex's `auth.json`. New machines can get it
+  automatically when they join, and a machine that's already signed in is
+  never changed without asking. The sign-in dialog offers the shared sign-in
+  in one click.
+
 ## v0.5.0 — 2026-10-26
 
 Teams, a race between agents, a live wall for everything running, start a

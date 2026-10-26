@@ -516,7 +516,7 @@ function SettingsNav({ onClose }: { onClose: () => void }) {
   }
   const personal = ['preferences', 'shortcuts', 'notifications'].map(link).filter(Boolean)
   const hub = ['general', 'people', ...(team.isOwner ? ['activity'] : []), 'connections', 'chat', 'machines', 'previews', 'shares', 'usage'].map(link).filter(Boolean)
-  const products = ['agents', 'automations', 'mcp', 'review'].map(link).filter(Boolean)
+  const products = ['agents', 'signins', 'automations', 'mcp', 'review'].map(link).filter(Boolean)
   const advanced = ['presets', 'tokens'].map(link).filter(Boolean)
   return (
     <>

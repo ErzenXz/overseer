@@ -67,6 +67,9 @@ type Server struct {
 	sched schedState
 	// agentUpd is the coding-agent CLI update state (agent_updates.go).
 	agentUpd agentUpdateState
+	// sharedLogins is the shared agent sign-ins' in-memory state
+	// (shared_logins.go).
+	sharedLogins sharedLoginState
 	// autopilot and shots hold the issue autopilot's and the before/after
 	// screenshots' in-memory state (autopilot.go, shots.go).
 	autopilot autopilotState
@@ -438,6 +441,7 @@ func (s *Server) routes() {
 	s.routesCloud(m)
 	s.routesRecipes(m)
 	s.routesAgentUpdates(m)
+	s.routesSharedLogins(m)
 
 	s.routesAutopilot(m) // issue autopilot and before/after screenshots (autopilot.go, shots.go)
 

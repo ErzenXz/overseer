@@ -151,6 +151,11 @@ func agentAuth(id, path string, timeout time.Duration) (state, account string) {
 	var stdout bytes.Buffer
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdout = &stdout
+	sharedToken := false
+	if id == "claude" {
+		// A machine signed in with a shared token (logins.go) is asked with it.
+		cmd.Env, sharedToken = claudeEnv()
+	}
 	if id == "codex" {
 		cmd.Stderr = &stdout // codex prints its status to either
 	}
@@ -159,6 +164,9 @@ func agentAuth(id, path string, timeout time.Duration) (state, account string) {
 		return "", ""
 	}
 	state, account = parseAuthStatus(id, stdout.String(), err == nil)
+	if state == "signed-out" && sharedToken {
+		return "ok", ""
+	}
 	if state == "signed-out" && id == "claude" && os.Getenv("ANTHROPIC_API_KEY") != "" {
 		return "ok", "API key"
 	}

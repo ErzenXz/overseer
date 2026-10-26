@@ -117,7 +117,7 @@ func readClaudeLimits(ctx context.Context, path string) protocol.PlanLimits {
 	if err != nil {
 		return limitsError(err)
 	}
-	proc, err := startAgentProcess(path, claudeUsageArgs, dir, agentEnv())
+	proc, err := startAgentProcess(path, claudeUsageArgs, dir, claudeProcEnv())
 	if err != nil {
 		cleanup()
 		return limitsError(err)

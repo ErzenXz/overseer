@@ -20,6 +20,7 @@ import { GuardrailsSection } from '../components/Scheduled'
 import { ActivitySettings, OwnerOnly, PeopleSettings } from './PeopleSettings'
 import { useTeam } from '../teams'
 import { ShortcutList } from '../components/ShortcutsHelp'
+import SignInsSettings from '../components/SignIns'
 
 export default function SettingsPage() {
   useOwnHeader()
@@ -56,6 +57,7 @@ export default function SettingsPage() {
               {section === 'shares' && <SharedLinks />}
               {section === 'usage' && <Usage />}
               {section === 'agents' && <AgentsSettings />}
+              {section === 'signins' && <OwnerOnly><SignInsSettings /></OwnerOnly>}
               {section === 'automations' && <LinkCard to="/automations" icon="automation" title="Open Automations" text="Create schedules, run them now, and see past runs." />}
               {section === 'mcp' && <><LinkCard to="/customize" icon="layers" title="Manage MCP servers in Customize" text="Servers you enable there are passed to every agent session on every machine." /><McpHelp /></>}
               {section === 'review' && <LinkCard to="/review" icon="pull-request" title="Open Review" text="Review uses the GitHub CLI signed in on one of your machines. Choose which one from the person icon in Review’s toolbar." />}
@@ -89,7 +91,7 @@ function Overview() {
       <div className="settings-group">{['general', 'people', ...(team.isOwner ? ['activity'] : []), 'connections', 'chat', 'machines', 'previews', 'shares', 'usage'].map(row)}</div>
       <h2 className="settings-h2">Products</h2>
       <p className="settings-sub" style={{ fontSize: 15 }}>Configure agents and the tools they get</p>
-      <div className="settings-group">{['agents', 'automations', 'mcp', 'review'].map(row)}</div>
+      <div className="settings-group">{['agents', 'signins', 'automations', 'mcp', 'review'].map(row)}</div>
       <h2 className="settings-h2">Advanced</h2>
       <p className="settings-sub" style={{ fontSize: 15 }}>Terminals and programmatic access</p>
       <div className="settings-group">{['presets', 'tokens'].map(row)}</div>

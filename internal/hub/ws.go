@@ -83,6 +83,7 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("device %s (%s) connected", device.Name, device.Id)
+	go s.autoApplySharedLogins(conn) // shared_logins.go: waits, never on the read loop
 	s.serveAgent(conn)
 }
 
