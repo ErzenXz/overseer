@@ -3,7 +3,7 @@
 What changed in each Overseer release. Installed hubs and machines update to
 the newest release on their own; see [Settings → General](docs/guide.md#keeping-devices-up-to-date).
 
-## v0.5.2 — Unreleased
+## v0.5.2 — 2026-10-26
 
 Claude Code installed with apt now really updates, and previews explain
 themselves when their address doesn't reach your hub.
