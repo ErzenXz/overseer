@@ -1,80 +1,108 @@
 # Product Hunt launch kit
 
-Everything needed to submit Overseer. Images live on the site, so they can be
-downloaded straight from overseer.sh.
+Updated 21 October 2026 to match the current product and approved blue
+command-bracket logo. Save as an unscheduled draft; publication is a separate
+step. Erzen Krasniqi is the sole maker.
 
 ## Basics
 
 | Field | Value |
 |---|---|
 | Name | Overseer |
-| Tagline (≤60) | Every coding agent, on every machine, from one tab |
+| Tagline | Run coding agents on all your computers |
 | Website | https://overseer.sh |
 | Source | https://github.com/ErzenXz/overseer |
-| Pricing | Free (open source, MIT) |
-| Topics | Developer Tools, Artificial Intelligence, Open Source, Productivity, GitHub |
-| Thumbnail (240×240) | https://overseer.sh/launch/thumbnail.png |
-| Logo | https://overseer.sh/launch/logo-512.png |
+| Download | https://overseer.sh/download/ |
+| Features | https://overseer.sh/features/ |
+| Pricing | Free; open source, MIT |
+| Launch tags (maximum three) | Developer Tools, Artificial Intelligence, Open Source |
+| Thumbnail (240×240) | `site/public/launch/thumbnail.png` |
+| Logo (512×512) | `site/public/launch/logo-512.png` |
 
-### Description (≤260)
+### Description
 
-> Overseer is a self-hosted control room for your coding agents. Run Claude
-> Code, Codex, Gemini, Devin and 40+ ACP agents on all your computers, then
-> watch, approve, preview and review their work from one browser tab, even on
-> your phone. Free and open source.
+Overseer brings Claude Code, Codex, Gemini and other coding agents on your laptop, desktop and servers into one browser tab. Follow sessions, approve commands, see live previews and review pull requests. Self-hosted, free and open source.
 
-(257 characters.)
+## Gallery
 
-## Gallery (1270×760 at 2×, in this order)
+Approved on 21 October 2026: cobalt-blue style 1, with the exact approved
+headlines and descriptions below. All seven JPGs are 2540×1520. The gallery
+uses actual Overseer demo screenshots, a desktop/mobile composition, and an
+explanatory MCP delegation diagram. Logo: approved blue command brackets.
 
-1. https://overseer.sh/launch/gallery-1-cover.jpg: “Every coding agent. Every machine. One tab.”
-2. https://overseer.sh/launch/gallery-2-preview.jpg: Live preview of what the agent builds
-3. https://overseer.sh/launch/gallery-3-approvals.jpg: Approvals, on your phone
-4. https://overseer.sh/launch/gallery-4-skills.jpg: One skill, every agent
-5. https://overseer.sh/launch/gallery-5-agents.jpg: Every agent, found for you
-6. https://overseer.sh/launch/gallery-6-limits.jpg: Plan limits without spending a token
-7. https://overseer.sh/launch/gallery-7-fleet.jpg: All your computers, one hub
+Final export bundle: `/tmp/overseer-gallery-directions.7HtWGg/overseer-product-hunt-blue.zip`.
+Individual exports are in the adjacent `final/` directory. The previous
+`gallery-v2-*` images are superseded for Product Hunt.
 
-Every app image is a real screenshot of the app (demo data). The Orbit
-sculpture on the cover was made with Codex image generation.
+1. **Claude on your Mac. Codex on your server. You, anywhere.**
 
-## First comment (maker)
+   Run your coding agents from one browser. Follow their work, steer a session and answer approvals—even from your phone.
 
-> Hi Product Hunt 👋
->
-> I run coding agents on four machines: a laptop, a desktop, a homelab box and
-> a cloud VM. Keeping track of which agent was doing what, where, meant a mess of
-> SSH tabs and terminals I’d forget about.
->
-> Overseer is the control room I wanted. You install one hub, paste one command
-> on each other computer (they dial out, so there are no ports to open), and
-> every agent on every machine is in one tab:
->
-> • Start Claude Code, Codex, Gemini, Devin or any ACP agent in any folder, and
->   pick the model, thinking level and mode
-> • Approve risky commands inline, from your desk or your phone
-> • See the dev server your agent starts, live, next to the chat
-> • Manage skills and plugins for every agent in one place, and share a skill
->   across all of them
-> • Check your Claude and Codex plan limits without spending a token
-> • Shells, remote desktops, files, automations and PR review for every machine
->
-> It’s free, open source (MIT) and self-hosted: your code and your logins stay on
-> your machines. I’d love to hear what you’d use it for, and what’s missing.
+   Export: `overseer-01-overview.jpg`
 
-## Links to have ready
+2. **Close the tab. The work keeps going.**
 
-- Download: https://overseer.sh/download/
-- Features (every screen): https://overseer.sh/features/
+   Your agents keep running on the machines you chose. Return from another device and pick up the same sessions.
+
+   Export: `overseer-02-continuity.jpg`
+
+3. **Know which agent needs you next.**
+
+   See what’s working, waiting, finished or failed. Review a command, answer a question and keep the work moving.
+
+   Export: `overseer-03-approvals.jpg`
+
+4. **Watch the app take shape.**
+
+   Open the live preview beside the conversation. Inspect the changes, browse files or jump into the machine’s terminal.
+
+   Export: `overseer-04-preview.jpg`
+
+5. **Let your agents run other agents.**
+
+   Connect Overseer through MCP. An agent can launch workers across your machines, give them instructions and check their progress.
+
+   Export: `overseer-05-delegation.jpg`
+
+6. **Give the recurring work to your agents.**
+
+   Schedule a prompt on a specific machine and project. Choose the agent and model for dependency checks, test runs or daily summaries.
+
+   Export: `overseer-06-automations.jpg`
+
+7. **Your machines. Your agents. Your Overseer.**
+
+   Host your own hub. Connect your computers. Keep using your existing agent logins. Free and open source.
+
+   Export: `overseer-07-ownership.jpg`
+
+Shared footer: **Self-hosted · Open source** — **overseer.sh**.
+
+The seven new images were uploaded in this order and their persistence and
+order verified by reloading the Product Hunt editor. It remains **In progress**
+and unpublished. The previously observed existing-URL association blocker for
+formal draft creation has not been resolved or bypassed.
+
+## First comment
+
+Hey Product Hunt, I'm Erzen 👋
+
+I kept losing track of coding agents running on different computers. One would finish while another sat waiting for approval in a terminal I hadn't checked.
+
+I built Overseer to put those sessions in one browser tab. Pick an agent and a machine, start a task, and see what needs you. Approve commands, open the dev server beside the conversation, and return to the same sessions from your phone.
+
+It works with Claude Code, Codex, Gemini, Devin and other ACP agents. You also get skills and plugins, remote shells and desktops, scheduled tasks, and GitHub pull request review.
+
+You host it yourself. Your code and agent logins stay on your machines. The app is free and MIT licensed.
+
+If you're running agents on more than one machine, what would make this useful for you?
+
+## Other links
+
 - Security: https://overseer.sh/security/
 - Changelog: https://overseer.sh/changelog/
-- Guide: https://github.com/ErzenXz/overseer/blob/main/docs/guide.md
+- Guide: https://overseer.sh/docs/
 
-## Launch checklist
-
-- [ ] Schedule for 12:01 AM Pacific on a Tuesday–Thursday.
-- [ ] Upload the thumbnail, then the 7 gallery images in order.
-- [ ] Post the first comment as soon as it goes live.
-- [ ] Check https://overseer.sh renders its social card (og.jpg) when shared.
-- [ ] Have a fresh release out (the site’s version pill links to the changelog).
-- [ ] Reply to every comment during the first hours.
+See [the identity guide](../brand.md) for square, rounded, circular, favicon,
+Apple touch and maskable icon exports. The assets above are local changes until
+the site is deployed; upload local files when preparing the Product Hunt draft.
